@@ -159,6 +159,7 @@ void RegisterCreateSurfaceSolidCommands(Engine& e);
 void RegisterTransformCommands(Engine& e);
 void RegisterEditCommands(Engine& e);
 void RegisterDocumentCommands(Engine& e);
+void RegisterMoreCommands(Engine& e);
 #ifdef CAD_WITH_OCCT
 void RegisterKernelCommands(Engine& e);
 void RegisterCurveEditCommands(Engine& e);
@@ -168,5 +169,6 @@ void RegisterCurveEditCommands(Engine& e);
 ON_NurbsCurve* InterpolateCubic(const std::vector<ON_3dPoint>& points);
 ON_NurbsCurve* ControlPointCurve(const std::vector<ON_3dPoint>& points, int degree);
 std::string DescribeObject(const ON_Geometry* g);
+double CurveLengthOf(const ON_Curve& c);
 
 }  // namespace cad

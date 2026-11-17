@@ -151,6 +151,97 @@ std::shared_ptr<ON_Mesh> SubDMesh(const ON_SubD& s) {
 
 }  // namespace
 
+void Scene::AddShaded(DisplayObject& d, const std::shared_ptr<ON_Mesh>& m) {
+  if (!m) return;
+  if (!d.shaded) { d.shaded = m; return; }
+  auto comb = std::make_shared<ON_Mesh>(*d.shaded);
+  comb->Append(*m);
+  d.shaded = comb;
+}
+
+void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::string& sig,
+                        std::map<std::string, std::shared_ptr<ON_Mesh>>& newCache, int depth) {
+  if (const auto* p = ON_Point::Cast(g)) {
+    d.points.push_back(p->point);
+    d.snapPoints.push_back({p->point, SnapKind::Point});
+  } else if (const auto* pc = ON_PointCloud::Cast(g)) {
+    for (int i = 0; i < pc->m_P.Count(); i++) { d.points.push_back(pc->m_P[i]); d.snapPoints.push_back({pc->m_P[i], SnapKind::Point}); }
+  } else if (const auto* c = ON_Curve::Cast(g)) {
+    std::vector<ON_3dPoint> w;
+    TessellateCurve(*c, w);
+    d.wires.push_back(std::move(w));
+    AddCurveSnaps(*c, d.snapPoints);
+  } else if (const auto* m = ON_Mesh::Cast(g)) {
+    auto mesh = std::make_shared<ON_Mesh>(*m);
+    if (!mesh->HasVertexNormals()) mesh->ComputeVertexNormals();
+    AddShaded(d, mesh);
+    for (int i = 0; i < m->m_V.Count(); i++) d.snapPoints.push_back({ON_3dPoint(m->m_V[i]), SnapKind::Vertex});
+    const ON_MeshTopology& top = m->Topology();
+    for (int i = 0; i < top.m_tope.Count(); i++) {
+      const ON_MeshTopologyEdge& e = top.m_tope[i];
+      d.wires.push_back({ON_3dPoint(top.m_topv[e.m_topvi[0]].m_v_count ? m->m_V[top.m_topv[e.m_topvi[0]].m_vi[0]] : ON_3fPoint::Origin),
+                         ON_3dPoint(top.m_topv[e.m_topvi[1]].m_v_count ? m->m_V[top.m_topv[e.m_topvi[1]].m_vi[0]] : ON_3fPoint::Origin)});
+    }
+  } else if (const auto* s = ON_SubD::Cast(g)) {
+    ON_SubDEdgeIterator eit(*s);
+    for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge())
+      if (e->m_vertex[0] && e->m_vertex[1])
+        d.wires.push_back({ON_3dPoint(e->m_vertex[0]->m_P), ON_3dPoint(e->m_vertex[1]->m_P)});
+    ON_SubDVertexIterator vit(*s);
+    for (const ON_SubDVertex* v = vit.FirstVertex(); v; v = vit.NextVertex())
+      d.snapPoints.push_back({ON_3dPoint(v->m_P), SnapKind::Vertex});
+    auto it = m_meshCache.find(sig);
+    auto sm = it != m_meshCache.end() ? it->second : SubDMesh(*s);
+    newCache[sig] = sm;
+    AddShaded(d, sm);
+  } else if (const auto* ir = ON_InstanceRef::Cast(g)) {
+    // Blocco: geometria della definizione trasformata (anche blocchi annidati)
+    if (depth > 8) return;
+    const auto* idef = ON_InstanceDefinition::Cast(
+        m_engine.Model().ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, ir->m_instance_definition_uuid).ModelComponent());
+    if (!idef) return;
+    const auto& ids = idef->InstanceGeometryIdList();
+    for (int i = 0; i < ids.Count(); i++) {
+      const auto* mo = ON_ModelGeometryComponent::Cast(
+          m_engine.Model().ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[i]).ModelComponent());
+      const ON_Geometry* mg = mo ? mo->Geometry(nullptr) : nullptr;
+      if (!mg) continue;
+      std::unique_ptr<ON_Geometry> copy(static_cast<ON_Geometry*>(mg->Duplicate()));
+      if (!copy || !copy->Transform(ir->m_xform)) continue;
+      char mk[64];
+      ON_UuidToString(ids[i], mk);
+      std::string msig = sig + "/" + mk;
+      for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) msig += "|" + std::to_string(ir->m_xform[r][c]);
+      AddGeometry(copy.get(), d, msig, newCache, depth + 1);
+    }
+  } else {
+    std::unique_ptr<ON_Brep> owned;
+    const ON_Brep* b = ON_Brep::Cast(g);
+    if (!b) {
+      if (const auto* x = ON_Extrusion::Cast(g)) owned.reset(x->BrepForm());
+      else if (const auto* sf = ON_Surface::Cast(g)) owned.reset(sf->BrepForm());
+      b = owned.get();
+    }
+    if (b) {
+      AddBrep(*b, d);
+#ifdef CAD_WITH_OCCT
+      auto it = m_meshCache.find(sig);
+      std::shared_ptr<ON_Mesh> bm;
+      if (it != m_meshCache.end()) bm = it->second;
+      else {
+        ON_BoundingBox bb;
+        b->GetTightBoundingBox(bb);
+        const double size = bb.Diagonal().Length();
+        TopoDS_Shape shape = occt::BrepToShape(*b, m_engine.Tolerance());
+        bm.reset(occt::MeshShape(shape, std::max(size / 400.0, 0.01), 15.0 * ON_PI / 180.0));
+      }
+      newCache[sig] = bm;
+      AddShaded(d, bm);
+#endif
+    }
+  }
+}
+
 void Scene::Rebuild() {
   m_objects.clear();
   std::map<std::string, std::shared_ptr<ON_Mesh>> newCache;
@@ -174,60 +265,7 @@ void Scene::Rebuild() {
     std::string sig = std::string(key) + g->ClassId()->ClassName();
     for (int i = 0; i < 3; i++) sig += "|" + std::to_string(d.bbox.m_min[i]) + "|" + std::to_string(d.bbox.m_max[i]);
 
-    if (const auto* p = ON_Point::Cast(g)) {
-      d.points.push_back(p->point);
-      d.snapPoints.push_back({p->point, SnapKind::Point});
-    } else if (const auto* pc = ON_PointCloud::Cast(g)) {
-      for (int i = 0; i < pc->m_P.Count(); i++) { d.points.push_back(pc->m_P[i]); d.snapPoints.push_back({pc->m_P[i], SnapKind::Point}); }
-    } else if (const auto* c = ON_Curve::Cast(g)) {
-      std::vector<ON_3dPoint> w;
-      TessellateCurve(*c, w);
-      d.wires.push_back(std::move(w));
-      AddCurveSnaps(*c, d.snapPoints);
-    } else if (const auto* m = ON_Mesh::Cast(g)) {
-      auto mesh = std::make_shared<ON_Mesh>(*m);
-      if (!mesh->HasVertexNormals()) mesh->ComputeVertexNormals();
-      d.shaded = mesh;
-      for (int i = 0; i < m->m_V.Count(); i++) d.snapPoints.push_back({ON_3dPoint(m->m_V[i]), SnapKind::Vertex});
-      const ON_MeshTopology& top = m->Topology();
-      for (int i = 0; i < top.m_tope.Count(); i++) {
-        const ON_MeshTopologyEdge& e = top.m_tope[i];
-        d.wires.push_back({ON_3dPoint(top.m_topv[e.m_topvi[0]].m_v_count ? m->m_V[top.m_topv[e.m_topvi[0]].m_vi[0]] : ON_3fPoint::Origin),
-                           ON_3dPoint(top.m_topv[e.m_topvi[1]].m_v_count ? m->m_V[top.m_topv[e.m_topvi[1]].m_vi[0]] : ON_3fPoint::Origin)});
-      }
-    } else if (const auto* s = ON_SubD::Cast(g)) {
-      ON_SubDEdgeIterator eit(*s);
-      for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge())
-        if (e->m_vertex[0] && e->m_vertex[1])
-          d.wires.push_back({ON_3dPoint(e->m_vertex[0]->m_P), ON_3dPoint(e->m_vertex[1]->m_P)});
-      ON_SubDVertexIterator vit(*s);
-      for (const ON_SubDVertex* v = vit.FirstVertex(); v; v = vit.NextVertex())
-        d.snapPoints.push_back({ON_3dPoint(v->m_P), SnapKind::Vertex});
-      auto it = m_meshCache.find(sig);
-      d.shaded = it != m_meshCache.end() ? it->second : SubDMesh(*s);
-      newCache[sig] = d.shaded;
-    } else {
-      std::unique_ptr<ON_Brep> owned;
-      const ON_Brep* b = ON_Brep::Cast(g);
-      if (!b) {
-        if (const auto* x = ON_Extrusion::Cast(g)) owned.reset(x->BrepForm());
-        else if (const auto* sf = ON_Surface::Cast(g)) owned.reset(sf->BrepForm());
-        b = owned.get();
-      }
-      if (b) {
-        AddBrep(*b, d);
-#ifdef CAD_WITH_OCCT
-        auto it = m_meshCache.find(sig);
-        if (it != m_meshCache.end()) d.shaded = it->second;
-        else {
-          const double size = d.bbox.Diagonal().Length();
-          TopoDS_Shape shape = occt::BrepToShape(*b, m_engine.Tolerance());
-          d.shaded.reset(occt::MeshShape(shape, std::max(size / 400.0, 0.01), 15.0 * ON_PI / 180.0));
-        }
-        newCache[sig] = d.shaded;
-#endif
-      }
-    }
+    AddGeometry(g, d, sig, newCache, 0);
     m_objects.push_back(std::move(d));
   }
   m_meshCache.swap(newCache);

@@ -37,6 +37,9 @@ public:
   ON_BoundingBox Bounds() const;
 
 private:
+  void AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::string& sig,
+                   std::map<std::string, std::shared_ptr<ON_Mesh>>& newCache, int depth);
+  static void AddShaded(DisplayObject& d, const std::shared_ptr<ON_Mesh>& m);
   Engine& m_engine;
   std::vector<DisplayObject> m_objects;
   std::map<std::string, std::shared_ptr<ON_Mesh>> m_meshCache;  // chiave: id + firma

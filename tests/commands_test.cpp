@@ -426,6 +426,89 @@ int main(int argc, char** argv) {
   });
 #endif
 
+
+  // --- Analisi, curve, gruppi, blocchi ---
+  {
+    auto num = [](Ctx& c, const char* label) {
+      const std::string log = c.log.str();
+      auto p = log.rfind(label);
+      return p == std::string::npos ? -1.0 : std::atof(log.c_str() + p + std::strlen(label));
+    };
+    Case("Length_circle", "_Circle 0,0 5\n_SelAll _Length", [&](Ctx& c) { CHECK(Near(num(c, "Lunghezza = "), 10 * ON_PI, 1e-6)); });
+    Case("Length_interp", "_InterpCrv 0,0 5,5 10,0\n_SelAll _Length", [&](Ctx& c) {
+      CHECK(Near(num(c, "Lunghezza = "), Len(c.Last()), 1e-3));
+    });
+    Case("Distance", "_Distance 0,0 3,4", [&](Ctx& c) { CHECK(Near(num(c, "Distanza = "), 5.0, 1e-12)); });
+    Case("Angle", "_Angle 0,0 10,0 0,10", [&](Ctx& c) { CHECK(Near(num(c, "Angolo = "), 90.0, 1e-9)); });
+    Case("Radius", "_Circle 0,0 7\n_SelAll _Radius", [&](Ctx& c) { CHECK(Near(num(c, "Raggio = "), 7.0, 1e-12)); });
+    Case("BoundingBox", "_Sphere 0,0,0 5\n_SelAll _BoundingBox", [&](Ctx& c) {
+      auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsSolid() && b->m_F.Count() == 6);
+      ON_BoundingBox bb; if (b) b->GetTightBoundingBox(bb);
+      CHECK(Near(bb.Diagonal().x, 10.0, 1e-9) && Near(bb.Diagonal().z, 10.0, 1e-9));
+    });
+    Case("Divide_line", "_Line 0,0 10,0\n_SelAll _Divide 4", [](Ctx& c) {
+      int pts = 0; bool ok = true;
+      for (auto* g : c.Objects()) if (auto* p = ON_Point::Cast(g)) { pts++; ok = ok && Near(p->point.x / 2.5, std::round(p->point.x / 2.5), 1e-6); }
+      CHECK(pts == 5 && ok);
+    });
+    Case("Divide_circle", "_Circle 0,0 5\n_SelAll _Divide 4", [](Ctx& c) {
+      int pts = 0;
+      for (auto* g : c.Objects()) if (ON_Point::Cast(g)) pts++;
+      CHECK(pts == 4);
+    });
+    Case("Divide_length", "_Line 0,0 10,0\n_SelAll _Divide Length=3", [](Ctx& c) {
+      int pts = 0;
+      for (auto* g : c.Objects()) if (ON_Point::Cast(g)) pts++;
+      CHECK(pts == 4);
+    });
+    Case("Rebuild", "_InterpCrv 0,0 5,5 10,0 15,5 20,0\n_SelAll _Rebuild PointCount=8 Degree=3", [](Ctx& c) {
+      auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && n->CVCount() == 8 && n->Degree() == 3);
+      if (n) { CHECK(NearPt(n->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-9)); CHECK(NearPt(n->PointAtEnd(), ON_3dPoint(20, 0, 0), 1e-9)); }
+      if (n) CHECK(std::fabs(n->PointAt(n->Domain().Mid()).y) < 6.0);
+    });
+    Case("ChangeDegree_up", "_Line 0,0 10,0\n_SelAll _ChangeDegree 3", [](Ctx& c) {
+      auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && n->Degree() == 3 && Near(Len(n), 10.0, 1e-6));
+    });
+    Case("ProjectToCPlane", "_Line 0,0,5 10,0,7\n_SelAll _ProjectToCPlane", [](Ctx& c) {
+      auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && Near(l->m_line.from.z, 0) && Near(l->m_line.to.z, 0) && Near(l->m_line.Length(), 10.0));
+    });
+    Case("Helix", "_Helix Turns=5 0,0,0 0,0,10 3,0,0", [](Ctx& c) {
+      auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n != nullptr);
+      if (n) {
+        CHECK(NearPt(n->PointAtStart(), ON_3dPoint(3, 0, 0), 1e-9));
+        CHECK(NearPt(n->PointAtEnd(), ON_3dPoint(3, 0, 10), 1e-9));
+        ON_BoundingBox bb; n->GetTightBoundingBox(bb);
+        CHECK(Near(bb.m_max.x, 3.0, 0.05) && Near(bb.m_min.y, -3.0, 0.05));
+      }
+    });
+    Case("Spiral_flat", "_Spiral Flat Turns=3 0,0 1,0 5", [](Ctx& c) {
+      auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && NearPt(n->PointAtStart(), ON_3dPoint(1, 0, 0), 1e-9) && NearPt(n->PointAtEnd(), ON_3dPoint(5, 0, 0), 1e-9));
+    });
+    Case("Group", "_Line 0,0 1,0\n_Line 0,1 1,1\n_SelAll _Group", [](Ctx& c) {
+      int g = 0;
+      for (auto& id : c.e.AllObjectIds()) g += c.e.Object(id)->Attributes(nullptr)->GroupCount();
+      CHECK(g == 2);
+      CHECK(c.doc.Model().ActiveComponentCount(ON_ModelComponent::Type::Group) == 1);
+    });
+    Case("Block_Insert", "_Box 0,0,0 2,2 2\n_Circle 1,1 3\n_SelAll _Block Name=Pezzo 1,1,0\n_Insert Pezzo 20,0,0 2 90", [](Ctx& c) {
+      int refs = 0;
+      for (auto* g : c.Objects()) if (ON_InstanceRef::Cast(g)) refs++;
+      CHECK(refs == 2 && c.Objects().size() == 2);
+      CHECK(c.doc.Model().ActiveComponentCount(ON_ModelComponent::Type::InstanceDefinition) == 1);
+      ON_BoundingBox bb = c.BBox();
+      CHECK(Near(bb.m_max.x, 26.0, 1e-6));  // seconda istanza: cerchio raggio 3*2=6 attorno a x=20
+    });
+    Case("ExplodeBlock", "_Box 0,0,0 2,2 2\n_SelAll _Block 0,0,0\n_SelAll _ExplodeBlock", [](Ctx& c) {
+      CHECK(c.Objects().size() == 1 && ON_Extrusion::Cast(c.Last()));
+    });
+  }
+
   // Modalita' interattiva: il comando resta in attesa finche' mancano dati.
   {
     std::printf("Interactive\n");

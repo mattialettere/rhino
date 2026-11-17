@@ -22,6 +22,7 @@
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <set>
 
 namespace cad::ui {
 
@@ -169,7 +170,9 @@ void MainWindow::BuildMenus() {
                      {"Poligono", "_Polygon"}, {"Cerchio", "_Circle"}, {"Arco", "_Arc"}, {"Ellisse", "_Ellipse"},
                      {"Curva per punti di controllo", "_Curve"}, {"Curva interpolata", "_InterpCrv"},
                      {"Offset curva", "_Offset"}, {"Raccordo curve", "_Fillet"}, {"Smusso curve", "_Chamfer"},
-                     {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"}});
+                     {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"},
+                     {"Dividi in punti", "_Divide"}, {"Ricostruisci", "_Rebuild"}, {"Cambia grado", "_ChangeDegree"},
+                     {"Elica", "_Helix"}, {"Spirale", "_Spiral"}});
   addCmds("&Superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi curva", "_ExtrudeCrv"},
                          {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"},
                          {"Offset superficie", "_OffsetSrf"}});
@@ -183,7 +186,11 @@ void MainWindow::BuildMenus() {
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
                          {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}});
-  addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Area", "_Area"}, {"Volume", "_Volume"}});
+  addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
+                         {"Angolo", "_Angle"}, {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"},
+                         {"Scatola di ingombro", "_BoundingBox"}});
+  addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"},
+                       {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
 }
 
 // Barre strumenti a schede sopra le viste, come Rhino 8 (pulsanti con testo:
@@ -231,7 +238,9 @@ QWidget* MainWindow::BuildToolTabs() {
                        {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}});
   addTab("Strumenti curve", {{"Raccordo", "_Fillet"}, {"Smusso", "_Chamfer"}, {"Offset", "_Offset"}, {"Taglia", "_Trim"},
                              {"Estendi", "_Extend"}, {"Dividi", "_Split"}, {"Unisci", "_Join"}, {"Esplodi", "_Explode"},
-                             {"Inverti dir.", "_Flip"}, {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"}});
+                             {"Inverti dir.", "_Flip"}, {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"},
+                             {"Dividi in punti", "_Divide"}, {"Ricostruisci", "_Rebuild"}, {"Cambia grado", "_ChangeDegree"},
+                             {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Proietta su CPlane", "_ProjectToCPlane"}});
   addTab("Strumenti superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi", "_ExtrudeCrv"},
                                  {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"},
                                  {"Offset superficie", "_OffsetSrf"}, {"Dividi", "_Split"}});
@@ -242,7 +251,10 @@ QWidget* MainWindow::BuildToolTabs() {
                               {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori", "_Cap"}, {"Guscio", "_Shell"}});
   addTab("Strumenti SubD", {{"Box SubD", "_SubDBox"}});
   addTab("Strumenti mesh", {{"Mesh da NURBS", "_Mesh"}});
-  addTab("Analizza", {{"Cos'è", "_What"}, {"Area", "_Area"}, {"Volume", "_Volume"}});
+  addTab("Analizza", {{"Cos'è", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"}, {"Angolo", "_Angle"},
+                      {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"}, {"Ingombro", "_BoundingBox"}});
+  addTab("Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"},
+                     {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
   return tabs;
 }
 
@@ -444,6 +456,22 @@ void MainWindow::OnPointPicked(ON_3dPoint p) {
 
 void MainWindow::OnObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove) {
   if (!add && !remove) m_engine.ClearSelection();
+  {  // come Rhino: cliccando un oggetto di un gruppo si seleziona tutto il gruppo
+    std::set<int> groups;
+    for (const auto& id : ids)
+      if (const auto* o = m_engine.Object(id)) {
+        ON_SimpleArray<int> gl;
+        o->Attributes(nullptr)->GetGroupList(gl);
+        for (int i = 0; i < gl.Count(); i++) groups.insert(gl[i]);
+      }
+    if (!groups.empty())
+      for (const auto& id : m_engine.AllObjectIds()) {
+        ON_SimpleArray<int> gl;
+        m_engine.Object(id)->Attributes(nullptr)->GetGroupList(gl);
+        for (int i = 0; i < gl.Count(); i++)
+          if (groups.count(gl[i])) { ids.push_back(id); break; }
+      }
+  }
   for (const auto& id : ids) {
     if (remove) m_engine.Deselect(id);
     else m_engine.Select(id);
