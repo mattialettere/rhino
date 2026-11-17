@@ -61,6 +61,7 @@ signals:
   void ObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove);
   void MouseWorld(ON_3dPoint p);
   void ToggleMaximize(Viewport* v);
+  void Activated(Viewport* v);
 
 protected:
   void initializeGL() override;

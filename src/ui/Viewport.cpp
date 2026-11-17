@@ -598,6 +598,7 @@ std::vector<ON_UUID> Viewport::PickWindow(const QPoint& a, const QPoint& b) cons
 
 void Viewport::mousePressEvent(QMouseEvent* e) {
   setFocus();
+  emit Activated(this);
   // menu della vista: tasto destro sul titolo, oppure clic sulla freccia accanto al titolo
   // (il doppio clic sul titolo resta per ingrandire, come Rhino)
   QFont bf = font(); bf.setBold(true);

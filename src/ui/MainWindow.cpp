@@ -2,6 +2,7 @@
 #include <QAction>
 #include <QCompleter>
 #include <QStringListModel>
+#include <QTabWidget>
 #include <QApplication>
 #include <QCheckBox>
 #include <QDockWidget>
@@ -58,6 +59,7 @@ MainWindow::MainWindow(QWidget* parent)
   line->addWidget(m_prompt);
   line->addWidget(m_input, 1);
   vbox->addLayout(line);
+  vbox->addWidget(BuildToolTabs());
 
   // Quattro viewport
   auto* views = new QWidget;
@@ -71,6 +73,7 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_views[i], &Viewport::PointPicked, this, &MainWindow::OnPointPicked);
     connect(m_views[i], &Viewport::ObjectsClicked, this, &MainWindow::OnObjectsClicked);
     connect(m_views[i], &Viewport::ToggleMaximize, this, &MainWindow::ToggleMaximize);
+    connect(m_views[i], &Viewport::Activated, this, [this](Viewport* v) { m_active = v; });
     connect(m_views[i], &Viewport::MouseWorld, this, [this](ON_3dPoint p) {
       m_coords->setText(QString("x %1   y %2   z %3").arg(p.x, 0, 'f', 3).arg(p.y, 0, 'f', 3).arg(p.z, 0, 'f', 3));
     });
@@ -181,6 +184,66 @@ void MainWindow::BuildMenus() {
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
                          {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}});
   addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Area", "_Area"}, {"Volume", "_Volume"}});
+}
+
+// Barre strumenti a schede sopra le viste, come Rhino 8 (pulsanti con testo:
+// le icone di Rhino non si copiano).
+QWidget* MainWindow::BuildToolTabs() {
+  auto* tabs = new QTabWidget;
+  tabs->setDocumentMode(true);
+  tabs->setMaximumHeight(62);
+  using Btn = std::pair<const char*, const char*>;
+  auto addTab = [&](const char* title, std::initializer_list<Btn> buttons) {
+    auto* tb = new QToolBar;
+    tb->setIconSize(QSize(16, 16));
+    tb->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    for (auto& [label, cmd] : buttons) {
+      QString c = cmd;
+      tb->addAction(label, this, [this, c] { Submit(c); });
+    }
+    tabs->addTab(tb, title);
+    return tb;
+  };
+  addTab("Standard", {{"Nuovo", "_New"}, {"Annulla", "_Undo"}, {"Ripeti", "_Redo"}, {"Seleziona tutto", "_SelAll"},
+                      {"Elimina", "_Delete"}, {"Zoom estensione", "_Zoom"}, {"Cos'è", "_What"}, {"Livello", "-_Layer"}});
+  // Imposta vista e Visualizzazione agiscono sulla vista attiva
+  auto* views = new QToolBar;
+  views->setToolButtonStyle(Qt::ToolButtonTextOnly);
+  const std::pair<const char*, Camera::Kind> vk[] = {
+      {"Top", Camera::Kind::Top}, {"Bottom", Camera::Kind::Bottom}, {"Left", Camera::Kind::Left},
+      {"Right", Camera::Kind::Right}, {"Front", Camera::Kind::Front}, {"Back", Camera::Kind::Back},
+      {"Perspective", Camera::Kind::Perspective}};
+  for (auto& [label, k] : vk) views->addAction(label, this, [this, k = k] { Active()->SetView(k); });
+  tabs->addTab(views, "Imposta vista");
+  auto* disp = new QToolBar;
+  disp->setToolButtonStyle(Qt::ToolButtonTextOnly);
+  const std::pair<const char*, Viewport::DisplayMode> dm[] = {
+      {"Wireframe", Viewport::DisplayMode::Wireframe}, {"Ombreggiato", Viewport::DisplayMode::Shaded},
+      {"Fantasma", Viewport::DisplayMode::Ghosted}, {"Raggi X", Viewport::DisplayMode::XRay}};
+  for (auto& [label, m] : dm) disp->addAction(label, this, [this, m = m] { Active()->mode = m; Active()->update(); });
+  tabs->addTab(disp, "Visualizzazione");
+  addTab("Seleziona", {{"Tutto", "_SelAll"}, {"Niente", "_SelNone"}, {"Inverti", "_Invert"}, {"Ultimo", "_SelLast"},
+                       {"Curve", "_SelCrv"}, {"Punti", "_SelPt"}, {"Superfici", "_SelSrf"}, {"Polisuperfici", "_SelPolysrf"},
+                       {"Mesh", "_SelMesh"}, {"SubD", "_SelSubD"}, {"Per livello", "_SelLayer"}});
+  addTab("Visibilità", {{"Nascondi", "_Hide"}, {"Mostra", "_Show"}, {"Blocca", "_Lock"}, {"Sblocca", "_Unlock"}});
+  addTab("Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
+                       {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
+                       {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}});
+  addTab("Strumenti curve", {{"Raccordo", "_Fillet"}, {"Smusso", "_Chamfer"}, {"Offset", "_Offset"}, {"Taglia", "_Trim"},
+                             {"Estendi", "_Extend"}, {"Dividi", "_Split"}, {"Unisci", "_Join"}, {"Esplodi", "_Explode"},
+                             {"Inverti dir.", "_Flip"}, {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"}});
+  addTab("Strumenti superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi", "_ExtrudeCrv"},
+                                 {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"},
+                                 {"Offset superficie", "_OffsetSrf"}, {"Dividi", "_Split"}});
+  addTab("Strumenti solidi", {{"Box", "_Box"}, {"Sfera", "_Sphere"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
+                              {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Unione", "_BooleanUnion"},
+                              {"Differenza", "_BooleanDifference"}, {"Intersezione", "_BooleanIntersection"},
+                              {"Divisione", "_BooleanSplit"}, {"Raccorda spigoli", "_FilletEdge"},
+                              {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori", "_Cap"}, {"Guscio", "_Shell"}});
+  addTab("Strumenti SubD", {{"Box SubD", "_SubDBox"}});
+  addTab("Strumenti mesh", {{"Mesh da NURBS", "_Mesh"}});
+  addTab("Analizza", {{"Cos'è", "_What"}, {"Area", "_Area"}, {"Volume", "_Volume"}});
+  return tabs;
 }
 
 void MainWindow::BuildSidebar() {

@@ -39,6 +39,8 @@ private:
   void Log(const QString& s);
   void BuildMenus();
   void BuildSidebar();
+  QWidget* BuildToolTabs();
+  Viewport* Active() { return m_active ? m_active : m_views[1]; }
   void BuildStatusBar();
   void OnPointPicked(ON_3dPoint p);
   void OnObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove);
@@ -59,6 +61,7 @@ private:
   QGridLayout* m_grid = nullptr;
   Viewport* m_views[4] = {};
   Viewport* m_maximized = nullptr;
+  Viewport* m_active = nullptr;
 };
 
 }  // namespace cad::ui
