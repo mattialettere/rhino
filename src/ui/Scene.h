@@ -8,11 +8,19 @@
 
 namespace cad::ui {
 
+// Tipi di snap ad oggetto (come la barra Osnap di Rhino 8)
+enum class SnapKind { End, Mid, Center, Quad, Knot, Point, Vertex };
+struct SnapPoint {
+  ON_3dPoint p;
+  SnapKind kind;
+};
+const char* SnapName(SnapKind k);
+
 struct DisplayObject {
   ON_UUID id = ON_nil_uuid;
   std::vector<std::vector<ON_3dPoint>> wires;
   std::vector<ON_3dPoint> points;
-  std::vector<ON_3dPoint> snapPoints;  // estremi, punti medi, centri, vertici
+  std::vector<SnapPoint> snapPoints;   // estremi, punti medi, centri, quadranti, nodi, vertici
   std::shared_ptr<ON_Mesh> shaded;     // nullptr se non ombreggiabile
   ON_Color color = ON_Color::Black;
   bool selected = false, locked = false;

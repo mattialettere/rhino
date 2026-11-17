@@ -6,6 +6,7 @@
 #include <sstream>
 
 class QLineEdit;
+class QCompleter;
 class QLabel;
 class QPlainTextEdit;
 class QTreeWidget;
@@ -49,6 +50,7 @@ private:
   Scene m_scene;
   std::string m_pending;   // comando in attesa di input
   QLineEdit* m_input = nullptr;
+  QCompleter* m_completer = nullptr;
   QLabel* m_prompt = nullptr;
   QPlainTextEdit* m_history = nullptr;
   QTreeWidget* m_layers = nullptr;

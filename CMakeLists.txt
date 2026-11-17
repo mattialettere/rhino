@@ -50,7 +50,9 @@ else()
 endif()
 if(MSVC)
   # windows.h (incluso da openNURBS) definisce le macro min/max.
-  target_compile_definitions(cadcore PUBLIC NOMINMAX)
+  target_compile_definitions(cadcore PUBLIC NOMINMAX _USE_MATH_DEFINES)
+  # sorgenti in UTF-8 (testi italiani, simboli); file grandi di OpenCASCADE
+  target_compile_options(cadcore PUBLIC /utf-8 /bigobj)
   target_link_libraries(cadcore PUBLIC opennurbsStatic)
 else()
   # zlib e openNURBS si richiamano a vicenda (zcalloc/zcfree): gruppo di link.

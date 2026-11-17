@@ -9,7 +9,7 @@
 namespace cad::ui {
 
 struct Camera {
-  enum class Kind { Top, Front, Right, Perspective } kind = Kind::Top;
+  enum class Kind { Top, Front, Right, Perspective, Bottom, Left, Back } kind = Kind::Top;
   ON_3dPoint target = ON_3dPoint::Origin;
   double halfHeight = 30.0;   // viste parallele: meta' altezza visibile (unita' del modello)
   double distance = 120.0;    // prospettiva: distanza occhio-bersaglio
@@ -36,17 +36,24 @@ class Viewport : public QOpenGLWidget {
 public:
   Viewport(Scene& scene, Camera::Kind kind, QWidget* parent = nullptr);
   Camera& Cam() { return m_cam; }
-  bool shaded = false;
+  // Modalita' di visualizzazione (sottoinsieme di quelle di Rhino 8)
+  enum class DisplayMode { Wireframe, Shaded, Ghosted, XRay };
+  DisplayMode mode = DisplayMode::Wireframe;
   // Impostazioni condivise dalla finestra principale
   struct Settings {
     bool gridSnap = false, ortho = false, osnap = true;
+    // Osnap persistenti attivi (bit OsnapBit)
+    unsigned osnapMask = 0;
     double gridSpacing = 1.0;
     bool waitingForPoint = false;
     bool pickOnObjects = false;   // il comando vuole un clic SU un oggetto (Trim, Fillet, Shell...)
     ON_3dPoint lastPoint = ON_3dPoint::Origin;
     bool hasLastPoint = false;
   };
+  enum OsnapBit : unsigned { End = 1, Near = 2, Point = 4, Mid = 8, Cen = 16, Int = 32, Perp = 64,
+                             Tan = 128, Quad = 256, Knot = 512, Vertex = 1024 };
   static Settings& Shared();
+  void SetView(Camera::Kind k);
   void ZoomExtents();
 
 signals:
@@ -65,7 +72,9 @@ protected:
   void wheelEvent(QWheelEvent* e) override;
 
 private:
-  ON_3dPoint PointUnderMouse(const QPoint& pos, bool* snapped = nullptr, bool allowSnap = true) const;
+  ON_3dPoint PointUnderMouse(const QPoint& pos, bool* snapped = nullptr, bool allowSnap = true, QString* label = nullptr) const;
+  bool FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) const;
+  void ShowViewMenu(const QPoint& at);
   std::vector<ON_UUID> PickAt(const QPoint& pos) const;
   // Punto sull'oggetto sotto il mouse (curva entro 8 pixel, oppure superficie colpita dal raggio).
   ON_3dPoint PointOnObjects(const QPoint& pos, bool* hit = nullptr) const;
@@ -78,6 +87,7 @@ private:
   bool m_windowSelecting = false;
   ON_3dPoint m_hoverWorld;
   bool m_hoverSnapped = false;
+  QString m_hoverSnapLabel;
 };
 
 }  // namespace cad::ui

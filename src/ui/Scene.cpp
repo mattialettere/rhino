@@ -35,32 +35,78 @@ void TessellateCurve(const ON_Curve& c, std::vector<ON_3dPoint>& out) {
   out.push_back(c.PointAtEnd());
 }
 
+const char* SnapName(SnapKind k) {
+  switch (k) {
+    case SnapKind::End: return "Fine";
+    case SnapKind::Mid: return "Medio";
+    case SnapKind::Center: return "Centro";
+    case SnapKind::Quad: return "Quadrante";
+    case SnapKind::Knot: return "Nodo";
+    case SnapKind::Point: return "Punto";
+    case SnapKind::Vertex: return "Vertice";
+  }
+  return "";
+}
+
 namespace {
 
-void AddCurveSnaps(const ON_Curve& c, std::vector<ON_3dPoint>& snaps) {
-  snaps.push_back(c.PointAtStart());
-  if (!c.IsClosed()) snaps.push_back(c.PointAtEnd());
-  {  // punto medio (lunghezza d'arco approssimata per campionamento)
-    const ON_Interval d = c.Domain();
-    const int n = 200;
-    std::vector<double> len(n + 1, 0.0);
-    ON_3dPoint prev = c.PointAt(d[0]);
-    for (int i = 1; i <= n; i++) {
-      ON_3dPoint q = c.PointAt(d.ParameterAt(double(i) / n));
-      len[i] = len[i - 1] + prev.DistanceTo(q);
-      prev = q;
-    }
-    const double half = len[n] / 2;
-    for (int i = 1; i <= n; i++)
-      if (len[i] >= half) {
-        const double f = len[i] > len[i - 1] ? (half - len[i - 1]) / (len[i] - len[i - 1]) : 0;
-        snaps.push_back(c.PointAt(d.ParameterAt((i - 1 + f) / n)));
-        break;
-      }
+ON_3dPoint ArcLengthMid(const ON_Curve& c) {
+  const ON_Interval d = c.Domain();
+  const int n = 200;
+  std::vector<double> len(n + 1, 0.0);
+  ON_3dPoint prev = c.PointAt(d[0]);
+  for (int i = 1; i <= n; i++) {
+    ON_3dPoint q = c.PointAt(d.ParameterAt(double(i) / n));
+    len[i] = len[i - 1] + prev.DistanceTo(q);
+    prev = q;
   }
-  if (const auto* a = ON_ArcCurve::Cast(&c)) snaps.push_back(a->m_arc.Center());
-  if (const auto* p = ON_PolylineCurve::Cast(&c))
-    for (int i = 0; i < p->PointCount(); i++) snaps.push_back(p->m_pline[i]);
+  const double half = len[n] / 2;
+  for (int i = 1; i <= n; i++)
+    if (len[i] >= half) {
+      const double f = len[i] > len[i - 1] ? (half - len[i - 1]) / (len[i] - len[i - 1]) : 0;
+      return c.PointAt(d.ParameterAt((i - 1 + f) / n));
+    }
+  return c.PointAt(d.Mid());
+}
+
+void AddCurveSnaps(const ON_Curve& c, std::vector<SnapPoint>& snaps) {
+  using K = SnapKind;
+  if (const auto* pl = ON_PolylineCurve::Cast(&c)) {
+    // polilinea: estremi e punto medio di ogni segmento (come Rhino)
+    for (int i = 0; i < pl->PointCount(); i++) snaps.push_back({pl->m_pline[i], K::End});
+    for (int i = 0; i + 1 < pl->PointCount(); i++) snaps.push_back({0.5 * (pl->m_pline[i] + pl->m_pline[i + 1]), K::Mid});
+    return;
+  }
+  if (const auto* pc = ON_PolyCurve::Cast(&c)) {
+    for (int i = 0; i < pc->Count(); i++)
+      if (const ON_Curve* seg = pc->SegmentCurve(i)) AddCurveSnaps(*seg, snaps);
+    return;
+  }
+  snaps.push_back({c.PointAtStart(), K::End});
+  if (!c.IsClosed()) snaps.push_back({c.PointAtEnd(), K::End});
+  snaps.push_back({ArcLengthMid(c), K::Mid});
+  ON_Arc arc;
+  bool isArc = false;
+  if (const auto* a = ON_ArcCurve::Cast(&c)) { arc = a->m_arc; isArc = true; }
+  else if (!ON_LineCurve::Cast(&c)) isArc = c.IsArc(nullptr, &arc, 1e-9);
+  if (isArc) {
+    snaps.push_back({arc.Center(), K::Center});
+    for (int q = 0; q < 4; q++) {
+      const double ang = q * ON_PI / 2;
+      // quadranti dentro l'arco
+      double t = ang;
+      while (t < arc.DomainRadians()[0] - 1e-9) t += 2 * ON_PI;
+      if (t <= arc.DomainRadians()[1] + 1e-9) snaps.push_back({arc.PointAt(t), K::Quad});
+    }
+  }
+  if (const auto* nc = ON_NurbsCurve::Cast(&c)) {
+    const int kc = nc->KnotCount();
+    for (int i = nc->Order() - 1; i < kc - nc->Order() + 1; i++) {
+      if (i > nc->Order() - 1 && nc->m_knot[i] == nc->m_knot[i - 1]) continue;
+      const double t = nc->m_knot[i];
+      if (t > nc->Domain()[0] && t < nc->Domain()[1]) snaps.push_back({nc->PointAt(t), K::Knot});
+    }
+  }
 }
 
 void AddBrep(const ON_Brep& b, DisplayObject& d) {
@@ -68,8 +114,15 @@ void AddBrep(const ON_Brep& b, DisplayObject& d) {
     std::vector<ON_3dPoint> w;
     TessellateCurve(b.m_E[i], w);
     d.wires.push_back(std::move(w));
+    if (const ON_Curve* ec = b.m_E[i].EdgeCurveOf()) {
+      std::unique_ptr<ON_Curve> sub(ec->DuplicateCurve());
+      sub->Trim(b.m_E[i].ProxyCurveDomain());
+      std::vector<SnapPoint> es;
+      AddCurveSnaps(*sub, es);
+      for (auto& sp : es) if (sp.kind != SnapKind::End) d.snapPoints.push_back(sp);
+    }
   }
-  for (int i = 0; i < b.m_V.Count(); i++) d.snapPoints.push_back(b.m_V[i].point);
+  for (int i = 0; i < b.m_V.Count(); i++) d.snapPoints.push_back({b.m_V[i].point, SnapKind::End});
 }
 
 std::shared_ptr<ON_Mesh> SubDMesh(const ON_SubD& s) {
@@ -123,9 +176,9 @@ void Scene::Rebuild() {
 
     if (const auto* p = ON_Point::Cast(g)) {
       d.points.push_back(p->point);
-      d.snapPoints.push_back(p->point);
+      d.snapPoints.push_back({p->point, SnapKind::Point});
     } else if (const auto* pc = ON_PointCloud::Cast(g)) {
-      for (int i = 0; i < pc->m_P.Count(); i++) d.points.push_back(pc->m_P[i]);
+      for (int i = 0; i < pc->m_P.Count(); i++) { d.points.push_back(pc->m_P[i]); d.snapPoints.push_back({pc->m_P[i], SnapKind::Point}); }
     } else if (const auto* c = ON_Curve::Cast(g)) {
       std::vector<ON_3dPoint> w;
       TessellateCurve(*c, w);
@@ -135,6 +188,7 @@ void Scene::Rebuild() {
       auto mesh = std::make_shared<ON_Mesh>(*m);
       if (!mesh->HasVertexNormals()) mesh->ComputeVertexNormals();
       d.shaded = mesh;
+      for (int i = 0; i < m->m_V.Count(); i++) d.snapPoints.push_back({ON_3dPoint(m->m_V[i]), SnapKind::Vertex});
       const ON_MeshTopology& top = m->Topology();
       for (int i = 0; i < top.m_tope.Count(); i++) {
         const ON_MeshTopologyEdge& e = top.m_tope[i];
@@ -146,6 +200,9 @@ void Scene::Rebuild() {
       for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge())
         if (e->m_vertex[0] && e->m_vertex[1])
           d.wires.push_back({ON_3dPoint(e->m_vertex[0]->m_P), ON_3dPoint(e->m_vertex[1]->m_P)});
+      ON_SubDVertexIterator vit(*s);
+      for (const ON_SubDVertex* v = vit.FirstVertex(); v; v = vit.NextVertex())
+        d.snapPoints.push_back({ON_3dPoint(v->m_P), SnapKind::Vertex});
       auto it = m_meshCache.find(sig);
       d.shaded = it != m_meshCache.end() ? it->second : SubDMesh(*s);
       newCache[sig] = d.shaded;

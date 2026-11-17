@@ -1,5 +1,7 @@
 #include "ui/MainWindow.h"
 #include <QAction>
+#include <QCompleter>
+#include <QStringListModel>
 #include <QApplication>
 #include <QCheckBox>
 #include <QDockWidget>
@@ -43,6 +45,16 @@ MainWindow::MainWindow(QWidget* parent)
   m_input = new QLineEdit;
   m_input->setFont(QFont("Consolas", 10));
   m_input->installEventFilter(this);
+  {  // completamento automatico dei nomi dei comandi (come la riga di comando di Rhino 8)
+    QStringList names;
+    for (auto& [k, c] : m_engine.Commands()) names << QString::fromStdString(c.name);
+    names.sort(Qt::CaseInsensitive);
+    auto* comp = new QCompleter(names, this);
+    comp->setCaseSensitivity(Qt::CaseInsensitive);
+    comp->setCompletionMode(QCompleter::PopupCompletion);
+    m_input->setCompleter(comp);
+    m_completer = comp;
+  }
   line->addWidget(m_prompt);
   line->addWidget(m_input, 1);
   vbox->addLayout(line);
@@ -133,7 +145,11 @@ void MainWindow::BuildMenus() {
   auto* view = menuBar()->addMenu("&Vista");
   view->addAction("Zoom estensione (tutte le viste)", this, [this] { ZoomExtentsAll(); });
   view->addAction("Ombreggiato / Wireframe (vista attiva)", this, [this] {
-    for (auto* v : m_views) if (v->hasFocus()) { v->shaded = !v->shaded; v->update(); }
+    for (auto* v : m_views)
+      if (v->hasFocus()) {
+        v->mode = v->mode == Viewport::DisplayMode::Wireframe ? Viewport::DisplayMode::Shaded : Viewport::DisplayMode::Wireframe;
+        v->update();
+      }
   });
   view->addAction("Ingrandisci / ripristina vista attiva", this, [this] {
     for (auto* v : m_views) if (v->hasFocus()) ToggleMaximize(v);
@@ -188,6 +204,33 @@ void MainWindow::BuildSidebar() {
 }
 
 void MainWindow::BuildStatusBar() {
+  auto& S = Viewport::Shared();
+  // Barra Osnap (in basso, come Rhino 8)
+  auto* osnapBar = new QToolBar("Osnap");
+  osnapBar->setMovable(false);
+  addToolBar(Qt::BottomToolBarArea, osnapBar);
+  struct Item { const char* label; unsigned bit; bool on; };
+  const Item items[] = {{"Fine", Viewport::End, true},       {"Vicino", Viewport::Near, false},
+                        {"Punto", Viewport::Point, true},    {"Medio", Viewport::Mid, true},
+                        {"Centro", Viewport::Cen, true},     {"Intersezione", Viewport::Int, true},
+                        {"Perpendicolare", Viewport::Perp, false}, {"Quadrante", Viewport::Quad, false},
+                        {"Nodo", Viewport::Knot, false},     {"Vertice", Viewport::Vertex, false}};
+  for (const Item& it : items) {
+    auto* cb = new QCheckBox(it.label);
+    cb->setChecked(it.on);
+    if (it.on) S.osnapMask |= it.bit;
+    const unsigned bit = it.bit;
+    connect(cb, &QCheckBox::toggled, this, [bit](bool on) {
+      auto& St = Viewport::Shared();
+      if (on) St.osnapMask |= bit; else St.osnapMask &= ~bit;
+    });
+    osnapBar->addWidget(cb);
+  }
+  auto* disable = new QCheckBox("Disabilita");
+  connect(disable, &QCheckBox::toggled, this, [](bool on) { Viewport::Shared().osnap = !on; });
+  osnapBar->addSeparator();
+  osnapBar->addWidget(disable);
+
   m_coords = new QLabel("x 0.000   y 0.000   z 0.000");
   m_coords->setMinimumWidth(260);
   statusBar()->addWidget(m_coords);
@@ -200,7 +243,6 @@ void MainWindow::BuildStatusBar() {
     connect(b, &QToolButton::toggled, this, [&flag](bool on) { flag = on; });
     statusBar()->addPermanentWidget(b);
   };
-  auto& S = Viewport::Shared();
   toggle("Snap griglia", S.gridSnap);
   toggle("Orto", S.ortho);
   toggle("Osnap", S.osnap);
@@ -228,6 +270,14 @@ void MainWindow::Submit(const QString& text) {
       Log(l);
     }
     return;
+  }
+  // Come Rhino: un nome di comando incompleto viene completato con il primo comando che inizia cosi'
+  if (m_pending.empty() && !t.empty() && t.find(' ') == std::string::npos && t.find(',') == std::string::npos) {
+    const std::string n = NormalizeName(t);
+    if (!n.empty() && !m_engine.Commands().count(n)) {
+      for (auto& [k, c] : m_engine.Commands())
+        if (k.rfind(n, 0) == 0) { t = (t[0] == '-' ? "-_" : "_") + c.name; break; }
+    }
   }
   const std::string norm = NormalizeName(t);
   if (norm == "zoom" || norm == "zea" || norm == "zoomextents") { ZoomExtentsAll(); return; }

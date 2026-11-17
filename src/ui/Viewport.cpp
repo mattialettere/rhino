@@ -1,4 +1,5 @@
 #include "ui/Viewport.h"
+#include <QMenu>
 #include <QMouseEvent>
 #include <QOpenGLFunctions_1_1>
 #include <QOpenGLVersionFunctionsFactory>
@@ -15,6 +16,9 @@ const char* KindName(Camera::Kind k) {
     case Camera::Kind::Front: return "Front";
     case Camera::Kind::Right: return "Right";
     case Camera::Kind::Perspective: return "Perspective";
+    case Camera::Kind::Bottom: return "Bottom";
+    case Camera::Kind::Left: return "Left";
+    case Camera::Kind::Back: return "Back";
   }
   return "";
 }
@@ -24,13 +28,16 @@ ON_3dVector Camera::Dir() const {
     case Kind::Top: return ON_3dVector(0, 0, -1);
     case Kind::Front: return ON_3dVector(0, 1, 0);
     case Kind::Right: return ON_3dVector(-1, 0, 0);
+    case Kind::Bottom: return ON_3dVector(0, 0, 1);
+    case Kind::Left: return ON_3dVector(1, 0, 0);
+    case Kind::Back: return ON_3dVector(0, -1, 0);
     case Kind::Perspective: break;
   }
   return -ON_3dVector(std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch));
 }
 
 ON_3dVector Camera::Up() const {
-  if (kind == Kind::Top) return ON_3dVector(0, 1, 0);
+  if (kind == Kind::Top || kind == Kind::Bottom) return ON_3dVector(0, 1, 0);
   if (kind != Kind::Perspective) return ON_3dVector(0, 0, 1);
   ON_3dVector u = ON_CrossProduct(Right(), Dir());
   u.Unitize();
@@ -39,7 +46,9 @@ ON_3dVector Camera::Up() const {
 
 ON_3dVector Camera::Right() const {
   if (kind == Kind::Top || kind == Kind::Front) return ON_3dVector(1, 0, 0);
+  if (kind == Kind::Bottom || kind == Kind::Back) return ON_3dVector(-1, 0, 0);
   if (kind == Kind::Right) return ON_3dVector(0, 1, 0);
+  if (kind == Kind::Left) return ON_3dVector(0, -1, 0);
   ON_3dVector r = ON_CrossProduct(Dir(), ON_3dVector::ZAxis);
   if (!r.Unitize()) r = ON_3dVector::XAxis;
   return r;
@@ -52,8 +61,8 @@ ON_3dPoint Camera::Eye() const {
 
 ON_Plane Camera::CPlane() const {
   switch (kind) {
-    case Kind::Front: return ON_Plane(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::ZAxis);
-    case Kind::Right: return ON_Plane(ON_3dPoint::Origin, ON_3dVector::YAxis, ON_3dVector::ZAxis);
+    case Kind::Front: case Kind::Back: return ON_Plane(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::ZAxis);
+    case Kind::Right: case Kind::Left: return ON_Plane(ON_3dPoint::Origin, ON_3dVector::YAxis, ON_3dVector::ZAxis);
     default: return ON_Plane::World_xy;
   }
 }
@@ -120,7 +129,7 @@ Viewport::Settings& Viewport::Shared() { static Settings s; return s; }
 
 Viewport::Viewport(Scene& scene, Camera::Kind kind, QWidget* parent) : QOpenGLWidget(parent), m_scene(scene) {
   m_cam.kind = kind;
-  shaded = (kind == Camera::Kind::Perspective);
+  mode = (kind == Camera::Kind::Perspective) ? DisplayMode::Shaded : DisplayMode::Wireframe;
   setMouseTracking(true);
   setFocusPolicy(Qt::ClickFocus);
   setMinimumSize(120, 90);
@@ -129,6 +138,42 @@ Viewport::Viewport(Scene& scene, Camera::Kind kind, QWidget* parent) : QOpenGLWi
 void Viewport::ZoomExtents() {
   m_cam.ZoomExtents(m_scene.Bounds(), width(), height());
   update();
+}
+
+void Viewport::SetView(Camera::Kind k) {
+  m_cam.kind = k;
+  ZoomExtents();
+}
+
+// Menu del titolo della vista (come Rhino 8: clic sul nome della vista)
+void Viewport::ShowViewMenu(const QPoint& at) {
+  QMenu menu(this);
+  auto* view = menu.addMenu("Imposta vista");
+  const std::pair<const char*, Camera::Kind> views[] = {
+      {"Superiore (Top)", Camera::Kind::Top}, {"Inferiore (Bottom)", Camera::Kind::Bottom},
+      {"Sinistra (Left)", Camera::Kind::Left}, {"Destra (Right)", Camera::Kind::Right},
+      {"Frontale (Front)", Camera::Kind::Front}, {"Posteriore (Back)", Camera::Kind::Back},
+      {"Prospettica (Perspective)", Camera::Kind::Perspective}};
+  for (auto& [label, k] : views) {
+    auto* a = view->addAction(label);
+    a->setCheckable(true);
+    a->setChecked(m_cam.kind == k);
+    connect(a, &QAction::triggered, this, [this, k = k] { SetView(k); });
+  }
+  menu.addSeparator();
+  const std::pair<const char*, DisplayMode> modes[] = {
+      {"Wireframe", DisplayMode::Wireframe}, {"Ombreggiato (Shaded)", DisplayMode::Shaded},
+      {"Fantasma (Ghosted)", DisplayMode::Ghosted}, {"Raggi X (X-Ray)", DisplayMode::XRay}};
+  for (auto& [label, m] : modes) {
+    auto* a = menu.addAction(label);
+    a->setCheckable(true);
+    a->setChecked(mode == m);
+    connect(a, &QAction::triggered, this, [this, m = m] { mode = m; update(); });
+  }
+  menu.addSeparator();
+  connect(menu.addAction("Zoom estensione"), &QAction::triggered, this, [this] { ZoomExtents(); });
+  connect(menu.addAction("Ingrandisci / ripristina"), &QAction::triggered, this, [this] { emit ToggleMaximize(this); });
+  menu.exec(mapToGlobal(at));
 }
 
 void Viewport::initializeGL() {}
@@ -197,8 +242,15 @@ void Viewport::paintGL() {
   gl->glEnable(GL_DEPTH_TEST);
   gl->glDepthFunc(GL_LEQUAL);
 
-  // Superfici ombreggiate
+  // Superfici ombreggiate (Shaded), trasparenti (Ghosted) o trasparenti con spigoli sempre visibili (X-Ray)
+  const bool shaded = mode != DisplayMode::Wireframe;
+  const bool transparent = mode == DisplayMode::Ghosted || mode == DisplayMode::XRay;
   if (shaded) {
+    if (transparent) {
+      gl->glEnable(GL_BLEND);
+      gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      gl->glDepthMask(GL_FALSE);
+    }
     gl->glEnable(GL_LIGHTING);
     gl->glEnable(GL_LIGHT0);
     gl->glEnable(GL_NORMALIZE);
@@ -217,7 +269,8 @@ void Viewport::paintGL() {
     gl->glPolygonOffset(1.f, 1.f);
     for (const auto& obj : m_scene.Objects()) {
       if (!obj.shaded) continue;
-      const float col[4] = {obj.selected ? 0.95f : 0.82f, obj.selected ? 0.9f : 0.82f, obj.selected ? 0.45f : 0.82f, 1.f};
+      const float col[4] = {obj.selected ? 0.95f : 0.82f, obj.selected ? 0.9f : 0.82f, obj.selected ? 0.45f : 0.82f,
+                            transparent ? 0.35f : 1.f};
       gl->glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, col);
       const ON_Mesh& m = *obj.shaded;
       const bool hasN = m.HasVertexNormals();
@@ -236,7 +289,9 @@ void Viewport::paintGL() {
     }
     gl->glDisable(GL_POLYGON_OFFSET_FILL);
     gl->glDisable(GL_LIGHTING);
+    if (transparent) { gl->glDepthMask(GL_TRUE); gl->glDisable(GL_BLEND); }
   }
+  if (mode == DisplayMode::XRay) gl->glDisable(GL_DEPTH_TEST);
 
   // Wireframe, punti
   for (int pass = 0; pass < 2; pass++) {  // selezionati per ultimi, sopra
@@ -277,6 +332,13 @@ void Viewport::paintGL() {
   QFont f = p.font(); f.setBold(true); p.setFont(f);
   QString title = KindName(m_cam.kind);
   p.drawText(8, 16, title);
+  {  // freccia del menu della vista
+    const int tx = 8 + p.fontMetrics().horizontalAdvance(title) + 8;
+    QPolygonF tri({QPointF(tx, 9), QPointF(tx + 8, 9), QPointF(tx + 4, 14)});
+    p.setBrush(QColor(30, 30, 30));
+    p.drawPolygon(tri);
+    p.setBrush(Qt::NoBrush);
+  }
   // icona assi del mondo in basso a sinistra
   const QPointF o(28, h - 28);
   auto axis = [&](ON_3dVector v, QColor c, const char* name) {
@@ -301,6 +363,13 @@ void Viewport::paintGL() {
     if (m_cam.Project(m_hoverWorld, w, h, sx, sy)) {
       p.setPen(QPen(QColor(255, 255, 255), 2)); p.setBrush(Qt::NoBrush);
       p.drawRect(QRectF(sx - 5, sy - 5, 10, 10));
+      if (!m_hoverSnapLabel.isEmpty()) {
+        QFont lf = p.font(); lf.setBold(false); p.setFont(lf);
+        const QRectF tr(sx + 10, sy + 6, p.fontMetrics().horizontalAdvance(m_hoverSnapLabel) + 8, 16);
+        p.setPen(QColor(40, 40, 40)); p.setBrush(QColor(255, 255, 225));
+        p.drawRect(tr);
+        p.drawText(tr, Qt::AlignCenter, m_hoverSnapLabel);
+      }
     }
   }
   if (hasFocus()) {
@@ -309,22 +378,105 @@ void Viewport::paintGL() {
   }
 }
 
-ON_3dPoint Viewport::PointUnderMouse(const QPoint& pos, bool* snapped, bool allowSnap) const {
+// Osnap persistenti, come la barra Osnap di Rhino 8. Raggio di cattura 10 pixel.
+// Priorita': il candidato piu' vicino al cursore; "Vicino" solo se non c'e' altro.
+bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) const {
+  const Settings& S = Shared();
+  const unsigned m = S.osnapMask;
+  const double R = 10.0;
+  const int W = width(), H = height();
+  double best = R;
+  bool found = false;
+  auto consider = [&](const ON_3dPoint& p, const char* name, double extra = 0) {
+    double sx, sy;
+    if (!m_cam.Project(p, W, H, sx, sy)) return;
+    const double dd = std::hypot(sx - pos.x(), sy - pos.y()) + extra;
+    if (dd < best) { best = dd; out = p; label = name; found = true; }
+  };
+  auto kindBit = [](SnapKind k) -> unsigned {
+    switch (k) {
+      case SnapKind::End: return End;
+      case SnapKind::Mid: return Mid;
+      case SnapKind::Center: return Cen;
+      case SnapKind::Quad: return Quad;
+      case SnapKind::Knot: return Knot;
+      case SnapKind::Point: return Point;
+      case SnapKind::Vertex: return Vertex;
+    }
+    return 0;
+  };
+  for (const auto& obj : m_scene.Objects())
+    for (const auto& sp : obj.snapPoints)
+      if (m & kindBit(sp.kind)) consider(sp.p, SnapName(sp.kind));
+
+  // Segmenti dei wire vicini al cursore (per Int, Perp, Near)
+  struct Seg { ON_3dPoint a, b; double ax, ay, bx, by; size_t obj, wire; };
+  std::vector<Seg> near;
+  if (m & (Int | Perp | Near)) {
+    for (size_t oi = 0; oi < m_scene.Objects().size(); oi++) {
+      const auto& obj = m_scene.Objects()[oi];
+      for (size_t wi = 0; wi < obj.wires.size(); wi++) {
+        const auto& w = obj.wires[wi];
+        for (size_t i = 0; i + 1 < w.size(); i++) {
+          double ax, ay, bx, by;
+          if (!m_cam.Project(w[i], W, H, ax, ay) || !m_cam.Project(w[i + 1], W, H, bx, by)) continue;
+          const double dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+          double t = l2 > 0 ? ((pos.x() - ax) * dx + (pos.y() - ay) * dy) / l2 : 0;
+          t = std::clamp(t, 0.0, 1.0);
+          if (std::hypot(pos.x() - (ax + t * dx), pos.y() - (ay + t * dy)) <= R)
+            near.push_back({w[i], w[i + 1], ax, ay, bx, by, oi, wi});
+        }
+      }
+    }
+  }
+  if (m & Int) {
+    // intersezione (apparente nella vista) tra segmenti di curve diverse
+    for (size_t i = 0; i < near.size(); i++)
+      for (size_t j = i + 1; j < near.size(); j++) {
+        const Seg &A = near[i], &B = near[j];
+        if (A.obj == B.obj && A.wire == B.wire) continue;
+        const double rx = A.bx - A.ax, ry = A.by - A.ay, qx = B.bx - B.ax, qy = B.by - B.ay;
+        const double den = rx * qy - ry * qx;
+        if (std::fabs(den) < 1e-9) continue;
+        const double t = ((B.ax - A.ax) * qy - (B.ay - A.ay) * qx) / den;
+        const double u = ((B.ax - A.ax) * ry - (B.ay - A.ay) * rx) / den;
+        if (t < -1e-6 || t > 1 + 1e-6 || u < -1e-6 || u > 1 + 1e-6) continue;
+        const ON_3dPoint pa = A.a + t * (A.b - A.a), pb = B.a + u * (B.b - B.a);
+        consider(0.5 * (pa + pb), "Intersezione");
+      }
+  }
+  if ((m & Perp) && S.hasLastPoint) {
+    for (const Seg& sg : near) {
+      const ON_3dVector v = sg.b - sg.a;
+      const double l2 = v * v;
+      if (l2 <= 0) continue;
+      const double t = ((S.lastPoint - sg.a) * v) / l2;
+      if (t < 0 || t > 1) continue;
+      consider(sg.a + t * v, "Perpendicolare");
+    }
+  }
+  if (!found && (m & Near)) {
+    for (const Seg& sg : near) {
+      const double dx = sg.bx - sg.ax, dy = sg.by - sg.ay, l2 = dx * dx + dy * dy;
+      double t = l2 > 0 ? ((pos.x() - sg.ax) * dx + (pos.y() - sg.ay) * dy) / l2 : 0;
+      t = std::clamp(t, 0.0, 1.0);
+      consider(sg.a + t * (sg.b - sg.a), "Vicino");
+    }
+  }
+  return found;
+}
+
+ON_3dPoint Viewport::PointUnderMouse(const QPoint& pos, bool* snapped, bool allowSnap, QString* label) const {
   const Settings& S = Shared();
   if (snapped) *snapped = false;
-  // Osnap: punto notevole entro 10 pixel
   if (S.osnap && allowSnap) {
-    double best = 10.0;
-    ON_3dPoint bestP;
-    bool found = false;
-    for (const auto& obj : m_scene.Objects())
-      for (const auto& sp : obj.snapPoints) {
-        double sx, sy;
-        if (!m_cam.Project(sp, width(), height(), sx, sy)) continue;
-        const double dd = std::hypot(sx - pos.x(), sy - pos.y());
-        if (dd < best) { best = dd; bestP = sp; found = true; }
-      }
-    if (found) { if (snapped) *snapped = true; return bestP; }
+    ON_3dPoint sp;
+    QString name;
+    if (FindOsnap(pos, sp, name)) {
+      if (snapped) *snapped = true;
+      if (label) *label = name;
+      return sp;
+    }
   }
   ON_3dPoint o; ON_3dVector d;
   m_cam.Ray(pos.x(), pos.y(), width(), height(), o, d);
@@ -446,6 +598,17 @@ std::vector<ON_UUID> Viewport::PickWindow(const QPoint& a, const QPoint& b) cons
 
 void Viewport::mousePressEvent(QMouseEvent* e) {
   setFocus();
+  // menu della vista: tasto destro sul titolo, oppure clic sulla freccia accanto al titolo
+  // (il doppio clic sul titolo resta per ingrandire, come Rhino)
+  QFont bf = font(); bf.setBold(true);
+  const int titleW = QFontMetrics(bf).horizontalAdvance(KindName(m_cam.kind));
+  const bool onTitle = e->pos().y() < 22 && e->pos().x() < 8 + titleW + 4;
+  const bool onArrow = e->pos().y() < 22 && e->pos().x() >= 8 + titleW + 4 && e->pos().x() < 8 + titleW + 22;
+  if ((onTitle && e->button() == Qt::RightButton) || (onArrow && e->button() == Qt::LeftButton)) {
+    m_dragButton = Qt::NoButton;
+    ShowViewMenu(e->pos());
+    return;
+  }
   m_pressPos = m_lastPos = e->pos();
   m_dragButton = e->button();
 }
@@ -472,7 +635,8 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
   if (m_dragButton == Qt::LeftButton && !Shared().waitingForPoint &&
       (e->pos() - m_pressPos).manhattanLength() > 4)
     m_windowSelecting = true;
-  m_hoverWorld = PointUnderMouse(e->pos(), &m_hoverSnapped);
+  m_hoverSnapLabel.clear();
+  m_hoverWorld = PointUnderMouse(e->pos(), &m_hoverSnapped, true, &m_hoverSnapLabel);
   emit MouseWorld(m_hoverWorld);
   update();
 }
