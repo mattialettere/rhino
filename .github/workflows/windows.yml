@@ -1,0 +1,76 @@
+# Build Windows 64 bit: compila, esegue i test e pubblica uno zip pronto
+# (rhino-ui.exe con interfaccia grafica, cad-console.exe, strumenti .3dm).
+name: Windows
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # OpenCASCADE via vcpkg: la prima volta ~1 ora, poi dalla cache
+      - name: Cache vcpkg (ripristino)
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-opencascade-win64-v1
+      - name: OpenCASCADE (vcpkg)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install opencascade:x64-windows
+      - name: Cache vcpkg (salvataggio)
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-opencascade-win64-v1
+
+      # Qt 6 precompilato
+      - name: Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.3'
+          arch: 'win64_msvc2019_64'
+          cache: true
+
+      - name: Configura
+        shell: pwsh
+        run: >
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+
+      - name: Compila
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Prepara lo zip
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build\Release\*.exe dist\ -ErrorAction SilentlyContinue
+          Copy-Item build\Release\*.dll dist\ -ErrorAction SilentlyContinue
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" dist\ -ErrorAction SilentlyContinue
+          if (Test-Path dist\rhino-ui.exe) { windeployqt --release --no-translations dist\rhino-ui.exe }
+          Copy-Item examples dist\examples -Recurse
+          Copy-Item README.md dist\
+          Get-ChildItem dist
+
+      - name: Pubblica lo zip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rhino-windows-x64
+          path: dist

@@ -1,0 +1,470 @@
+// Test dei comandi: ogni caso esegue uno script e controlla il modello.
+// Alla fine ogni modello viene salvato in formato Rhino 8, riletto e
+// confrontato (nessuna differenza ammessa).
+#include "commands/Engine.h"
+#include "core/ModelCompare.h"
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <cstdio>
+#include <filesystem>
+#include <functional>
+#include <sstream>
+
+using namespace cad;
+
+static int g_failures = 0, g_checks = 0;
+#define CHECK(cond) do { g_checks++; if (!(cond)) { g_failures++; \
+  std::printf("  FALLITO %s:%d  %s\n", __FILE__, __LINE__, #cond); } } while (0)
+
+static bool Near(double a, double b, double tol = 1e-9) { return std::fabs(a - b) <= tol; }
+static bool NearPt(const ON_3dPoint& a, const ON_3dPoint& b, double tol = 1e-9) { return a.DistanceTo(b) <= tol; }
+
+struct Ctx {
+  Document3dm doc;
+  std::ostringstream log;
+  Engine e{doc, log};
+  std::vector<const ON_Geometry*> Objects() {
+    std::vector<const ON_Geometry*> out;
+    for (auto& id : e.AllObjectIds(true)) out.push_back(e.Object(id)->Geometry(nullptr));
+    return out;
+  }
+  const ON_Geometry* Last() { auto o = Objects(); return o.empty() ? nullptr : o.back(); }
+  ON_BoundingBox BBox() {
+    ON_BoundingBox b;
+    for (auto* g : Objects()) { ON_BoundingBox t; g->GetTightBoundingBox(t); b.Union(t); }
+    return b;
+  }
+};
+
+static std::string g_outDir;
+
+static double Len(const ON_Geometry* g) {
+  const ON_Curve* c = ON_Curve::Cast(g);
+  if (!c) return -1;
+  double L = 0;
+  const ON_Interval d = c->Domain();
+  ON_3dPoint prev = c->PointAt(d[0]);
+  for (int i = 1; i <= 20000; i++) {
+    ON_3dPoint q = c->PointAt(d.ParameterAt(i / 20000.0));
+    L += prev.DistanceTo(q);
+    prev = q;
+  }
+  return L;
+}
+// Lunghezze di tutte le curve, ordinate
+static std::vector<double> Lens(const std::vector<const ON_Geometry*>& objs) {
+  std::vector<double> v;
+  for (auto* g : objs) if (ON_Curve::Cast(g)) v.push_back(Len(g));
+  std::sort(v.begin(), v.end());
+  return v;
+}
+
+static void Case(const char* name, const std::string& script, const std::function<void(Ctx&)>& check,
+                 bool expectOk = true) {
+  std::printf("%s\n", name);
+  Ctx c;
+  const bool ok = c.e.Run(script);
+  if (ok != expectOk) {
+    g_failures++;
+    std::printf("  FALLITO: esecuzione %s\n%s", ok ? "riuscita (attesa errore)" : "fallita", c.log.str().c_str());
+    return;
+  }
+  check(c);
+  // Ogni B-rep prodotto deve essere valido per openNURBS (come lo richiede Rhino).
+  for (auto* g : c.Objects())
+    if (auto* b = ON_Brep::Cast(g)) {
+      ON_wString w; ON_TextLog tl(w);
+      const bool valid = b->IsValid(&tl);
+      if (!valid) std::printf("  B-rep non valido:\n%s\n", ToUtf8(w).substr(0, 800).c_str());
+      CHECK(valid);
+    }
+  // Salvataggio Rhino 8 + rilettura + confronto
+  std::string path = g_outDir + "/" + name + ".3dm";
+  ModelSnapshot before = TakeSnapshot(c.doc.Model());
+  CHECK(c.doc.Save(path));
+  Document3dm back;
+  CHECK(back.Load(path));
+  CompareResult r = CompareSnapshots(before, TakeSnapshot(back.Model()));
+  for (auto& d : r.differences) std::printf("  differenza dopo il salvataggio: %s\n", d.c_str());
+  CHECK(r.Equal());
+  CHECK(back.Summarize().rhinoVersion == 8);
+}
+
+int main(int argc, char** argv) {
+  g_outDir = argc > 1 ? argv[1] : "commands_out";
+  std::filesystem::create_directories(g_outDir);
+  InitLibrary();
+
+  Case("Line", "_Line 0,0,0 10,0,0", [](Ctx& c) {
+    auto* l = ON_LineCurve::Cast(c.Last());
+    CHECK(l && Near(l->m_line.Length(), 10.0));
+  });
+  Case("Line_relative_polar", "_Line 1,1 r10<90", [](Ctx& c) {
+    auto* l = ON_LineCurve::Cast(c.Last());
+    CHECK(l && NearPt(l->m_line.to, ON_3dPoint(1, 11, 0), 1e-9));
+  });
+  Case("Polyline_close", "_Polyline 0,0 10,0 10,10 _Close", [](Ctx& c) {
+    auto* p = ON_PolylineCurve::Cast(c.Last());
+    CHECK(p && p->IsClosed() && p->PointCount() == 4);
+  });
+  Case("Rectangle", "_Rectangle 0,0 20,10", [](Ctx& c) {
+    auto* p = ON_PolylineCurve::Cast(c.Last());
+    CHECK(p && p->IsClosed() && p->PointCount() == 5);
+    double len = p ? p->m_pline.Length() : 0;
+    CHECK(Near(len, 60.0));
+  });
+  Case("Polygon", "_Polygon NumSides=6 0,0 10,0", [](Ctx& c) {
+    auto* p = ON_PolylineCurve::Cast(c.Last());
+    CHECK(p && p->PointCount() == 7 && p->IsClosed());
+  });
+  Case("Circle", "_Circle 0,0,0 5", [](Ctx& c) {
+    auto* a = ON_ArcCurve::Cast(c.Last());
+    CHECK(a && a->IsCircle() && Near(a->Radius(), 5.0));
+  });
+  Case("Circle_diameter_point", "_Circle _Diameter 0,0 10,0", [](Ctx& c) {
+    auto* a = ON_ArcCurve::Cast(c.Last());
+    CHECK(a && Near(a->Radius(), 5.0));
+  });
+  Case("Circle_3point", "_Circle _3Point 1,0 0,1 -1,0", [](Ctx& c) {
+    auto* a = ON_ArcCurve::Cast(c.Last());
+    CHECK(a && Near(a->Radius(), 1.0, 1e-12));
+  });
+  Case("Arc", "_Arc 0,0 10,0 0,10", [](Ctx& c) {
+    auto* a = ON_ArcCurve::Cast(c.Last());
+    double len = a ? a->m_arc.Length() : 0;
+    CHECK(a && !a->IsCircle() && Near(len, 5.0 * ON_PI, 1e-9));
+  });
+  Case("Ellipse", "_Ellipse 0,0 10,0 0,4", [](Ctx& c) {
+    auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->IsClosed());
+    ON_BoundingBox b = c.BBox();
+    CHECK(NearPt(b.m_min, ON_3dPoint(-10, -4, 0), 1e-9) && NearPt(b.m_max, ON_3dPoint(10, 4, 0), 1e-9));
+  });
+  Case("Curve", "_Curve 0,0 5,5 10,0 15,5", [](Ctx& c) {
+    auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->Degree() == 3 && n->CVCount() == 4);
+    CHECK(n && NearPt(n->PointAtStart(), ON_3dPoint(0, 0, 0)) && NearPt(n->PointAtEnd(), ON_3dPoint(15, 5, 0)));
+  });
+  Case("InterpCrv", "_InterpCrv 0,0 5,5 10,0 15,5 20,0", [](Ctx& c) {
+    auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->Degree() == 3 && n->CVCount() == 7);
+    if (!n) return;
+    ON_3dPoint pts[] = {ON_3dPoint(0, 0, 0), ON_3dPoint(5, 5, 0), ON_3dPoint(10, 0, 0), ON_3dPoint(15, 5, 0), ON_3dPoint(20, 0, 0)};
+    // I nodi interni coincidono con i parametri dei punti.
+    for (int i = 0; i < 5; i++) CHECK(NearPt(n->PointAt(n->m_knot[2 + i]), pts[i], 1e-9));
+    ON_3dVector d2[3];
+    ON_3dPoint p; ON_3dVector d1;
+    n->Ev2Der(n->Domain()[0], p, d1, d2[0]);
+    CHECK(d2[0].Length() < 1e-9);  // estremo naturale
+  });
+  Case("Points", "_Points 0,0 1,1 2,2 _Enter", [](Ctx& c) { CHECK(c.Objects().size() == 3); });
+
+  Case("Box", "_Box 0,0,0 10,20 30", [](Ctx& c) {
+    auto* x = ON_Extrusion::Cast(c.Last());
+    CHECK(x && x->IsCapped());
+    ON_BoundingBox b = c.BBox();
+    CHECK(NearPt(b.m_min, ON_3dPoint(0, 0, 0)) && NearPt(b.m_max, ON_3dPoint(10, 20, 30)));
+    if (x) { ON_Brep* br = x->BrepForm(); CHECK(br && br->IsSolid() && br->m_F.Count() == 6); delete br; }
+  });
+  Case("Sphere", "_Sphere 0,0,0 5", [](Ctx& c) {
+    auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->IsSolid());
+    ON_BoundingBox bb = c.BBox();
+    CHECK(NearPt(bb.m_max, ON_3dPoint(5, 5, 5), 1e-6));
+  });
+  Case("Cylinder", "_Cylinder 0,0,0 3 10", [](Ctx& c) {
+    auto* x = ON_Extrusion::Cast(c.Last());
+    CHECK(x && x->IsCapped());
+    ON_BoundingBox bb = c.BBox();
+    CHECK(NearPt(bb.m_min, ON_3dPoint(-3, -3, 0), 1e-6) && NearPt(bb.m_max, ON_3dPoint(3, 3, 10), 1e-6));
+  });
+  Case("Cone", "_Cone 0,0,0 4 8", [](Ctx& c) {
+    auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->IsSolid());
+    ON_BoundingBox bb = c.BBox();
+    CHECK(Near(bb.m_min.z, 0, 1e-6) && Near(bb.m_max.z, 8, 1e-6) && Near(bb.m_max.x, 4, 1e-6));
+  });
+  Case("Torus", "_Torus 0,0,0 10 2", [](Ctx& c) {
+    auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->IsSolid());
+    ON_BoundingBox bb = c.BBox();
+    CHECK(Near(bb.m_max.x, 12, 1e-6) && Near(bb.m_max.z, 2, 1e-6));
+  });
+  Case("Plane", "_Plane 0,0 10,5", [](Ctx& c) {
+    auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->m_F.Count() == 1 && !b->IsSolid());
+  });
+  Case("PlanarSrf", "_Circle 0,0 5\n_SelCrv _PlanarSrf", [](Ctx& c) {
+    CHECK(c.Objects().size() == 2);
+    CHECK(ON_Brep::Cast(c.Last()) != nullptr);
+  });
+  Case("ExtrudeCrv_solid", "_Circle 0,0 5\n_SelCrv _ExtrudeCrv _Solid=_Yes 10", [](Ctx& c) {
+    auto* x = ON_Extrusion::Cast(c.Last());
+    CHECK(x && x->IsCapped());
+  });
+  Case("ExtrudeCrv_open", "_Line 0,0 10,0\n_SelCrv _ExtrudeCrv 5", [](Ctx& c) {
+    auto* x = ON_Extrusion::Cast(c.Last());
+    CHECK(x && !x->IsCapped());
+  });
+  Case("Revolve", "_Line 5,0,0 5,0,10\n_SelCrv _Revolve 0,0,0 0,0,1", [](Ctx& c) {
+    auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->m_F.Count() == 1);
+    ON_BoundingBox bb; if (b) b->GetTightBoundingBox(bb);
+    CHECK(Near(bb.m_min.x, -5, 1e-6) && Near(bb.m_max.y, 5, 1e-6));
+  });
+  Case("SubDBox", "_SubDBox 0,0,0 10,10 10", [](Ctx& c) {
+    auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 6);
+  });
+
+  Case("Move", "_Line 0,0 10,0\n_SelAll _Move 0,0 0,5", [](Ctx& c) {
+    auto* l = ON_LineCurve::Cast(c.Last());
+    CHECK(l && NearPt(l->m_line.from, ON_3dPoint(0, 5, 0)));
+  });
+  Case("Copy", "_Point 0,0\n_SelAll _Copy 0,0 1,0 2,0 _Enter", [](Ctx& c) { CHECK(c.Objects().size() == 3); });
+  Case("Rotate", "_Line 0,0 10,0\n_SelAll _Rotate 0,0 90", [](Ctx& c) {
+    auto* l = ON_LineCurve::Cast(c.Last());
+    CHECK(l && NearPt(l->m_line.to, ON_3dPoint(0, 10, 0), 1e-9));
+  });
+  Case("Scale", "_Line 1,0 2,0\n_SelAll _Scale 0,0 3", [](Ctx& c) {
+    auto* l = ON_LineCurve::Cast(c.Last());
+    CHECK(l && NearPt(l->m_line.to, ON_3dPoint(6, 0, 0)));
+  });
+  Case("Mirror", "_Point 2,3\n_SelAll _Mirror 0,0 0,10", [](Ctx& c) {
+    auto o = c.Objects();
+    CHECK(o.size() == 2 && NearPt(ON_Point::Cast(o.back())->point, ON_3dPoint(-2, 3, 0)));
+  });
+  Case("ArrayLinear", "_Point 0,0\n_SelAll _ArrayLinear 5 0,0 2,0", [](Ctx& c) {
+    CHECK(c.Objects().size() == 5);
+    CHECK(Near(c.BBox().m_max.x, 8.0));
+  });
+  Case("Array", "_Point 0,0\n_SelAll _Array 3 2 1 5 5 5", [](Ctx& c) { CHECK(c.Objects().size() == 6); });
+  Case("ArrayPolar", "_Point 10,0\n_SelAll _ArrayPolar 0,0 4", [](Ctx& c) {
+    CHECK(c.Objects().size() == 4);
+    CHECK(NearPt(ON_Point::Cast(c.Objects()[2])->point, ON_3dPoint(-10, 0, 0), 1e-9));
+  });
+
+  Case("Join", "_Line 0,0 10,0\n_Line 10,0 10,10\n_Line 10,10 0,10\n_SelCrv _Join", [](Ctx& c) {
+    CHECK(c.Objects().size() == 1);
+    auto* pc = ON_PolyCurve::Cast(c.Last());
+    CHECK(pc && pc->Count() == 3);
+  });
+  Case("Explode_polyline", "_Rectangle 0,0 10,10\n_SelCrv _Explode", [](Ctx& c) {
+    CHECK(c.Objects().size() == 4);
+  });
+  Case("Explode_box", "_Box 0,0,0 10,10 10\n_SelAll _Explode", [](Ctx& c) {
+    CHECK(c.Objects().size() == 6);
+  });
+  Case("Delete_Undo_Redo", "_Line 0,0 1,0\n_SelAll _Delete\n_Undo", [](Ctx& c) {
+    CHECK(c.Objects().size() == 1);
+    CHECK(c.e.Run("_Redo"));
+    CHECK(c.Objects().empty());
+  });
+  Case("Flip", "_Line 0,0 10,0\n_SelAll _Flip", [](Ctx& c) {
+    auto* l = ON_LineCurve::Cast(c.Last());
+    CHECK(l && NearPt(l->PointAtStart(), ON_3dPoint(10, 0, 0)));
+  });
+  Case("Hide_Show", "_Point 0,0\n_Point 1,1\n_SelLast _Hide", [](Ctx& c) {
+    CHECK(c.e.AllObjectIds(false).size() == 1);
+    CHECK(c.e.Run("_Show"));
+    CHECK(c.e.AllObjectIds(false).size() == 2);
+  });
+  Case("Layers", "-_Layer _New Muri\n-_Layer _Current Muri\n_Line 0,0 5,0\n_SelNone\n_SelLayer Muri\n_What", [](Ctx& c) {
+    CHECK(c.e.Selection().size() == 1);
+    CHECK(c.log.str().find("livello: Muri") != std::string::npos);
+  });
+  Case("ChangeLayer", "-_Layer _New A\n_Point 0,0\n_SelAll _ChangeLayer A\n_SelNone _SelLayer A", [](Ctx& c) {
+    CHECK(c.e.Selection().size() == 1);
+  });
+#ifdef CAD_WITH_OCCT
+  auto number = [](Ctx& c, const char* label) {
+    const std::string log = c.log.str();
+    auto p = log.rfind(label);
+    return p == std::string::npos ? -1.0 : std::atof(log.c_str() + p + std::strlen(label));
+  };
+  auto isSolid = [](const ON_Geometry* g) { auto* b = ON_Brep::Cast(g); return b && b->IsSolid(); };
+  Case("BooleanUnion", "_Box 0,0,0 10,10 10\n_Box 5,5,5 15,15 10\n_SelAll _BooleanUnion\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(c.Objects().size() == 1 && isSolid(c.Last()));
+    CHECK(Near(number(c, "Volume = "), 2000.0 - 125.0, 1e-6));
+  });
+  Case("BooleanDifference", "_Box 0,0,0 10,10 10\n_Cylinder 5,5,-1 2 12\n_SelAll _BooleanDifference\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(c.Objects().size() == 1 && isSolid(c.Last()));
+    CHECK(Near(number(c, "Volume = "), 1000.0 - ON_PI * 4.0 * 10.0, 1e-4));
+  });
+  Case("BooleanIntersection", "_Box 0,0,0 10,10 10\n_Box 5,5,5 15,15 10\n_SelAll _BooleanIntersection\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(Near(number(c, "Volume = "), 125.0, 1e-6));
+  });
+  Case("FilletEdge", "_Box 0,0,0 10,10 10\n_SelAll _FilletEdge 1\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(isSolid(c.Last()));
+    // cubo con spigoli raccordati: 1000 - 12*(1 - pi/4)*10 ... meno gli angoli
+    // 1000 - 12 spigoli * 8 * (1 - pi/4) - 8 angoli * (1 - pi/6)
+    CHECK(Near(number(c, "Volume = "), 1000.0 - 96.0 * (1.0 - ON_PI / 4.0) - 8.0 * (1.0 - ON_PI / 6.0), 1e-4));
+  });
+  Case("ChamferEdge", "_Box 0,0,0 10,10 10\n_SelAll _ChamferEdge 1\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(isSolid(c.Last()));
+    // 1000 - 12 spigoli * 8 * 1/2 - 8 angoli * 5/6
+    CHECK(Near(number(c, "Volume = "), 1000.0 - 48.0 - 8.0 * 5.0 / 6.0, 1e-6));
+  });
+  Case("Offset_circle_out", "_Circle 0,0 5\n_SelAll _Offset 2 20,0", [](Ctx& c) {
+    CHECK(c.Objects().size() == 2);
+    ON_BoundingBox b; c.Last()->GetTightBoundingBox(b);
+    CHECK(Near(b.m_max.x, 7.0, 1e-6));
+  });
+  Case("Offset_circle_in", "_Circle 0,0 5\n_SelAll _Offset 2 0,0", [](Ctx& c) {
+    ON_BoundingBox b; c.Last()->GetTightBoundingBox(b);
+    CHECK(Near(b.m_max.x, 3.0, 1e-6));
+  });
+  Case("Offset_rectangle", "_Rectangle 0,0 10,10\n_SelAll _Offset 1 20,20", [](Ctx& c) {
+    ON_BoundingBox b; c.Last()->GetTightBoundingBox(b);
+    CHECK(Near(b.m_max.x, 11.0, 1e-6) && Near(b.m_min.y, -1.0, 1e-6));
+  });
+  Case("Loft", "_Circle 0,0,0 5\n_Circle 0,0,10 3\n_SelCrv _Loft", [](Ctx& c) {
+    auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->m_F.Count() == 1);
+  });
+  Case("Pipe", "_Line 0,0,0 0,0,10\n_SelAll _Pipe 1\n_SelPolysrf _Volume", [&](Ctx& c) {
+    CHECK(isSolid(c.Last()));
+    CHECK(Near(number(c, "Volume = "), ON_PI * 10.0, 1e-3));
+  });
+  Case("Sweep1", "_Line 0,0,0 0,20,0\n_Circle 0,0,0 3\n_SelCrv _Sweep1", [](Ctx& c) {
+    CHECK(ON_Brep::Cast(c.Last()) != nullptr);
+  });
+  Case("Intersect", "_Sphere 0,0,0 5\n_Plane -10,-10,0 10,10\n_SelAll _Intersect", [](Ctx& c) {
+    auto* cc = ON_Curve::Cast(c.Last());
+    CHECK(cc && cc->IsClosed());
+    ON_BoundingBox b; if (cc) cc->GetTightBoundingBox(b);
+    CHECK(Near(b.m_max.x, 5.0, 1e-3));
+  });
+  Case("Split", "_Box 0,0,0 10,10 10\n_Plane -5,-5,5 15,15\n_SelPolysrf _SelSrf _Split", [](Ctx& c) {
+    int solids = 0;
+    for (auto* g : c.Objects()) if (auto* b = ON_Brep::Cast(g); b && b->IsSolid()) solids++;
+    CHECK(solids == 2);
+  });
+  Case("Mesh", "_Sphere 0,0,0 5\n_SelAll _Mesh", [](Ctx& c) {
+    auto* m = ON_Mesh::Cast(c.Last());
+    CHECK(m && m->FaceCount() > 50 && m->IsClosed());
+  });
+  Case("Area_sphere", "_Sphere 0,0,0 5\n_SelAll _Area", [&](Ctx& c) {
+    CHECK(Near(number(c, "Area = "), 4.0 * ON_PI * 25.0, 1e-3));
+  });
+  Case("Volume_torus", "_Torus 0,0,0 10 2\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(Near(number(c, "Volume = "), 2.0 * ON_PI * ON_PI * 10.0 * 4.0, 1e-2));
+  });
+  // --- Trim, Extend, Fillet, Chamfer, Cap, Shell, BooleanSplit ---
+  Case("Trim_line", "_Line 0,0 10,0\n_Line 5,-5 5,5\n_SelLast _Trim 8,0", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 2 && Near(L[0], 5.0, 1e-6) && Near(L[1], 10.0, 1e-6));
+    CHECK(ON_LineCurve::Cast(c.Objects()[0]) || ON_LineCurve::Cast(c.Objects()[1]));
+  });
+  Case("Trim_middle", "_Line 0,0 10,0\n_Line 3,-5 3,5\n_Line 7,-5 7,5\n_SelNone _SelAll _Trim 5,0", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 4 && Near(L[0], 3.0, 1e-6) && Near(L[1], 3.0, 1e-6));
+  });
+  Case("Trim_circle_seam", "_Circle 0,0 5\n_Line -10,0 10,0\n_SelLast _Trim 0,-5", [](Ctx& c) {
+    const ON_ArcCurve* arc = nullptr;
+    for (auto* g : c.Objects()) if (auto* a = ON_ArcCurve::Cast(g)) arc = a;
+    CHECK(arc && Near(Len(arc), 5.0 * ON_PI, 1e-4));
+    if (arc) CHECK(arc->PointAt(arc->Domain().Mid()).y > 4.9);
+  });
+  Case("Trim_circle_inner", "_Circle 0,0 5\n_Line -10,3 10,3\n_Line -10,-3 10,-3\n_SelCrv _Trim 5,0", [](Ctx& c) {
+    // tolto l'arco destro tra le due linee: resta un pezzo unico che passa a sinistra
+    int arcs = 0; double len = 0;
+    for (auto* g : c.Objects()) if (!ON_LineCurve::Cast(g) && ON_Curve::Cast(g)) { arcs++; len = Len(g); }
+    CHECK(arcs == 1 && Near(len, 10.0 * ON_PI - 10.0 * std::atan2(3.0, 4.0), 1e-4));
+  });
+  Case("Trim_by_surface", "_Line 0,0,-5 0,0,5\n_Plane -5,-5 5,5\n_SelSrf _Trim 0,0,3", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 1 && Near(L[0], 5.0, 1e-6));
+  });
+  Case("Extend_line", "_Line 0,0 5,0\n_Line 10,-5 10,5\n_SelLast _Extend 4,0", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 2 && Near(L[0], 10.0, 1e-6) && Near(L[1], 10.0, 1e-6));
+  });
+  Case("Extend_start", "_Line 5,0 10,0\n_Line 0,-5 0,5\n_SelLast _Extend 6,0", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 2 && Near(L[0], 10.0, 1e-6) && Near(L[1], 10.0, 1e-6));
+  });
+  Case("Extend_arc", "_Arc 0,0 10,0 0,10\n_Line -5,0 -5,20\n_SelLast _Extend 1,10", [](Ctx& c) {
+    const ON_ArcCurve* arc = nullptr;
+    for (auto* g : c.Objects()) if (auto* a = ON_ArcCurve::Cast(g)) arc = a;
+    CHECK(arc && Near(Len(arc), 10.0 * 2.0 * ON_PI / 3.0, 1e-4));
+  });
+  Case("Fillet_lines", "_Line 0,0 10,0\n_Line 0,0 0,10\n_Fillet Radius=2 8,0 0,8", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 3 && Near(L[0], ON_PI, 1e-4) && Near(L[1], 8.0, 1e-6) && Near(L[2], 8.0, 1e-6));
+    int arcs = 0;
+    for (auto* g : c.Objects()) if (auto* a = ON_ArcCurve::Cast(g)) { arcs++; CHECK(Near(a->m_arc.Radius(), 2.0, 1e-9)); }
+    CHECK(arcs == 1);
+  });
+  Case("Fillet_radius0_extends", "_Line 0,0 10,0\n_Line 12,2 12,10\n_Fillet Radius=0 5,0 12,5", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 2 && Near(L[0], 10.0, 1e-6) && Near(L[1], 12.0, 1e-6));
+  });
+  Case("Chamfer_lines", "_Line 0,0 10,0\n_Line 0,0 0,10\n_Chamfer Distances=2,3 8,0 0,8", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 3 && Near(L[0], std::sqrt(13.0), 1e-6) && Near(L[1], 7.0, 1e-6) && Near(L[2], 8.0, 1e-6));
+  });
+  Case("Cap", "_Circle 0,0 5\n_SelCrv _ExtrudeCrv 10\n_SelNone _SelSrf _SelPolysrf _Cap\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(isSolid(c.Last()));
+    CHECK(Near(number(c, "Volume = "), ON_PI * 25.0 * 10.0, 1e-3));
+  });
+  Case("Shell", "_Box 0,0,0 10,10 10\n_SelAll _Shell Thickness=1 5,5,10 _Enter\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(c.Objects().size() == 1 && isSolid(c.Last()));
+    CHECK(Near(number(c, "Volume = "), 1000.0 - 8.0 * 8.0 * 9.0, 1e-4));
+  });
+  Case("BooleanSplit", "_Box 0,0,0 10,10 10\n_Box 5,5,5 15,15 10\n_SelAll _BooleanSplit\n_SelNone _SelPolysrf _Volume", [&](Ctx& c) {
+    int solids = 0;
+    for (auto* g : c.Objects()) if (isSolid(g)) solids++;
+    CHECK(solids == 2 && c.Objects().size() == 3);  // due pezzi B-rep del primo box + il box di taglio (estrusione)
+    CHECK(Near(number(c, "Volume = "), 1000.0 + 1000.0, 1e-4));
+  });
+  Case("DupBorder", "_Plane 0,0 10,5\n_SelSrf _DupBorder", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    if (L.size() != 1 || !Near(L[0], 30.0, 1e-2)) std::printf("%s n=%zu L=%g\n", c.log.str().c_str(), L.size(), L.empty() ? 0.0 : L[0]);
+    CHECK(L.size() == 1 && Near(L[0], 30.0, 1e-2));  // campionamento: gli angoli vengono smussati
+  });
+#endif
+
+  // Modalita' interattiva: il comando resta in attesa finche' mancano dati.
+  {
+    std::printf("Interactive\n");
+    Ctx c;
+    c.e.interactive = true;
+    std::string pending;
+    CHECK(c.e.RunInteractive("_Line", &pending) == Engine::Result::NeedsInput);
+    CHECK(pending == "_Line" && c.e.Prompt() == "inizio della linea");
+    CHECK(c.e.RunInteractive(pending + " 0,0", &pending) == Engine::Result::NeedsInput);
+    CHECK(c.e.Prompt() == "fine della linea" && c.Objects().empty());
+    CHECK(c.e.RunInteractive(pending + " 10,0", &pending) == Engine::Result::Done);
+    CHECK(c.Objects().size() == 1 && pending.empty());
+    // Polyline: i punti si accumulano finche' non arriva Invio
+    CHECK(c.e.RunInteractive("_Polyline 0,0 5,0 5,5", &pending) == Engine::Result::NeedsInput);
+    CHECK(c.Objects().size() == 1);
+    CHECK(c.e.RunInteractive(pending + " _Enter", &pending) == Engine::Result::Done);
+    CHECK(c.Objects().size() == 2);
+    // un comando completato prima di uno in sospeso non viene ripetuto
+    CHECK(c.e.RunInteractive("_Point 1,1 _Circle 0,0", &pending) == Engine::Result::NeedsInput);
+    CHECK(pending == "_Circle 0,0" && c.Objects().size() == 3);
+    CHECK(c.e.RunInteractive("_NonEsiste", &pending) == Engine::Result::Error);
+    // Senza selezione il comando chiede gli oggetti (come Rhino) e riparte dopo la selezione
+    c.e.ClearSelection();
+    CHECK(c.e.RunInteractive("_Move", &pending) == Engine::Result::NeedsInput);
+    CHECK(pending == "_Move" && c.e.PendingInputKind() == Engine::InputKind::Objects);
+    c.e.Select(c.e.AllObjectIds().front());
+    CHECK(c.e.RunInteractive(pending, &pending) == Engine::Result::NeedsInput);
+    CHECK(c.e.PendingInputKind() == Engine::InputKind::Point);
+#ifdef CAD_WITH_OCCT
+    // Trim chiede un clic sull'oggetto (Pick), non un punto qualsiasi
+    CHECK(c.e.RunInteractive("_Trim", &pending) == Engine::Result::NeedsInput);
+    CHECK(c.e.PendingInputKind() == Engine::InputKind::Pick);
+#endif
+  }
+
+  Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
+  Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);
+
+  ShutdownLibrary();
+  std::printf("\n%d controlli, %d falliti\n", g_checks, g_failures);
+  return g_failures ? 1 : 0;
+}

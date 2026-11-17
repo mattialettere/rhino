@@ -1,0 +1,15 @@
+; Esempio: modello di prova con i comandi disponibili
+-_Layer _New Solidi
+-_Layer _Current Solidi
+_Box 0,0,0 40,30 5
+_Cylinder 20,15,5 6 20
+_Sphere 20,15,30 6
+-_Layer _New Curve
+-_Layer _Current Curve
+_Circle 80,15 10
+_SelNone _SelLast _ExtrudeCrv _Solid=_Yes 15
+_Polygon NumSides=6 120,15 130,15
+_InterpCrv 0,60 20,80 40,60 60,80 80,60
+_SelNone _SelLast _ArrayLinear 4 0,0 0,10
+_Torus 160,15,5 12 3
+_SubDBox 190,0,0 215,25 25
