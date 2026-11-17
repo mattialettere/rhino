@@ -14,24 +14,24 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 
 | Categoria | Fatti / totali |
 |---|---|
-| Punti | 2 / 9 |
+| Punti | 3 / 9 |
 | Curve: linee e polilinee | 2 / 11 |
-| Curve: forme | 5 / 19 |
-| Curve: forme libere | 5 / 18 |
-| Curve da oggetti | 2 / 14 |
-| Superfici | 8 / 29 |
-| Solidi | 13 / 24 |
+| Curve: forme | 7 / 19 |
+| Curve: forme libere | 6 / 18 |
+| Curve da oggetti | 7 / 14 |
+| Superfici | 9 / 29 |
+| Solidi | 14 / 24 |
 | SubD | 1 / 23 |
 | Mesh | 1 / 19 |
 | Trasformazioni | 9 / 30 |
-| Modifica | 13 / 34 |
+| Modifica | 16 / 34 |
 | Selezione | 11 / 19 |
-| Blocchi | 0 / 6 |
+| Blocchi | 3 / 6 |
 | Livelli e proprieta' | 2 / 11 |
-| Annotazioni | 0 / 13 |
-| Analisi | 3 / 15 |
+| Annotazioni | 9 / 14 |
+| Analisi | 8 / 15 |
 | File | 4 / 7 |
-| **Totale** | **81 / 301** |
+| **Totale** | **112 / 302** |
 
 ## Punti
 
@@ -41,7 +41,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Points | ✔ |
 | PointGrid | ⬜ |
 | DivideCrv | 🧱 |
-| Divide | 🧱 |
+| Divide | ✔ |
 | Measure | 🧱 |
 | ExtractPt | ⬜ |
 | ExtractControlPoints | ⬜ |
@@ -83,8 +83,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | EllipseDiameter | ⬜ |
 | Parabola | ⬜ |
 | Hyperbola | ⬜ |
-| Spiral | ⬜ |
-| Helix | ⬜ |
+| Spiral | ✔ |
+| Helix | ✔ |
 | ConicCurve | ⬜ |
 
 ## Curve: forme libere
@@ -104,7 +104,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Chamfer | ✔ |
 | Offset | ✔ |
 | OffsetCrvOnSrf | 🧱 |
-| Rebuild | 🧱 |
+| Rebuild | ✔ |
 | RebuildCrvNonUniform | 🧱 |
 | Fair | 🧱 |
 | Smooth | ⬜ |
@@ -114,19 +114,19 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 
 | Comando | Stato |
 |---|---|
-| Project | 🧱 |
+| Project | ✔ |
 | Pull | 🧱 |
-| DupEdge | ⬜ |
+| DupEdge | ✔ |
 | DupBorder | ✔ |
 | DupFaceBorder | ⬜ |
-| Contour | 🧱 |
-| Section | 🧱 |
+| Contour | ✔ |
+| Section | ✔ |
 | Silhouette | 🧱 |
 | Intersect | ✔ |
 | CreateUVCrv | ⬜ |
 | ExtractIsocurve | ⬜ |
 | ExtractWireframe | ⬜ |
-| ProjectToCPlane | ⬜ |
+| ProjectToCPlane | ✔ |
 | Make2D | 🧱 |
 
 ## Superfici
@@ -150,7 +150,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ExtrudeCrvAlongCrv | 🧱 |
 | ExtrudeCrvToPoint | ⬜ |
 | ExtrudeCrvTapered | 🧱 |
-| ExtrudeSrf | 🧱 |
+| ExtrudeSrf | ✔ |
 | Pipe | ✔ |
 | OffsetSrf | ✔ |
 | FilletSrf | 🧱 |
@@ -189,7 +189,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Shell | ✔ |
 | MergeAllFaces | ⬜ |
 | MoveFace | 🧱 |
-| ExtractSrf | ⬜ |
+| ExtractSrf | ✔ |
 | Slab | 🧱 |
 
 ## SubD
@@ -293,8 +293,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Flip | ✔ |
 | Dir | ⬜ |
 | Reverse | ⬜ |
-| Group | ⬜ |
-| Ungroup | ⬜ |
+| Group | ✔ |
+| Ungroup | ✔ |
 | Hide | ✔ |
 | Show | ✔ |
 | Lock | ✔ |
@@ -303,7 +303,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Redo | ✔ |
 | CloseCrv | ⬜ |
 | Seam | 🧱 |
-| ChangeDegree | 🧱 |
+| ChangeDegree | ✔ |
 | InsertKnot | ⬜ |
 | RemoveKnot | ⬜ |
 | InsertControlPoint | 🧱 |
@@ -346,9 +346,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 
 | Comando | Stato |
 |---|---|
-| Block | ⬜ |
-| Insert | ⬜ |
-| ExplodeBlock | ⬜ |
+| Block | ✔ |
+| Insert | ✔ |
+| ExplodeBlock | ✔ |
 | BlockEdit | ⬜ |
 | BlockManager | ⬜ |
 | ReplaceBlock | ⬜ |
@@ -373,16 +373,17 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 
 | Comando | Stato |
 |---|---|
-| Text | ⬜ |
+| Text | ✔ |
 | TextObject | ⬜ |
-| Dim | ⬜ |
-| DimAligned | ⬜ |
-| DimRotated | ⬜ |
-| DimAngle | ⬜ |
-| DimRadius | ⬜ |
-| DimDiameter | ⬜ |
+| Dim | ✔ |
+| DimAligned | ✔ |
+| DimRotated | ✔ |
+| DimAngle | ✔ |
+| DimRadius | ✔ |
+| DimDiameter | ✔ |
+| Centermark | ✔ |
 | DimOrdinate | ⬜ |
-| Leader | ⬜ |
+| Leader | ✔ |
 | Dot | ⬜ |
 | Hatch | 🧱 |
 | DimStyle | ⬜ |
@@ -392,14 +393,14 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | What | ✔ |
-| Distance | ⬜ |
-| Length | ⬜ |
+| Distance | ✔ |
+| Length | ✔ |
 | Area | ✔ |
 | Volume | ✔ |
-| Angle | ⬜ |
-| Radius | ⬜ |
+| Angle | ✔ |
+| Radius | ✔ |
 | EvaluatePt | ⬜ |
-| BoundingBox | ⬜ |
+| BoundingBox | ✔ |
 | CurvatureGraph | 🧱 |
 | Zebra | 🧱 |
 | Draft | 🧱 |

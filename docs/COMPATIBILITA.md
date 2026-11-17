@@ -33,7 +33,7 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 | **Blocchi** (definizioni e istanze) | 🟡 | 🟡 | 🟡 | ⬜ | definizione: nome, tipo, numero oggetti; istanza: bytes | Un solo file d'esempio (Rhino 4). Blocchi collegati e annidati non testati |
 | **Livelli** | 🟡 | 🟡 | 🟡 | ⬜ | percorso completo, colore, colore di stampa, spessore di stampa, visibile, bloccato, tipo di linea | Colori per viewport e sezioni non confrontati |
 | **Materiali** | 🟡 | 🟡 | 🟡 | ⬜ | nome, diffuso, speculare, lucentezza, trasparenza, numero texture | I materiali "render content" di Rhino 8 (PBR ecc.) non sono confrontati: ⬜ |
-| **Annotazioni** (testo, quote, leader, punti di testo) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Quote di Rhino 4/5: 🟠 D-006 |
+| **Annotazioni** (testo, quote, leader, punti di testo) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Quote di Rhino 4/5: 🟠 D-006. Creazione con Text, Dim*, Leader, Centermark: testata (salva e rilegge identico), disegno nelle viste semplificato D-028 |
 | Stili di quota | 🟡 | 🟡 | 🟡 | ⬜ | nome, altezza testo, frecce, scala | Solo alcuni campi |
 | Retini e motivi retino | 🟡 | 🟡 | 🟡 | ⬜ | bytes / nome | |
 | Tipi di linea | 🟡 | 🟡 | 🟡 | ⬜ | nome, segmenti, lunghezza motivo | |
