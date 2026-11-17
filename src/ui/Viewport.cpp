@@ -306,6 +306,11 @@ void Viewport::paintGL() {
         for (const auto& p : wire) gl->glVertex3d(p.x, p.y, p.z);
         gl->glEnd();
       }
+      if (!obj.triangles.empty()) {
+        gl->glBegin(GL_TRIANGLES);
+        for (const auto& p : obj.triangles) gl->glVertex3d(p.x, p.y, p.z);
+        gl->glEnd();
+      }
       gl->glPointSize(5.0f);
       gl->glBegin(GL_POINTS);
       for (const auto& p : obj.points) gl->glVertex3d(p.x, p.y, p.z);

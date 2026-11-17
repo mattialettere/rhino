@@ -14,6 +14,7 @@ void Arrow(AnnotationDisplay& out, const ON_3dPoint& tip, ON_3dVector dir, const
   const ON_3dPoint base = tip - dir * size;
   const ON_3dPoint a = base + side * (size / 6.0), b = base - side * (size / 6.0);
   out.wires.push_back({tip, a, b, tip});
+  out.triangles.insert(out.triangles.end(), {tip, a, b});
 }
 
 void Line(AnnotationDisplay& out, const ON_3dPoint& a, const ON_3dPoint& b) {

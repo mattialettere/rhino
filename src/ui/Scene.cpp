@@ -202,6 +202,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
       d.wires.push_back(std::move(w));
     }
     for (auto& l : ad.labels) d.labels.push_back(std::move(l));
+    d.triangles.insert(d.triangles.end(), ad.triangles.begin(), ad.triangles.end());
     d.snapPoints.push_back({an->Plane().origin, SnapKind::Point});
   } else if (const auto* ir = ON_InstanceRef::Cast(g)) {
     // Blocco: geometria della definizione trasformata (anche blocchi annidati)

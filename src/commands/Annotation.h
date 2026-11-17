@@ -20,6 +20,7 @@ struct AnnotationLabel {
 struct AnnotationDisplay {
   std::vector<std::vector<ON_3dPoint>> wires;
   std::vector<AnnotationLabel> labels;
+  std::vector<ON_3dPoint> triangles;  // frecce piene: 3 punti per triangolo
 };
 
 // Stile di quota "genitore" dell'annotazione (quello del documento con il suo id,

@@ -22,6 +22,7 @@ struct DisplayObject {
   std::vector<std::vector<ON_3dPoint>> wires;
   std::vector<ON_3dPoint> points;
   std::vector<AnnotationLabel> labels;   // testi di testi e quote
+  std::vector<ON_3dPoint> triangles;     // frecce piene delle quote
   std::vector<SnapPoint> snapPoints;   // estremi, punti medi, centri, quadranti, nodi, vertici
   std::shared_ptr<ON_Mesh> shaded;     // nullptr se non ombreggiabile
   ON_Color color = ON_Color::Black;
