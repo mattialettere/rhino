@@ -3,6 +3,7 @@
 // Rendering OpenGL 1.1 (funziona su qualsiasi scheda/driver Windows).
 #include "ui/Scene.h"
 #include <QOpenGLWidget>
+#include <QPainter>
 #include <QPoint>
 #include <functional>
 
@@ -75,6 +76,7 @@ protected:
 private:
   ON_3dPoint PointUnderMouse(const QPoint& pos, bool* snapped = nullptr, bool allowSnap = true, QString* label = nullptr) const;
   bool FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) const;
+  void DrawLabels(QPainter& p) const;
   void ShowViewMenu(const QPoint& at);
   std::vector<ON_UUID> PickAt(const QPoint& pos) const;
   // Punto sull'oggetto sotto il mouse (curva entro 8 pixel, oppure superficie colpita dal raggio).

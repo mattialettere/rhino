@@ -328,6 +328,7 @@ void Viewport::paintGL() {
   // Sovrapposizioni 2D: titolo, icona assi, rettangolo di selezione, snap
   QPainter p(this);
   p.setRenderHint(QPainter::Antialiasing);
+  DrawLabels(p);
   p.setPen(QColor(30, 30, 30));
   QFont f = p.font(); f.setBold(true); p.setFont(f);
   QString title = KindName(m_cam.kind);
@@ -375,6 +376,44 @@ void Viewport::paintGL() {
   if (hasFocus()) {
     p.setPen(QPen(QColor(60, 60, 60), 2)); p.setBrush(Qt::NoBrush);
     p.drawRect(rect().adjusted(1, 1, -1, -1));
+  }
+}
+
+// Testi di testi, quote e direttrici: ogni riga e' disegnata con una
+// trasformazione affine che porta il sistema del testo (base, direzione x/y)
+// sullo schermo, cosi' ruota e scala con la vista come in Rhino.
+void Viewport::DrawLabels(QPainter& p) const {
+  const int W = width(), H = height();
+  for (const auto& obj : m_scene.Objects()) {
+    if (obj.labels.empty()) continue;
+    QColor c = obj.selected ? QColor(255, 255, 0) : obj.locked ? QColor(110, 110, 110)
+                                                              : QColor(obj.color.Red(), obj.color.Green(), obj.color.Blue());
+    for (const auto& L : obj.labels) {
+      const QStringList lines = QString::fromUtf8(L.text.c_str()).split('\n');
+      for (int i = 0; i < lines.size(); i++) {
+        const ON_3dPoint o = L.origin - L.ydir * (i * 1.6 * L.height);
+        double ox, oy, xx, xy, yx, yy;
+        if (!m_cam.Project(o, W, H, ox, oy) || !m_cam.Project(o + L.xdir * L.height, W, H, xx, xy) ||
+            !m_cam.Project(o + L.ydir * L.height, W, H, yx, yy)) continue;
+        const double px = std::hypot(yx - ox, yy - oy);
+        if (px < 2.0 || px > 4000) continue;  // troppo piccolo o enorme: non leggibile
+        const double F = 100.0;  // corpo del carattere di riferimento, in pixel
+        QFont font("Arial");
+        font.setPixelSize(int(F));
+        const QFontMetricsF fm(font);
+        const double capH = fm.capHeight() > 0 ? fm.capHeight() : 0.7 * F;  // altezza testo Rhino = maiuscole
+        const double k = 1.0 / capH;
+        QTransform t((xx - ox) * k, (xy - oy) * k, -(yx - ox) * k, -(yy - oy) * k, ox, oy);
+        const double wdt = fm.horizontalAdvance(lines[i]);
+        const double x0 = L.halign == 1 ? -wdt / 2 : L.halign == 2 ? -wdt : 0;
+        p.save();
+        p.setTransform(t);
+        p.setFont(font);
+        p.setPen(c);
+        p.drawText(QPointF(x0, 0), lines[i]);
+        p.restore();
+      }
+    }
   }
 }
 
@@ -569,6 +608,16 @@ std::vector<ON_UUID> Viewport::PickAt(const QPoint& pos) const {
       double sx, sy;
       if (m_cam.Project(p, width(), height(), sx, sy)) dmin = std::min(dmin, std::hypot(sx - pos.x(), sy - pos.y()));
     }
+    for (const auto& L : obj.labels) {  // testo: clic dentro il riquadro stimato
+      const double wd = 0.75 * L.height * std::max<size_t>(1, L.text.size());
+      const double x0 = L.halign == 1 ? -wd / 2 : L.halign == 2 ? -wd : 0;
+      for (double f = 0; f <= 1.0; f += 0.5) {
+        const ON_3dPoint a = L.origin + L.xdir * x0 + L.ydir * (f * L.height), b = a + L.xdir * wd;
+        double ax, ay, bx, by;
+        if (m_cam.Project(a, width(), height(), ax, ay) && m_cam.Project(b, width(), height(), bx, by))
+          dmin = std::min(dmin, segDist(pos.x(), pos.y(), ax, ay, bx, by));
+      }
+    }
     if (dmin < best) { best = dmin; bestId = obj.id; }
   }
   if (ON_UuidIsNil(bestId)) return {};
@@ -591,6 +640,7 @@ std::vector<ON_UUID> Viewport::PickWindow(const QPoint& a, const QPoint& b) cons
     };
     for (const auto& w : obj.wires) for (const auto& p : w) test(p);
     for (const auto& p : obj.points) test(p);
+    for (const auto& L : obj.labels) test(L.origin);
     if (crossing ? any : (all && (any))) out.push_back(obj.id);
   }
   return out;

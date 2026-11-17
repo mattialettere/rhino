@@ -1,6 +1,7 @@
 // Test dei comandi: ogni caso esegue uno script e controlla il modello.
 // Alla fine ogni modello viene salvato in formato Rhino 8, riletto e
 // confrontato (nessuna differenza ammessa).
+#include "commands/Annotation.h"
 #include "commands/Engine.h"
 #include "core/ModelCompare.h"
 #include <cmath>
@@ -541,6 +542,78 @@ int main(int argc, char** argv) {
     });
     Case("ExplodeBlock", "_Box 0,0,0 2,2 2\n_SelAll _Block 0,0,0\n_SelAll _ExplodeBlock", [](Ctx& c) {
       CHECK(c.Objects().size() == 1 && ON_Extrusion::Cast(c.Last()));
+    });
+  }
+
+  // Annotazioni: oggetti openNURBS, misure, salvataggio e geometria di visualizzazione
+  {
+    std::printf("Annotazioni\n");
+    auto display = [](Ctx& c, const ON_Geometry* g) {
+      AnnotationDisplay d;
+      const auto* a = ON_Annotation::Cast(g);
+      CHECK(a && BuildAnnotationDisplay(c.doc.Model(), *a, d));
+      return d;
+    };
+    Case("Text", "_Text 5,5 \"Pianta piano terra\" Height=3", [&](Ctx& c) {
+      const auto* t = ON_Text::Cast(c.Last());
+      CHECK(t && ToUtf8(t->PlainText()) == "Pianta piano terra");
+      CHECK(t && Near(t->TextHeight(&ON_DimStyle::Default), 3.0));
+      auto d = display(c, c.Last());
+      CHECK(d.labels.size() == 1 && d.labels[0].text == "Pianta piano terra");
+      // testo allineato in alto a sinistra: linea di base un'altezza sotto il punto
+      CHECK(!d.labels.empty() && NearPt(d.labels[0].origin, ON_3dPoint(5, 2, 0), 1e-9) && Near(d.labels[0].height, 3.0));
+    });
+    Case("Text_multiriga", "_Text 0,0 \"riga uno\\nriga due\"", [](Ctx& c) {
+      const auto* t = ON_Text::Cast(c.Last());
+      CHECK(t && ToUtf8(t->PlainText()).find('\n') != std::string::npos);
+    });
+    Case("Dim_orizzontale", "_Dim 0,0 40,5 20,-8", [&](Ctx& c) {
+      const auto* d = ON_DimLinear::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 40.0, 1e-9));
+      auto v = display(c, c.Last());
+      CHECK(v.labels.size() == 1 && v.labels[0].text == "40.00" && v.wires.size() == 5);  // 2 estensioni, linea, 2 frecce
+      CHECK(!v.labels.empty() && Near(v.labels[0].xdir.x, 1.0, 1e-9));
+    });
+    Case("Dim_verticale", "_Dim 0,0 5,20 30,10", [&](Ctx& c) {
+      const auto* d = ON_DimLinear::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 20.0, 1e-9));
+      auto v = display(c, c.Last());
+      CHECK(!v.labels.empty() && Near(v.labels[0].xdir.y, 1.0, 1e-9));  // si legge dal basso in alto
+    });
+    Case("DimAligned", "_DimAligned 0,0 30,40 20,10", [](Ctx& c) {
+      const auto* d = ON_DimLinear::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 50.0, 1e-9) && d->Type() == ON::AnnotationType::Aligned);
+    });
+    Case("DimRotated", "_DimRotated 45 0,0 10,0 0,10", [](Ctx& c) {
+      const auto* d = ON_DimLinear::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 10.0 / std::sqrt(2.0), 1e-9));
+    });
+    Case("DimRadius", "_Circle 0,0 8\n_SelAll _DimRadius 10,10", [&](Ctx& c) {
+      const auto* d = ON_DimRadial::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 8.0, 1e-9) && d->Type() == ON::AnnotationType::Radius);
+      auto v = display(c, c.Last());
+      CHECK(v.labels.size() == 1 && v.labels[0].text == "R8.00");
+    });
+    Case("DimDiameter", "_Arc 0,0 5,0 0,5\n_SelAll _DimDiameter 10,2", [](Ctx& c) {
+      const auto* d = ON_DimRadial::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 10.0, 1e-9) && d->Type() == ON::AnnotationType::Diameter);
+    });
+    Case("DimAngle", "_DimAngle 0,0 10,0 0,10 5,5", [&](Ctx& c) {
+      const auto* d = ON_DimAngular::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), ON_PI / 2, 1e-9));
+      auto v = display(c, c.Last());
+      if (!v.labels.empty()) std::printf("  testo angolo: [%s]\n", v.labels[0].text.c_str());
+      CHECK(!v.labels.empty() && v.labels[0].text.rfind("90", 0) == 0);
+    });
+    Case("Leader", "_Leader 0,0 5,5 10,5 _Enter \"Nota\"", [&](Ctx& c) {
+      const auto* l = ON_Leader::Cast(c.Last());
+      CHECK(l && l->PointCount() == 3 && ToUtf8(l->PlainText()) == "Nota");
+      auto v = display(c, c.Last());
+      CHECK(v.wires.size() == 2 && v.labels.size() == 1);  // curva + freccia
+    });
+    Case("Centermark", "_Circle 3,4 6\n_SelAll _Centermark", [&](Ctx& c) {
+      CHECK(ON_Centermark::Cast(c.Last()) != nullptr);
+      CHECK(!display(c, c.Last()).wires.empty());
     });
   }
 

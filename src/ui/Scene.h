@@ -1,6 +1,7 @@
 #pragma once
 // Scena di visualizzazione: per ogni oggetto del modello le polilinee del
 // wireframe, i punti e (se disponibile) la mesh ombreggiata.
+#include "commands/Annotation.h"
 #include "commands/Engine.h"
 #include <map>
 #include <memory>
@@ -20,6 +21,7 @@ struct DisplayObject {
   ON_UUID id = ON_nil_uuid;
   std::vector<std::vector<ON_3dPoint>> wires;
   std::vector<ON_3dPoint> points;
+  std::vector<AnnotationLabel> labels;   // testi di testi e quote
   std::vector<SnapPoint> snapPoints;   // estremi, punti medi, centri, quadranti, nodi, vertici
   std::shared_ptr<ON_Mesh> shaded;     // nullptr se non ombreggiabile
   ON_Color color = ON_Color::Black;

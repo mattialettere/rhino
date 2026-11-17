@@ -183,6 +183,10 @@ void MainWindow::BuildMenus() {
                       {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}});
   addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}});
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}});
+  addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
+                      {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
+                      {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
+                      {"Segno del centro", "_Centermark"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
                          {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}});
@@ -256,6 +260,9 @@ QWidget* MainWindow::BuildToolTabs() {
   addTab("Strumenti mesh", {{"Mesh da NURBS", "_Mesh"}});
   addTab("Analizza", {{"Cos'è", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"}, {"Angolo", "_Angle"},
                       {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"}, {"Ingombro", "_BoundingBox"}});
+  addTab("Disegno", {{"Lineare", "_Dim"}, {"Allineata", "_DimAligned"}, {"Ruotata", "_DimRotated"},
+                     {"Raggio", "_DimRadius"}, {"Diametro", "_DimDiameter"}, {"Angolare", "_DimAngle"},
+                     {"Direttrice", "_Leader"}, {"Testo", "_Text"}, {"Segno del centro", "_Centermark"}});
   addTab("Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"},
                      {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
   return tabs;

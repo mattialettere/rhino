@@ -194,6 +194,15 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
     auto sm = it != m_meshCache.end() ? it->second : SubDMesh(*s);
     newCache[sig] = sm;
     AddShaded(d, sm);
+  } else if (const auto* an = ON_Annotation::Cast(g)) {
+    AnnotationDisplay ad;
+    BuildAnnotationDisplay(m_engine.Model(), *an, ad);
+    for (auto& w : ad.wires) {
+      d.snapPoints.push_back({w.front(), SnapKind::End});
+      d.wires.push_back(std::move(w));
+    }
+    for (auto& l : ad.labels) d.labels.push_back(std::move(l));
+    d.snapPoints.push_back({an->Plane().origin, SnapKind::Point});
   } else if (const auto* ir = ON_InstanceRef::Cast(g)) {
     // Blocco: geometria della definizione trasformata (anche blocchi annidati)
     if (depth > 8) return;

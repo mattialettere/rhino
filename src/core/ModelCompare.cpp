@@ -1,3 +1,5 @@
+#include <cstdio>
+#include <cstdlib>
 #include "core/ModelCompare.h"
 #include <algorithm>
 #include <cmath>
@@ -38,7 +40,14 @@ std::string GeometryHash(const ON_Geometry& g) {
   if (!ar.WriteObject(*copy)) return "errore-serializzazione";
   ON_SHA1 sha;
   sha.AccumulateBytes(ar.Buffer(), ar.SizeOfArchive());
-  return static_cast<const char*>(sha.Hash().ToUTF8String(false));
+  std::string h = static_cast<const char*>(sha.Hash().ToUTF8String(false));
+  if (const char* dir = std::getenv("CAD_HASH_DUMP")) {  // diagnostica: byte serializzati per hash
+    if (FILE* f = std::fopen((std::string(dir) + "/" + h + ".bin").c_str(), "wb")) {
+      std::fwrite(ar.Buffer(), 1, ar.SizeOfArchive(), f);
+      std::fclose(f);
+    }
+  }
+  return h;
 }
 
 // Elenco dei dati utente attaccati a un oggetto (id del tipo di dato).
