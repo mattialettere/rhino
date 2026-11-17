@@ -71,10 +71,22 @@ find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets)
 if(Qt6_FOUND)
   message(STATUS "Qt ${Qt6_VERSION}: interfaccia grafica rhino-ui attiva")
   set(CMAKE_AUTOMOC ON)
+  # Qt 6 su Windows aggiunge la macro WIN32 anche a 64 bit, ma openNURBS
+  # si rifiuta di compilare con WIN32 definita in x64: la togliamo.
+  if(WIN32 AND TARGET Qt6::Platform)
+    get_target_property(_qt_defs Qt6::Platform INTERFACE_COMPILE_DEFINITIONS)
+    if(_qt_defs)
+      list(REMOVE_ITEM _qt_defs WIN32)
+      set_target_properties(Qt6::Platform PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_qt_defs}")
+    endif()
+  endif()
   add_executable(rhino-ui WIN32
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h)
   target_link_libraries(rhino-ui PRIVATE cadcore Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+  if(MSVC)
+    target_compile_options(rhino-ui PRIVATE /UWIN32)
+  endif()
 else()
   message(WARNING "Qt 6 non trovato: l'interfaccia grafica non verra' compilata")
 endif()

@@ -1,5 +1,10 @@
 #include "ui/MainWindow.h"
+#include <QAbstractItemView>
 #include <QAction>
+#include <QColorDialog>
+#include <QComboBox>
+#include <QFormLayout>
+#include <QPushButton>
 #include <QCompleter>
 #include <QStringListModel>
 #include <QTabWidget>
@@ -93,10 +98,59 @@ MainWindow::MainWindow(QWidget* parent)
   connect(m_layers, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* it) {
     Submit("-_Layer _Current \"" + it->text(0) + "\"");
   });
+  // Pannello Proprieta' come in Rhino 8: tipo, nome, livello, colore di
+  // visualizzazione modificabili; le modifiche passano dai comandi (annullabili).
   auto* propsDock = new QDockWidget("Proprietà", this);
+  auto* propsW = new QWidget;
+  auto* pv = new QVBoxLayout(propsW);
+  pv->setContentsMargins(4, 4, 4, 4);
+  m_propForm = new QWidget;
+  auto* form = new QFormLayout(m_propForm);
+  form->setContentsMargins(0, 0, 0, 0);
+  m_propType = new QLabel;
+  m_propName = new QLineEdit;
+  m_propLayer = new QComboBox;
+  m_propColor = new QComboBox;
+  m_propColor->addItems({"Da livello", "Da padre", "Personalizzato"});
+  m_propSwatch = new QPushButton;
+  m_propSwatch->setFixedSize(40, 20);
+  auto* colorRow = new QWidget;
+  auto* ch = new QHBoxLayout(colorRow);
+  ch->setContentsMargins(0, 0, 0, 0);
+  ch->addWidget(m_propColor, 1);
+  ch->addWidget(m_propSwatch);
+  form->addRow("Tipo", m_propType);
+  form->addRow("Nome", m_propName);
+  form->addRow("Livello", m_propLayer);
+  form->addRow("Colore", colorRow);
+  pv->addWidget(m_propForm);
   m_props = new QPlainTextEdit;
   m_props->setReadOnly(true);
-  propsDock->setWidget(m_props);
+  pv->addWidget(m_props, 1);
+  propsDock->setWidget(propsW);
+  connect(m_propName, &QLineEdit::editingFinished, this, [this] {
+    if (m_engine.Selection().empty() || !m_propName->isModified()) return;
+    m_propName->setModified(false);
+    const QString n = m_propName->text();
+    PropertyCommand("-_SetObjectName \"" + n + "\"");
+  });
+  connect(m_propLayer, &QComboBox::activated, this, [this](int) {
+    if (!m_engine.Selection().empty()) PropertyCommand("-_ChangeLayer \"" + m_propLayer->currentText() + "\"");
+  });
+  auto pickColor = [this] {
+    QColor c = QColorDialog::getColor(m_propSwatch->palette().button().color(), this, "Colore dell'oggetto");
+    if (c.isValid()) PropertyCommand(QString("-_SetObjectColor %1,%2,%3").arg(c.red()).arg(c.green()).arg(c.blue()));
+    else RefreshPanels();
+  };
+  connect(m_propColor, &QComboBox::activated, this, [this, pickColor](int i) {
+    if (m_engine.Selection().empty()) return;
+    if (i == 0) PropertyCommand("-_SetObjectColor ByLayer");
+    else if (i == 1) PropertyCommand("-_SetObjectColor ByParent");
+    else pickColor();
+  });
+  connect(m_propSwatch, &QPushButton::clicked, this, [this, pickColor] {
+    if (!m_engine.Selection().empty()) pickColor();
+  });
   addDockWidget(Qt::RightDockWidgetArea, propsDock);
 
   BuildMenus();
@@ -344,6 +398,13 @@ void MainWindow::ZoomExtentsAll() {
   for (auto* v : m_views) v->ZoomExtents();
 }
 
+// Modifica dal pannello Proprieta': annulla un eventuale comando in sospeso
+// (altrimenti il testo diventerebbe la sua risposta) e agisce sulla selezione.
+void MainWindow::PropertyCommand(const QString& cmd) {
+  if (!m_pending.empty()) Cancel();
+  Submit(cmd);
+}
+
 void MainWindow::Submit(const QString& text) {
   std::string t = text.trimmed().toStdString();
   if (t == "?") {
@@ -450,6 +511,46 @@ void MainWindow::RefreshPanels() {
   QString props;
   auto sel = m_engine.Selection();
   if (sel.empty()) props = "Nessun oggetto selezionato";
+  m_propForm->setEnabled(!sel.empty());
+  {
+    const QSignalBlocker b1(m_propName), b2(m_propLayer), b3(m_propColor);
+    m_propLayer->clear();
+    ONX_ModelComponentIterator lit(m, ON_ModelComponent::Type::Layer);
+    for (const ON_ModelComponent* c = lit.FirstComponent(); c; c = lit.NextComponent())
+      m_propLayer->addItem(QString::fromStdString(ToUtf8(ON_Layer::Cast(c)->Name())), ON_Layer::Cast(c)->Index());
+    // come Rhino: con valori diversi tra gli oggetti selezionati il campo resta vuoto ("varie")
+    QString type, name, layer;
+    int colorSrc = -1;
+    ON_Color color = ON_Color::Black;
+    bool first = true;
+    for (const auto& id : sel) {
+      const auto* o = m_engine.Object(id);
+      const ON_3dmObjectAttributes* a = o->Attributes(nullptr);
+      const ON_Geometry* g = o->Geometry(nullptr);
+      QString t = QString::fromStdString(DescribeObject(g)).section(',', 0, 0);
+      QString n = a ? QString::fromStdString(ToUtf8(a->Name())) : QString();
+      int li = a ? a->m_layer_index : 0;
+      const auto* lay = ON_Layer::Cast(m.ComponentFromIndex(ON_ModelComponent::Type::Layer, li).ModelComponent());
+      QString ln = lay ? QString::fromStdString(ToUtf8(lay->Name())) : QString();
+      int cs = !a ? 0 : a->ColorSource() == ON::color_from_layer ? 0 : a->ColorSource() == ON::color_from_parent ? 1 : 2;
+      ON_Color col = cs == 2 ? a->m_color : (lay ? lay->Color() : ON_Color::Black);
+      if (first) { type = t; name = n; layer = ln; colorSrc = cs; color = col; first = false; continue; }
+      if (t != type) type = "varie";
+      if (n != name) name.clear();
+      if (ln != layer) layer.clear();
+      if (cs != colorSrc) colorSrc = -1;
+      if (col != color) color = ON_Color::UnsetColor;
+    }
+    if (sel.size() > 1) type = QString("%1 oggetti: %2").arg(sel.size()).arg(type);
+    m_propType->setText(type);
+    m_propName->setText(name);
+    m_propName->setModified(false);
+    m_propLayer->setCurrentIndex(layer.isEmpty() ? -1 : m_propLayer->findText(layer));
+    m_propColor->setCurrentIndex(colorSrc);
+    const QColor qc = color == ON_Color::UnsetColor ? QColor(Qt::transparent) : QColor(color.Red(), color.Green(), color.Blue());
+    m_propSwatch->setStyleSheet(QString("background-color: %1; border: 1px solid #555;").arg(qc.name(QColor::HexArgb)));
+    m_propSwatch->setPalette(QPalette(qc));
+  }
   for (const auto& id : sel) {
     const auto* o = m_engine.Object(id);
     props += QString::fromStdString(DescribeObject(o->Geometry(nullptr))) + "\n";
@@ -505,6 +606,13 @@ void MainWindow::keyPressEvent(QKeyEvent* e) {
   if (e->key() == Qt::Key_Escape) {
     if (!m_pending.empty()) Cancel();
     else { m_engine.ClearSelection(); m_scene.RefreshSelection(); RefreshPanels(); for (auto* v : m_views) v->update(); }
+    return;
+  }
+  // I campi del pannello Proprieta' gestiscono da soli i tasti (Invio compreso).
+  if (QWidget* f = QApplication::focusWidget();
+      f && f != m_input && ((m_propForm && m_propForm->isAncestorOf(f)) || qobject_cast<QLineEdit*>(f) ||
+                            qobject_cast<QComboBox*>(f) || qobject_cast<QAbstractItemView*>(f))) {
+    QMainWindow::keyPressEvent(e);
     return;
   }
   // Come in Rhino: si scrive un comando senza cliccare sulla riga di comando.

@@ -1,4 +1,6 @@
 // Comandi di file, annulla, selezione, livelli e informazioni.
+#include <cctype>
+#include <cstdio>
 #include "commands/Engine.h"
 #include <functional>
 #include <sstream>
@@ -168,6 +170,47 @@ bool CmdSaveAs(Engine& e, TokenStream& ts) {
 bool CmdUndo(Engine& e, TokenStream&) { return e.Undo(); }
 bool CmdRedo(Engine& e, TokenStream&) { return e.Redo(); }
 
+// Nome dell'oggetto (campo Nome del pannello Proprieta'). "" toglie il nome.
+bool CmdSetObjectName(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("SetObjectName");
+  if (sel.empty()) return false;
+  auto name = e.ReadString(ts, "nome dell'oggetto (\"\" per nessuno)");
+  if (!name) return false;
+  std::string n = *name == "\"\"" ? std::string() : *name;
+  for (const auto& id : sel)
+    if (auto* a = e.EditableAttributes(id)) a->SetName(ON_wString(n.c_str()), true);
+  e.Out() << "  Nome assegnato a " << sel.size() << " oggetti\n";
+  return true;
+}
+
+// Colore di visualizzazione (pannello Proprieta'): ByLayer, ByParent o r,g,b.
+bool CmdSetObjectColor(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("SetObjectColor");
+  if (sel.empty()) return false;
+  auto v = e.ReadString(ts, "colore: ByLayer, ByParent oppure r,g,b");
+  if (!v) return false;
+  std::string s = *v;
+  for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  while (!s.empty() && (s[0] == '_' || s[0] == '-')) s.erase(0, 1);
+  ON::object_color_source src = ON::color_from_object;
+  ON_Color col = ON_Color::Black;
+  if (s == "bylayer") src = ON::color_from_layer;
+  else if (s == "byparent") src = ON::color_from_parent;
+  else {
+    int r, g, b;
+    if (std::sscanf(s.c_str(), "%d,%d,%d", &r, &g, &b) != 3 || r < 0 || g < 0 || b < 0 || r > 255 || g > 255 || b > 255)
+      return e.Fail("colore non valido: " + *v);
+    col = ON_Color(r, g, b);
+  }
+  for (const auto& id : sel)
+    if (auto* a = e.EditableAttributes(id)) {
+      a->SetColorSource(src);
+      if (src == ON::color_from_object) a->m_color = col;
+    }
+  e.Out() << "  Colore impostato su " << sel.size() << " oggetti\n";
+  return true;
+}
+
 bool CmdWhat(Engine& e, TokenStream&) {
   auto sel = e.RequireSelection("What");
   if (sel.empty()) return false;
@@ -230,6 +273,8 @@ void RegisterDocumentCommands(Engine& e) {
   reg("Invert", "Seleziona", "Inverte la selezione", CmdInvert, false);
   reg("Layer", "Livelli", "-Layer New/Current <nome>", CmdLayer, true);
   reg("ChangeLayer", "Livelli", "Sposta la selezione su un livello", CmdChangeLayer, true);
+  reg("SetObjectName", "Proprietà", "Nome degli oggetti selezionati", CmdSetObjectName, true);
+  reg("SetObjectColor", "Proprietà", "Colore degli oggetti (ByLayer, ByParent, r,g,b)", CmdSetObjectColor, true);
   reg("What", "Analisi", "Descrive gli oggetti selezionati", CmdWhat, false);
 }
 

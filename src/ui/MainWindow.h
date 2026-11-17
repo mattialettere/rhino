@@ -12,6 +12,8 @@ class QPlainTextEdit;
 class QTreeWidget;
 class QGridLayout;
 class QToolButton;
+class QComboBox;
+class QPushButton;
 
 namespace cad::ui {
 
@@ -21,6 +23,7 @@ public:
   explicit MainWindow(QWidget* parent = nullptr);
   // Esegue testo come se fosse scritto nella riga di comando.
   void Submit(const QString& text);
+  void PropertyCommand(const QString& cmd);
   bool OpenFile(const QString& path);
   Viewport* View(int i) { return m_views[i]; }
   void ZoomExtentsAll();
@@ -57,6 +60,12 @@ private:
   QPlainTextEdit* m_history = nullptr;
   QTreeWidget* m_layers = nullptr;
   QPlainTextEdit* m_props = nullptr;
+  QLabel* m_propType = nullptr;
+  QLineEdit* m_propName = nullptr;
+  QComboBox* m_propLayer = nullptr;
+  QComboBox* m_propColor = nullptr;
+  QPushButton* m_propSwatch = nullptr;
+  QWidget* m_propForm = nullptr;
   QLabel* m_coords = nullptr;
   QGridLayout* m_grid = nullptr;
   Viewport* m_views[4] = {};
