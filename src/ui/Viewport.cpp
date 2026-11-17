@@ -221,13 +221,13 @@ void Viewport::paintGL() {
   const double aspect = double(w) / std::max(1, h);
   gl->glMatrixMode(GL_PROJECTION);
   gl->glLoadIdentity();
-  const double far = (m_cam.kind == Camera::Kind::Perspective) ? m_cam.distance * 200 : 4e5;
+  const double farP = (m_cam.kind == Camera::Kind::Perspective) ? m_cam.distance * 200 : 4e5;
   if (m_cam.kind == Camera::Kind::Perspective) {
     const double nearP = m_cam.distance * 0.01;
     const double t = nearP * std::tan(m_cam.fovY / 2);
-    gl->glFrustum(-t * aspect, t * aspect, -t, t, nearP, far);
+    gl->glFrustum(-t * aspect, t * aspect, -t, t, nearP, farP);
   } else {
-    gl->glOrtho(-m_cam.halfHeight * aspect, m_cam.halfHeight * aspect, -m_cam.halfHeight, m_cam.halfHeight, 1.0, far);
+    gl->glOrtho(-m_cam.halfHeight * aspect, m_cam.halfHeight * aspect, -m_cam.halfHeight, m_cam.halfHeight, 1.0, farP);
   }
   gl->glMatrixMode(GL_MODELVIEW);
   const ON_3dVector r = m_cam.Right(), u = m_cam.Up(), d = m_cam.Dir();
@@ -455,7 +455,7 @@ bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) con
 
   // Segmenti dei wire vicini al cursore (per Int, Perp, Near)
   struct Seg { ON_3dPoint a, b; double ax, ay, bx, by; size_t obj, wire; };
-  std::vector<Seg> near;
+  std::vector<Seg> nearSegs;
   if (m & (Int | Perp | Near)) {
     for (size_t oi = 0; oi < m_scene.Objects().size(); oi++) {
       const auto& obj = m_scene.Objects()[oi];
@@ -468,16 +468,16 @@ bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) con
           double t = l2 > 0 ? ((pos.x() - ax) * dx + (pos.y() - ay) * dy) / l2 : 0;
           t = std::clamp(t, 0.0, 1.0);
           if (std::hypot(pos.x() - (ax + t * dx), pos.y() - (ay + t * dy)) <= R)
-            near.push_back({w[i], w[i + 1], ax, ay, bx, by, oi, wi});
+            nearSegs.push_back({w[i], w[i + 1], ax, ay, bx, by, oi, wi});
         }
       }
     }
   }
   if (m & Int) {
     // intersezione (apparente nella vista) tra segmenti di curve diverse
-    for (size_t i = 0; i < near.size(); i++)
-      for (size_t j = i + 1; j < near.size(); j++) {
-        const Seg &A = near[i], &B = near[j];
+    for (size_t i = 0; i < nearSegs.size(); i++)
+      for (size_t j = i + 1; j < nearSegs.size(); j++) {
+        const Seg &A = nearSegs[i], &B = nearSegs[j];
         if (A.obj == B.obj && A.wire == B.wire) continue;
         const double rx = A.bx - A.ax, ry = A.by - A.ay, qx = B.bx - B.ax, qy = B.by - B.ay;
         const double den = rx * qy - ry * qx;
@@ -490,7 +490,7 @@ bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) con
       }
   }
   if ((m & Perp) && S.hasLastPoint) {
-    for (const Seg& sg : near) {
+    for (const Seg& sg : nearSegs) {
       const ON_3dVector v = sg.b - sg.a;
       const double l2 = v * v;
       if (l2 <= 0) continue;
@@ -500,7 +500,7 @@ bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) con
     }
   }
   if (!found && (m & Near)) {
-    for (const Seg& sg : near) {
+    for (const Seg& sg : nearSegs) {
       const double dx = sg.bx - sg.ax, dy = sg.by - sg.ay, l2 = dx * dx + dy * dy;
       double t = l2 > 0 ? ((pos.x() - sg.ax) * dx + (pos.y() - sg.ay) * dy) / l2 : 0;
       t = std::clamp(t, 0.0, 1.0);
