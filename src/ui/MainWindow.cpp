@@ -240,15 +240,18 @@ QWidget* MainWindow::BuildToolTabs() {
                              {"Estendi", "_Extend"}, {"Dividi", "_Split"}, {"Unisci", "_Join"}, {"Esplodi", "_Explode"},
                              {"Inverti dir.", "_Flip"}, {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"},
                              {"Dividi in punti", "_Divide"}, {"Ricostruisci", "_Rebuild"}, {"Cambia grado", "_ChangeDegree"},
-                             {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Proietta su CPlane", "_ProjectToCPlane"}});
+                             {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Proietta su CPlane", "_ProjectToCPlane"},
+                             {"Proietta", "_Project"}, {"Curve di livello", "_Contour"}, {"Sezione", "_Section"},
+                             {"Copia spigoli", "_DupEdge"}});
   addTab("Strumenti superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi", "_ExtrudeCrv"},
                                  {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"},
-                                 {"Offset superficie", "_OffsetSrf"}, {"Dividi", "_Split"}});
+                                 {"Offset superficie", "_OffsetSrf"}, {"Dividi", "_Split"}, {"Estrai superficie", "_ExtractSrf"}});
   addTab("Strumenti solidi", {{"Box", "_Box"}, {"Sfera", "_Sphere"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
                               {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Unione", "_BooleanUnion"},
                               {"Differenza", "_BooleanDifference"}, {"Intersezione", "_BooleanIntersection"},
                               {"Divisione", "_BooleanSplit"}, {"Raccorda spigoli", "_FilletEdge"},
-                              {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori", "_Cap"}, {"Guscio", "_Shell"}});
+                              {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori", "_Cap"}, {"Guscio", "_Shell"},
+                              {"Estrudi superficie", "_ExtrudeSrf"}});
   addTab("Strumenti SubD", {{"Box SubD", "_SubDBox"}});
   addTab("Strumenti mesh", {{"Mesh da NURBS", "_Mesh"}});
   addTab("Analizza", {{"Cos'è", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"}, {"Angolo", "_Angle"},

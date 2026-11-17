@@ -7,6 +7,11 @@
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Section.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepProj_Projection.hxx>
+#include <gp_Pln.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
@@ -28,7 +33,9 @@
 #include <TopoDS_Shell.hxx>
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <memory>
+#include <set>
 
 namespace cad {
 namespace {
@@ -519,6 +526,258 @@ bool CmdBooleanSplit(Engine& e, TokenStream&) {
   return true;
 }
 
+// --- ExtractSrf / DupEdge ------------------------------------------------------
+std::unique_ptr<ON_Brep> BrepOf(const ON_Geometry* g) {
+  if (const auto* b = ON_Brep::Cast(g)) return std::unique_ptr<ON_Brep>(b->Duplicate());
+  if (const auto* x = ON_Extrusion::Cast(g)) return std::unique_ptr<ON_Brep>(x->BrepForm());
+  if (const auto* sf = ON_Surface::Cast(g)) return std::unique_ptr<ON_Brep>(sf->BrepForm());
+  return nullptr;
+}
+
+// Faccia del B-rep piu' vicina al punto (distanza calcolata con OpenCASCADE faccia per faccia).
+int NearestFace(const ON_Brep& b, const ON_3dPoint& p, double tol, double* dist = nullptr) {
+  TopoDS_Shape v = BRepBuilderAPI_MakeVertex(gp_Pnt(p.x, p.y, p.z));
+  double best = 1e300;
+  int bf = -1;
+  for (int fi = 0; fi < b.m_F.Count(); fi++) {
+    std::unique_ptr<ON_Brep> one(b.DuplicateFace(fi, false));
+    if (!one) continue;
+    TopoDS_Shape s = occt::BrepToShape(*one, tol);
+    if (s.IsNull()) continue;
+    BRepExtrema_DistShapeShape d(v, s);
+    if (d.IsDone() && d.Value() < best) { best = d.Value(); bf = fi; }
+  }
+  if (dist) *dist = best;
+  return bf;
+}
+
+bool CmdExtractSrf(Engine& e, TokenStream& ts) {
+  std::vector<ON_3dPoint> picks;
+  while (e.MoreInput(ts)) {
+    auto p = e.ReadPick(ts, "clicca le facce da estrarre (Invio = fine)");
+    if (!p) return false;
+    picks.push_back(*p);
+  }
+  e.SkipEnter(ts);
+  if (picks.empty()) return e.Fail("nessuna faccia indicata");
+  // per ogni clic: polisuperficie e faccia piu' vicine
+  std::map<std::string, std::pair<ON_UUID, std::set<int>>> byObj;
+  for (const ON_3dPoint& p : picks) {
+    double best = 1e300;
+    ON_UUID bid = ON_nil_uuid;
+    int bf = -1;
+    for (const auto& id : e.AllObjectIds()) {
+      std::unique_ptr<ON_Brep> b = BrepOf(Geo(e, id));
+      if (!b || b->m_F.Count() < 2) continue;
+      ON_BoundingBox bb; b->GetTightBoundingBox(bb);
+      if (bb.MinimumDistanceTo(p) > best) continue;
+      double d;
+      int fi = NearestFace(*b, p, e.Tolerance(), &d);
+      if (fi >= 0 && d < best) { best = d; bid = id; bf = fi; }
+    }
+    if (bf < 0) continue;
+    char k[64]; ON_UuidToString(bid, k);
+    byObj[k].first = bid;
+    byObj[k].second.insert(bf);
+  }
+  if (byObj.empty()) return e.Fail("nessuna polisuperficie vicino ai punti cliccati");
+  int n = 0;
+  for (auto& [k, v] : byObj) {
+    std::unique_ptr<ON_Brep> b = BrepOf(Geo(e, v.first));
+    ON_3dmObjectAttributes a = Attrs(e, v.first);
+    ON_SimpleArray<int> rest;
+    for (int fi = 0; fi < b->m_F.Count(); fi++) {
+      if (v.second.count(fi)) {
+        if (ON_Brep* f = b->DuplicateFace(fi, false)) { e.AddObject(f, &a); n++; }
+      } else {
+        rest.Append(fi);
+      }
+    }
+    if (rest.Count()) {
+      if (ON_Brep* r = b->SubBrep(rest.Count(), rest.Array())) e.AddObject(r, &a);
+    }
+    e.DeleteObject(v.first);
+  }
+  e.Out() << "  Estratte " << n << " superfici\n";
+  return true;
+}
+
+bool CmdDupEdge(Engine& e, TokenStream& ts) {
+  std::vector<ON_3dPoint> picks;
+  while (e.MoreInput(ts)) {
+    auto p = e.ReadPick(ts, "clicca gli spigoli da copiare (Invio = fine)");
+    if (!p) return false;
+    picks.push_back(*p);
+  }
+  e.SkipEnter(ts);
+  int n = 0;
+  for (const ON_3dPoint& p : picks) {
+    double best = 1e300;
+    std::unique_ptr<ON_Curve> bestC;
+    ON_UUID owner = ON_nil_uuid;
+    for (const auto& id : e.AllObjectIds()) {
+      std::unique_ptr<ON_Brep> b = BrepOf(Geo(e, id));
+      if (!b) continue;
+      for (int ei = 0; ei < b->m_E.Count(); ei++) {
+        double t, d;
+        if (ClosestParam(b->m_E[ei], p, &t, &d) && d < best) {
+          best = d;
+          bestC.reset(b->m_E[ei].DuplicateCurve());
+          owner = id;
+        }
+      }
+    }
+    if (!bestC) continue;
+    ON_3dmObjectAttributes a = Attrs(e, owner);
+    e.AddObject(bestC.release(), &a);
+    n++;
+  }
+  if (!n) return e.Fail("nessuno spigolo vicino ai punti cliccati");
+  e.Out() << "  Copiati " << n << " spigoli\n";
+  return true;
+}
+
+// --- ExtrudeSrf ------------------------------------------------------------------
+bool CmdExtrudeSrf(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  const bool solid = !(opts.count("solid") && opts["solid"] == "no");
+  auto sel = e.RequireSelection("ExtrudeSrf", "seleziona le superfici da estrudere, poi Invio");
+  if (sel.empty()) return false;
+  auto h = e.ReadNumber(ts, "distanza di estrusione");
+  if (!h) return false;
+  if (std::fabs(*h) <= e.Tolerance()) return e.Fail("distanza nulla");
+  int n = 0;
+  for (const auto& id : sel) {
+    const ON_Geometry* g = Geo(e, id);
+    if (!g || ON_Curve::Cast(g)) continue;
+    TopoDS_Shape s = occt::GeometryToShape(*g, e.Tolerance());
+    if (s.IsNull()) continue;
+    TopoDS_Shape r;
+    try {
+      if (solid) {
+        BRepPrimAPI_MakePrism mk(s, gp_Vec(0, 0, *h));  // direzione: normale del piano di costruzione
+        if (mk.IsDone()) r = mk.Shape();
+      } else {
+        // solo le pareti laterali: estrusione dei bordi
+        ShapeAnalysis_FreeBounds fb(s, e.Tolerance() * 10, Standard_False, Standard_False);
+        BRepPrimAPI_MakePrism mk(fb.GetClosedWires(), gp_Vec(0, 0, *h));
+        if (mk.IsDone()) r = mk.Shape();
+      }
+    } catch (const Standard_Failure&) {
+    }
+    if (r.IsNull()) continue;
+    ON_3dmObjectAttributes a = Attrs(e, id);
+    for (TopExp_Explorer ex(r, solid ? TopAbs_SOLID : TopAbs_SHELL); ex.More(); ex.Next())
+      if (ON_Brep* b = occt::ShapeToBrep(ex.Current(), e.Tolerance())) { e.AddObject(b, &a); n++; }
+  }
+  if (!n) return e.Fail("nessuna superficie estrusa");
+  e.Out() << "  Estruse " << n << " superfici\n";
+  return true;
+}
+
+// --- Contour e Section -------------------------------------------------------------
+int SectionWithPlane(Engine& e, const std::vector<ON_UUID>& ids, const gp_Pln& pl) {
+  int n = 0;
+  for (const auto& id : ids) {
+    const ON_Geometry* g = Geo(e, id);
+    if (!g || ON_Curve::Cast(g)) continue;
+    TopoDS_Shape s = occt::GeometryToShape(*g, e.Tolerance());
+    if (s.IsNull()) continue;
+    BRepAlgoAPI_Section sec(s, pl, Standard_False);
+    sec.ComputePCurveOn1(Standard_False);
+    sec.Approximation(Standard_True);
+    sec.Build();
+    if (!sec.IsDone()) continue;
+    std::vector<ON_Curve*> crvs = occt::ShapeToCurves(sec.Shape(), e.Tolerance());
+    if (crvs.empty()) continue;
+    ON_SimpleArray<const ON_Curve*> in;
+    for (auto* c : crvs) in.Append(c);
+    ON_SimpleArray<ON_Curve*> joined;
+    ON_JoinCurves(in, joined, e.Tolerance() * 10, false, nullptr);
+    for (auto* c : crvs) delete c;
+    ON_3dmObjectAttributes a = Attrs(e, id);
+    for (int i = 0; i < joined.Count(); i++) { e.AddObject(joined[i], &a); n++; }
+  }
+  return n;
+}
+
+// Contour: piani perpendicolari alla direzione data, a distanza costante.
+bool CmdContour(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("Contour", "seleziona gli oggetti da sezionare, poi Invio");
+  if (sel.empty()) return false;
+  auto a = e.ReadPoint(ts, "punto base delle curve di livello");
+  if (!a) return false;
+  e.lastPoint = *a;
+  auto b = e.ReadPoint(ts, "direzione perpendicolare ai piani");
+  if (!b) return false;
+  auto step = e.ReadNumber(ts, "distanza tra le curve");
+  if (!step) return false;
+  ON_3dVector dir = *b - *a;
+  if (!dir.Unitize() || *step <= e.Tolerance()) return e.Fail("direzione o distanza non valida");
+  ON_BoundingBox bb;
+  for (const auto& id : sel) if (const ON_Geometry* g = Geo(e, id)) { ON_BoundingBox t; g->GetTightBoundingBox(t); bb.Union(t); }
+  double lo = 1e300, hi = -1e300;
+  for (int i = 0; i < 8; i++) { const double d = (bb.Corner(i & 1, (i >> 1) & 1, (i >> 2) & 1) - *a) * dir; lo = std::min(lo, d); hi = std::max(hi, d); }
+  int n = 0;
+  const int k0 = int(std::ceil(lo / *step - 1e-9)), k1 = int(std::floor(hi / *step + 1e-9));
+  if (k1 - k0 > 2000) return e.Fail("troppe curve: aumenta la distanza");
+  for (int k = k0; k <= k1; k++) {
+    const ON_3dPoint o = *a + dir * (k * *step);
+    n += SectionWithPlane(e, sel, gp_Pln(gp_Pnt(o.x, o.y, o.z), gp_Dir(dir.x, dir.y, dir.z)));
+  }
+  if (!n) return e.Fail("nessuna curva di livello");
+  e.Out() << "  Create " << n << " curve di livello\n";
+  return true;
+}
+
+// Section: piano verticale (contiene l'asse Z del piano di costruzione) per i due punti.
+bool CmdSection(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("Section", "seleziona gli oggetti da sezionare, poi Invio");
+  if (sel.empty()) return false;
+  auto a = e.ReadPoint(ts, "inizio della linea di sezione");
+  if (!a) return false;
+  e.lastPoint = *a;
+  auto b = e.ReadPoint(ts, "fine della linea di sezione");
+  if (!b) return false;
+  ON_3dVector t = *b - *a;
+  t.z = 0;
+  if (!t.Unitize()) return e.Fail("linea di sezione nulla");
+  const ON_3dVector nrm = ON_CrossProduct(t, ON_3dVector::ZAxis);
+  const int n = SectionWithPlane(e, sel, gp_Pln(gp_Pnt(a->x, a->y, a->z), gp_Dir(nrm.x, nrm.y, nrm.z)));
+  if (!n) return e.Fail("il piano di sezione non taglia gli oggetti");
+  e.Out() << "  Create " << n << " curve di sezione\n";
+  return true;
+}
+
+// --- Project --------------------------------------------------------------------------
+// Curve selezionate proiettate (direzione Z del piano di costruzione) sulle superfici selezionate.
+bool CmdProject(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("Project", "seleziona le curve e le superfici su cui proiettarle, poi Invio");
+  if (sel.empty()) return false;
+  std::vector<ON_UUID> crvs, srfs;
+  for (const auto& id : sel) (ON_Curve::Cast(Geo(e, id)) ? crvs : srfs).push_back(id);
+  if (crvs.empty() || srfs.empty()) return e.Fail("servono sia curve sia superfici");
+  int n = 0;
+  for (const auto& sid : srfs) {
+    TopoDS_Shape target = occt::GeometryToShape(*Geo(e, sid), e.Tolerance());
+    if (target.IsNull()) continue;
+    for (const auto& cid : crvs) {
+      TopoDS_Shape w = occt::CurveToShape(*ON_Curve::Cast(Geo(e, cid)));
+      if (w.IsNull()) continue;
+      try {
+        BRepProj_Projection pr(w, target, gp_Dir(0, 0, 1));
+        if (!pr.IsDone()) continue;
+        ON_3dmObjectAttributes a = Attrs(e, cid);
+        for (ON_Curve* c : occt::ShapeToCurves(pr.Shape(), e.Tolerance())) { e.AddObject(c, &a); n++; }
+      } catch (const Standard_Failure&) {
+      }
+    }
+  }
+  if (!n) return e.Fail("nessuna proiezione: le curve non cadono sulle superfici");
+  e.Out() << "  Create " << n << " curve proiettate\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterCurveEditCommands(Engine& e) {
@@ -529,6 +788,12 @@ void RegisterCurveEditCommands(Engine& e) {
   reg("Chamfer", "Curve", "Smusso tra due linee (Distances=a,b)", CmdChamfer);
   reg("Cap", "Solidi", "Chiude i fori piani di superfici e polisuperfici", CmdCap);
   reg("Shell", "Solidi", "Svuota un solido togliendo le facce cliccate (Thickness=)", CmdShell);
+  reg("ExtractSrf", "Superfici", "Separa le facce cliccate da una polisuperficie", CmdExtractSrf);
+  reg("DupEdge", "Curve", "Copia come curve gli spigoli cliccati", CmdDupEdge);
+  reg("ExtrudeSrf", "Solidi", "Estrude superfici lungo Z del piano di costruzione (Solid=)", CmdExtrudeSrf);
+  reg("Contour", "Curve", "Curve di livello a distanza costante", CmdContour);
+  reg("Section", "Curve", "Curve di sezione con un piano verticale per due punti", CmdSection);
+  reg("Project", "Curve", "Proietta le curve sulle superfici (direzione Z)", CmdProject);
   reg("BooleanSplit", "Solidi", "Divide il primo solido con gli altri (parte dentro e fuori)", CmdBooleanSplit);
 }
 

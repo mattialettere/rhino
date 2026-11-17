@@ -10,6 +10,8 @@
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
@@ -33,6 +35,7 @@
 #include <TopoDS_Wire.hxx>
 #include <cmath>
 #include <memory>
+#include <set>
 #include <sstream>
 
 namespace cad {
@@ -147,30 +150,59 @@ bool CmdBooleanIntersection(Engine& e, TokenStream&) {
 // --- raccordi e smussi (su tutti gli spigoli degli oggetti selezionati) ---
 bool EdgeOp(Engine& e, TokenStream& ts, bool fillet) {
   const char* name = fillet ? "FilletEdge" : "ChamferEdge";
-  auto sel = e.RequireSelection(name);
+  auto sel = e.RequireSelection(name, "seleziona i solidi o le polisuperfici, poi Invio");
   if (sel.empty()) return false;
   auto r = e.ReadNumber(ts, fillet ? "raggio" : "distanza");
   if (!r) return false;
   if (*r <= e.Tolerance()) return e.Fail("valore troppo piccolo");
-  int n = 0;
+  // Spigoli cliccati (come Rhino); con Invio senza clic: tutti gli spigoli
+  std::vector<ON_3dPoint> picks;
+  while (e.MoreInput(ts)) {
+    auto p = e.ReadPick(ts, "clicca gli spigoli (Invio = fine; senza clic = tutti)");
+    if (!p) return false;
+    picks.push_back(*p);
+  }
+  e.SkipEnter(ts);
+  struct Obj { ON_UUID id; TopoDS_Shape shape; TopTools_IndexedMapOfShape edges; std::set<int> chosen; };
+  std::vector<Obj> objs;
   for (const auto& id : sel) {
     std::vector<ON_UUID> one{id};
     auto shapes = Shapes(e, one);
     if (shapes.empty()) continue;
-    TopTools_IndexedMapOfShape edges;
-    TopExp::MapShapes(shapes[0], TopAbs_EDGE, edges);
+    Obj o{id, shapes[0], {}, {}};
+    TopExp::MapShapes(o.shape, TopAbs_EDGE, o.edges);
+    objs.push_back(std::move(o));
+  }
+  if (objs.empty()) return e.Fail("nessuna polisuperficie selezionata");
+  for (const ON_3dPoint& p : picks) {
+    TopoDS_Shape v = BRepBuilderAPI_MakeVertex(gp_Pnt(p.x, p.y, p.z));
+    double best = 1e300;
+    int bo = -1, be = -1;
+    for (size_t k = 0; k < objs.size(); k++)
+      for (int i = 1; i <= objs[k].edges.Extent(); i++) {
+        if (BRep_Tool::Degenerated(TopoDS::Edge(objs[k].edges(i)))) continue;
+        BRepExtrema_DistShapeShape d(v, objs[k].edges(i));
+        if (d.IsDone() && d.Value() < best) { best = d.Value(); bo = int(k); be = i; }
+      }
+    if (bo >= 0) objs[bo].chosen.insert(be);
+  }
+  int n = 0;
+  for (auto& o : objs) {
+    if (!picks.empty() && o.chosen.empty()) continue;
+    std::vector<ON_UUID> one{o.id};
     TopoDS_Shape result;
+    auto useEdge = [&](int i) {
+      return !BRep_Tool::Degenerated(TopoDS::Edge(o.edges(i))) && (picks.empty() || o.chosen.count(i));
+    };
     try {
       if (fillet) {
-        BRepFilletAPI_MakeFillet mk(shapes[0]);
-        for (int i = 1; i <= edges.Extent(); i++)
-          if (!BRep_Tool::Degenerated(TopoDS::Edge(edges(i)))) mk.Add(*r, TopoDS::Edge(edges(i)));
+        BRepFilletAPI_MakeFillet mk(o.shape);
+        for (int i = 1; i <= o.edges.Extent(); i++) if (useEdge(i)) mk.Add(*r, TopoDS::Edge(o.edges(i)));
         mk.Build();
         if (mk.IsDone()) result = mk.Shape();
       } else {
-        BRepFilletAPI_MakeChamfer mk(shapes[0]);
-        for (int i = 1; i <= edges.Extent(); i++)
-          if (!BRep_Tool::Degenerated(TopoDS::Edge(edges(i)))) mk.Add(*r, TopoDS::Edge(edges(i)));
+        BRepFilletAPI_MakeChamfer mk(o.shape);
+        for (int i = 1; i <= o.edges.Extent(); i++) if (useEdge(i)) mk.Add(*r, TopoDS::Edge(o.edges(i)));
         mk.Build();
         if (mk.IsDone()) result = mk.Shape();
       }
@@ -180,7 +212,7 @@ bool EdgeOp(Engine& e, TokenStream& ts, bool fillet) {
     if (!Replace(e, one, result, fillet ? "Raccordo" : "Smusso")) return false;
     n++;
   }
-  return n > 0 || e.Fail("nessuna polisuperficie selezionata");
+  return n > 0 || e.Fail("nessuno spigolo trovato vicino ai punti cliccati");
 }
 bool CmdFilletEdge(Engine& e, TokenStream& ts) { return EdgeOp(e, ts, true); }
 bool CmdChamferEdge(Engine& e, TokenStream& ts) { return EdgeOp(e, ts, false); }

@@ -424,7 +424,42 @@ int main(int argc, char** argv) {
     if (L.size() != 1 || !Near(L[0], 30.0, 1e-2)) std::printf("%s n=%zu L=%g\n", c.log.str().c_str(), L.size(), L.empty() ? 0.0 : L[0]);
     CHECK(L.size() == 1 && Near(L[0], 30.0, 1e-2));  // campionamento: gli angoli vengono smussati
   });
+  Case("FilletEdge_picked", "_Box 0,0,0 10,10 10\n_SelAll _FilletEdge 1 10,5,10 _Enter\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(isSolid(c.Last()));
+    // un solo spigolo raccordato: 1000 - 10*(1 - pi/4)
+    CHECK(Near(number(c, "Volume = "), 1000.0 - 10.0 * (1.0 - ON_PI / 4.0), 1e-4));
+  });
+  Case("ChamferEdge_two", "_Box 0,0,0 10,10 10\n_SelAll _ChamferEdge 2 10,5,10 0,5,10 _Enter\n_SelAll _Volume", [&](Ctx& c) {
+    CHECK(Near(number(c, "Volume = "), 1000.0 - 2 * 10.0 * 2.0, 1e-4));
+  });
+  Case("ExtractSrf_brep", "_Box 0,0,0 10,10 10\n_Box 5,5,5 15,15 10\n_SelAll _BooleanUnion\n_ExtractSrf 7,7,15 _Enter", [](Ctx& c) {
+    int breps = 0, single = 0;
+    for (auto* g : c.Objects()) if (auto* b = ON_Brep::Cast(g)) { breps++; if (b->m_F.Count() == 1) single++; }
+    CHECK(breps == 2 && single == 1);
+  });
+  Case("DupEdge", "_Box 0,0,0 10,10 10\n_DupEdge 5,0,0 _Enter", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 1 && Near(L[0], 10.0, 1e-6));
+  });
+  Case("ExtrudeSrf", "_Plane 0,0 10,5\n_SelAll _ExtrudeSrf 4\n_SelPolysrf _Volume", [&](Ctx& c) {
+    CHECK(Near(number(c, "Volume = "), 200.0, 1e-6));
+  });
+  Case("Contour", "_Sphere 0,0,0 5\n_SelAll _Contour 0,0,0 0,0,1 2", [](Ctx& c) {
+    int crv = 0;
+    for (auto* g : c.Objects()) if (ON_Curve::Cast(g)) crv++;
+    CHECK(crv == 5);  // z = -4, -2, 0, 2, 4
+  });
+  Case("Section", "_Box 0,0,0 10,10 10\n_SelAll _Section 5,-5 5,15", [](Ctx& c) {
+    auto L = Lens(c.Objects());
+    CHECK(L.size() == 1 && Near(L[0], 40.0, 1e-2));
+  });
+  Case("Project", "_Circle 5,5,20 2\n_Box 0,0,0 10,10 10\n_SelAll _Project", [](Ctx& c) {
+    int onTop = 0;
+    for (auto* g : c.Objects()) if (auto* cv = ON_Curve::Cast(g)) { ON_BoundingBox bb; cv->GetTightBoundingBox(bb); if (Near(bb.m_min.z, 10.0, 1e-3)) onTop++; }
+    CHECK(onTop >= 1);
+  });
 #endif
+
 
 
   // --- Analisi, curve, gruppi, blocchi ---
