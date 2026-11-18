@@ -26,6 +26,10 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QInputDialog>
+#include <QTableWidget>
 #include <QVBoxLayout>
 #include <set>
 
@@ -268,7 +272,7 @@ void MainWindow::BuildMenus() {
                          {"Angolo di sformo", "_DraftAngleAnalysis"}, {"Angolo di sformo spento", "_DraftAngleAnalysisOff"},
                          {"Grafico di curvatura", "_CurvatureGraph"}, {"Grafico di curvatura spento", "_CurvatureGraphOff"},
                          {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"}});
-  addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"},
+  addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"},
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
 }
 
@@ -411,6 +415,132 @@ void MainWindow::BuildStatusBar() {
   toggle("Orto", S.ortho);
   toggle("Gumball", S.gumball);
   toggle("Osnap", S.osnap);
+  auto* filt = new QToolButton;
+  filt->setText("Filtro");
+  filt->setToolTip("Filtro di selezione (SelectionFilter)");
+  connect(filt, &QToolButton::clicked, this, [this] { ShowSelectionFilter(); });
+  statusBar()->addPermanentWidget(filt);
+}
+
+namespace {
+// Tipi del filtro di selezione, come la barra SelectionFilter di Rhino 8.
+enum FilterBit : unsigned { FPoint = 1, FCurve = 2, FSurface = 4, FPolysurface = 8, FMesh = 16, FSubD = 32,
+                            FAnnotation = 64, FBlock = 128, FOther = 256 };
+unsigned FilterBitOf(const ON_Geometry* g) {
+  if (!g) return FOther;
+  if (ON_Point::Cast(g) || ON_PointCloud::Cast(g)) return FPoint;
+  if (ON_Curve::Cast(g)) return FCurve;
+  if (ON_Mesh::Cast(g)) return FMesh;
+  if (ON_SubD::Cast(g)) return FSubD;
+  if (ON_Annotation::Cast(g) || ON_TextDot::Cast(g) || ON_Hatch::Cast(g)) return FAnnotation;
+  if (ON_InstanceRef::Cast(g)) return FBlock;
+  if (const auto* b = ON_Brep::Cast(g)) return b->m_F.Count() > 1 ? FPolysurface : FSurface;
+  if (const auto* x = ON_Extrusion::Cast(g)) return x->IsCapped() ? FPolysurface : FSurface;
+  if (ON_Surface::Cast(g)) return FSurface;
+  return FOther;
+}
+}  // namespace
+
+bool MainWindow::PassesFilter(const ON_UUID& id) const {
+  const auto* o = m_engine.Object(id);
+  return (FilterBitOf(o ? o->Geometry(nullptr) : nullptr) & m_selFilter) != 0;
+}
+
+void MainWindow::ShowSelectionFilter() {
+  QDialog dlg(this);
+  dlg.setWindowTitle("Filtro di selezione");
+  auto* lay = new QVBoxLayout(&dlg);
+  const std::pair<const char*, unsigned> items[] = {{"Punti", FPoint}, {"Curve", FCurve}, {"Superfici", FSurface},
+                                                     {"Polisuperfici", FPolysurface}, {"Mesh", FMesh}, {"SubD", FSubD},
+                                                     {"Annotazioni", FAnnotation}, {"Blocchi", FBlock}, {"Altri", FOther}};
+  std::vector<std::pair<QCheckBox*, unsigned>> boxes;
+  for (const auto& [label, bit] : items) {
+    auto* cb = new QCheckBox(label);
+    cb->setChecked((m_selFilter & bit) != 0);
+    lay->addWidget(cb);
+    boxes.push_back({cb, bit});
+  }
+  auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Reset);
+  connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  connect(bb->button(QDialogButtonBox::Reset), &QPushButton::clicked, &dlg, [&] { for (auto& b : boxes) b.first->setChecked(true); });
+  lay->addWidget(bb);
+  if (dlg.exec() != QDialog::Accepted) return;
+  m_selFilter = 0;
+  for (auto& [cb, bit] : boxes) if (cb->isChecked()) m_selFilter |= bit;
+  Log(m_selFilter == 0xFFFF || m_selFilter == 511 ? "Filtro di selezione: tutti i tipi" : "Filtro di selezione attivo");
+}
+
+// BlockManager: elenco dei blocchi con il numero di istanze; rinomina,
+// selezione delle istanze ed eliminazione dei blocchi non usati (Purge).
+void MainWindow::ShowBlockManager() {
+  QDialog dlg(this);
+  dlg.setWindowTitle("Gestione blocchi");
+  dlg.resize(420, 320);
+  auto* lay = new QVBoxLayout(&dlg);
+  auto* table = new QTableWidget(&dlg);
+  table->setColumnCount(2);
+  table->setHorizontalHeaderLabels({"Nome", "Istanze"});
+  table->horizontalHeader()->setStretchLastSection(true);
+  table->setSelectionBehavior(QAbstractItemView::SelectRows);
+  table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+  auto fill = [&] {
+    std::map<std::string, std::pair<ON_UUID, int>> blocks;
+    ONX_ModelComponentIterator it(m_engine.Model(), ON_ModelComponent::Type::InstanceDefinition);
+    for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent())
+      blocks[ToUtf8(c->Name())] = {c->Id(), 0};
+    for (const auto& id : m_engine.AllObjectIds(true))
+      if (const auto* ir = ON_InstanceRef::Cast(m_engine.Object(id)->Geometry(nullptr)))
+        for (auto& [n, v] : blocks) if (v.first == ir->m_instance_definition_uuid) v.second++;
+    table->setRowCount((int)blocks.size());
+    int r = 0;
+    for (auto& [n, v] : blocks) {
+      table->setItem(r, 0, new QTableWidgetItem(QString::fromStdString(n)));
+      table->setItem(r, 1, new QTableWidgetItem(QString::number(v.second)));
+      r++;
+    }
+  };
+  fill();
+  lay->addWidget(table);
+  auto* row = new QHBoxLayout;
+  auto* bRename = new QPushButton("Rinomina...");
+  auto* bSelect = new QPushButton("Seleziona istanze");
+  auto* bPurge = new QPushButton("Elimina non usati");
+  auto* bClose = new QPushButton("Chiudi");
+  row->addWidget(bRename);
+  row->addWidget(bSelect);
+  row->addWidget(bPurge);
+  row->addStretch();
+  row->addWidget(bClose);
+  lay->addLayout(row);
+  auto current = [&]() -> QString { auto* it = table->item(table->currentRow(), 0); return it ? it->text() : QString(); };
+  connect(bRename, &QPushButton::clicked, &dlg, [&] {
+    const QString n = current();
+    if (n.isEmpty()) return;
+    bool ok = false;
+    const QString nn = QInputDialog::getText(&dlg, "Rinomina blocco", "Nuovo nome:", QLineEdit::Normal, n, &ok);
+    if (!ok || nn.trimmed().isEmpty() || nn == n) return;
+    Submit(QString("_RenameBlock \"%1\" \"%2\"").arg(n, nn.trimmed()));
+    fill();
+  });
+  connect(bSelect, &QPushButton::clicked, &dlg, [&] {
+    const QString n = current();
+    if (n.isEmpty()) return;
+    ON_UUID did = ON_nil_uuid;
+    ONX_ModelComponentIterator it(m_engine.Model(), ON_ModelComponent::Type::InstanceDefinition);
+    for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent())
+      if (QString::fromStdString(ToUtf8(c->Name())) == n) did = c->Id();
+    m_engine.ClearSelection();
+    for (const auto& id : m_engine.AllObjectIds())
+      if (const auto* ir = ON_InstanceRef::Cast(m_engine.Object(id)->Geometry(nullptr)))
+        if (ir->m_instance_definition_uuid == did) m_engine.Select(id);
+    m_scene.RefreshSelection();
+    RefreshPanels();
+    for (auto* v : m_views) v->update();
+  });
+  connect(bPurge, &QPushButton::clicked, &dlg, [&] { Submit("_Purge"); fill(); });
+  connect(bClose, &QPushButton::clicked, &dlg, &QDialog::accept);
+  dlg.exec();
 }
 
 bool MainWindow::OpenFile(const QString& path) {
@@ -485,6 +615,8 @@ void MainWindow::Submit(const QString& text) {
       }
     }
   }
+  if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
+  if (norm == "blockmanager") { ShowBlockManager(); return; }
   if (norm == "properties" || (norm == "layer" && t.find(' ') == std::string::npos)) {
     const QString title = norm == "properties" ? "Proprietà" : "Livelli";
     for (auto* d : findChildren<QDockWidget*>())
@@ -630,6 +762,7 @@ void MainWindow::OnPointPicked(ON_3dPoint p) {
 }
 
 void MainWindow::OnObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove) {
+  ids.erase(std::remove_if(ids.begin(), ids.end(), [&](const ON_UUID& id) { return !PassesFilter(id); }), ids.end());
   if (!add && !remove) m_engine.ClearSelection();
   {  // come Rhino: cliccando un oggetto di un gruppo si seleziona tutto il gruppo
     std::set<int> groups;

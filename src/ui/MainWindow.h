@@ -48,6 +48,10 @@ private:
   void OnPointPicked(ON_3dPoint p);
   void OnObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove);
   void ToggleMaximize(Viewport* v);
+  void ShowSelectionFilter();
+  void ShowBlockManager();
+  bool PassesFilter(const ON_UUID& id) const;
+  unsigned m_selFilter = 0xFFFF;  // tipi selezionabili (SelectionFilter)
 
   Document3dm m_doc;
   std::ostringstream m_out;

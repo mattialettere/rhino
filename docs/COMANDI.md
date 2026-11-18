@@ -25,13 +25,13 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Mesh | 17 / 19 |
 | Trasformazioni | 25 / 30 |
 | Modifica | 28 / 34 |
-| Selezione | 18 / 19 |
-| Blocchi | 4 / 6 |
+| Selezione | 19 / 19 |
+| Blocchi | 5 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 12 / 14 |
 | Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **256 / 303** |
+| **Totale** | **258 / 303** |
 
 ## Punti
 
@@ -340,7 +340,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SelSmall | ✔ |
 | SelVisible | ✔ |
 | Invert | ✔ |
-| SelectionFilter | ⬜ |
+| SelectionFilter | ✔ |
 
 ## Blocchi
 
@@ -350,7 +350,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Insert | ✔ |
 | ExplodeBlock | ✔ |
 | BlockEdit | ⬜ |
-| BlockManager | ⬜ |
+| BlockManager | ✔ |
 | ReplaceBlock | ✔ |
 
 ## Livelli e proprieta'
