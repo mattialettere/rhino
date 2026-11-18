@@ -2,6 +2,7 @@
 //   kurva3d [file.3dm] [--script comandi.txt] [--screenshot out.png]
 #include "python/PythonHost.h"
 #include "ui/MainWindow.h"
+#include "ui/NodeEditor.h"
 #include "ui/Theme.h"
 #include <QApplication>
 #include <QFile>
@@ -41,7 +42,7 @@ int main(int argc, char** argv) {
   cad::ui::ApplyTheme(cad::ui::SavedThemeMode());
   cad::InitLibrary();
   cad::SetPythonProgramDir(QCoreApplication::applicationDirPath().toStdString());
-  QString open, script, shot, panel;
+  QString open, script, shot, panel, nodesFile, nodesShot;
   int wait = 800;
   const QStringList args = app.arguments();
   for (int i = 1; i < args.size(); i++) {
@@ -49,6 +50,8 @@ int main(int argc, char** argv) {
     else if (args[i] == "--screenshot" && i + 1 < args.size()) shot = args[++i];
     else if (args[i] == "--panel" && i + 1 < args.size()) panel = args[++i];  // es. textureDock
     else if (args[i] == "--wait" && i + 1 < args.size()) wait = args[++i].toInt();  // ms prima della cattura
+    else if (args[i] == "--nodes" && i + 1 < args.size()) nodesFile = args[++i];        // grafo da aprire nell'editor a nodi
+    else if (args[i] == "--nodes-screenshot" && i + 1 < args.size()) nodesShot = args[++i];
     else if (!args[i].startsWith("-psn")) open = args[i];
   }
   int rc;
@@ -80,8 +83,21 @@ int main(int argc, char** argv) {
     }
     for (auto* d : w.findChildren<QDockWidget*>())
       if (!panel.isEmpty() && d->objectName() == panel) { d->show(); d->raise(); }
+    auto* nodeEd = w.findChild<cad::ui::NodeEditor*>();
+    if (nodeEd && !nodesFile.isEmpty()) {
+      nodeEd->show();
+      nodeEd->LoadFile(nodesFile);
+    }
+    if (nodeEd && !nodesShot.isEmpty()) {
+      QTimer::singleShot(wait, [&, nodeEd] {
+        nodeEd->ZoomAll();
+        nodeEd->grab().save(nodesShot);
+        nodeEd->hide();  // la cattura della finestra principale mostra l'anteprima nelle viste
+        if (shot.isEmpty()) app.quit();
+      });
+    }
     if (!shot.isEmpty()) {
-      QTimer::singleShot(wait, [&] {
+      QTimer::singleShot(wait + 200, [&] {
         // cattura dello schermo (include i titoli delle viste disegnati sopra OpenGL)
         w.screen()->grabWindow(w.winId()).save(shot);
         app.quit();

@@ -1,0 +1,46 @@
+KURVA3D-NODI 1
+node 1 Slider 0 0 1
+param 1 name Piani
+param 1 decimals 0
+param 1 max 40
+param 1 min 2
+param 1 value 12
+node 2 Slider 0 70 1
+param 2 name Altezza del piano
+param 2 decimals 1
+param 2 max 6
+param 2 min 2.5
+param 2 value 3.5
+node 3 Series 290 20 1
+node 4 ConstructPoint 470 20 0
+node 5 XYPlane 650 20 0
+node 6 Slider 0 160 1
+param 6 name Rotazione per piano
+param 6 decimals 1
+param 6 max 15
+param 6 min 0
+param 6 value 6
+node 7 Series 290 160 1
+node 8 Slider 0 240 1
+param 8 name Raggio
+param 8 decimals 1
+param 8 max 30
+param 8 min 4
+param 8 value 12
+node 9 Polygon 830 20 0
+node 10 Rotate 1010 60 1
+node 11 Loft 1190 60 1
+node 12 Panel 470 200 1
+wire 2 0 3 1
+wire 1 0 3 2
+wire 3 0 4 2
+wire 4 0 5 0
+wire 6 0 7 1
+wire 1 0 7 2
+wire 5 0 9 0
+wire 8 0 9 1
+wire 9 0 10 0
+wire 7 0 10 1
+wire 5 0 10 2
+wire 10 0 11 0
+wire 3 0 12 0

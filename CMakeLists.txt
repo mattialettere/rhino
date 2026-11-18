@@ -183,7 +183,7 @@ if(Qt6_FOUND)
     src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h src/ui/RenderWindow.cpp src/ui/RenderWindow.h
-    src/ui/ScriptEditor.cpp src/ui/ScriptEditor.h
+    src/ui/ScriptEditor.cpp src/ui/ScriptEditor.h src/ui/NodeEditor.cpp src/ui/NodeEditor.h
     src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})
   if(APPLE)
     # versione minima di macOS: quella delle librerie Homebrew con cui si compila

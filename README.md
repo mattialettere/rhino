@@ -40,6 +40,7 @@ src/core/            nucleo: documento .3dm, riepilogo per categoria, confronto 
 src/commands/        motore dei comandi (sintassi delle macro di Rhino) e comandi
 src/kernel/          ponte openNURBS <-> OpenCASCADE e comandi che ne hanno bisogno
 src/python/          Python incorporato: RunPythonScript e rhinoscriptsyntax
+src/nodes/           editor a nodi: grafo, valutazione e componenti
 src/ui/              finestra in stile Rhino 8 (Qt): riga di comando, 4 viste, pannelli
 tools/cad-console    riga di comando in stile Rhino: crea e modifica modelli
 tools/3dm-info       stampa il contenuto di un .3dm per categoria
@@ -148,6 +149,10 @@ Modalita' di visualizzazione **Renderizzato** (colori dei materiali, luci del mo
 ## Storia di costruzione
 
 Il pulsante **Registra storia** nella barra di stato (o `History Record=Yes`) fa ricordare ai comandi che lo supportano (Loft, ExtrudeCrv, Revolve, Sweep, Pipe, Offset, Array, Mirror, ...) gli oggetti di partenza: se poi si sposta o si modifica una curva di partenza, la superficie creata si ricalcola da sola, come in Rhino 8. `SelChildren`/`SelParents` selezionano figli e ingressi, `HistoryPurge` toglie la storia. Modificare a mano un oggetto figlio interrompe la sua storia.
+
+## Editor a nodi
+
+Menu **Script > Editor a nodi** (comando `NodeEditor`): l'equivalente di Grasshopper, scritto per Kurva3D. Si aggiungono componenti dalla tavolozza (schede Parametri, Matematica, Vettori, Curve, Superfici, Trasforma, Liste) o con doppio clic sull'area vuota e ricerca per nome; si collegano trascinando da un'uscita (a destra del nodo) a un ingresso (a sinistra). Il risultato si vede in rosso nelle viste e cambia subito muovendo i cursori; **Bake** lo aggiunge al modello. Esempio: `examples/nodi/torre_ruotata.k3nodi` (torre con piani ruotati). Differenze rispetto a Grasshopper in [DIFFERENZE](docs/DIFFERENZE.md) (D-066).
 
 ## Script Python
 

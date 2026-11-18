@@ -2,6 +2,7 @@
 #include "ui/AiPanel.h"
 #include "ui/TexturePanel.h"
 #include "ui/ScriptEditor.h"
+#include "ui/NodeEditor.h"
 #include "ui/Theme.h"
 #include "ui/LayoutView.h"
 #include "ui/RenderWindow.h"
@@ -92,6 +93,7 @@ MainWindow::MainWindow(QWidget* parent)
     return true;
   };
   m_engine.beforeSave = [this] {
+    if (m_nodes) m_nodes->SaveToDocument();  // il grafo dell'editor a nodi resta nel .3dm
     // viste delle finestre al posto di quelle lette dal file; le tavole restano
     auto& views = m_engine.Model().m_settings.m_views;
     ON_ClassArray<ON_3dmView> pages;
@@ -350,6 +352,18 @@ MainWindow::MainWindow(QWidget* parent)
   texDock->setWidget(m_textures);
   addDockWidget(Qt::RightDockWidgetArea, texDock);
   tabifyDockWidget(propsDock, texDock);
+  // Editor visuale a nodi (NodeEditor): finestra separata, anteprima rossa nelle viste
+  m_nodes = new NodeEditor(m_engine, [this](const std::vector<std::shared_ptr<const ON_Geometry>>& g) {
+    m_scene.SetPreview(g);
+    for (auto* v : m_views) v->update();
+  }, [this] { AfterCommand(); }, this);
+  m_engine.showNodeEditor = [this] {
+    m_nodes->show();
+    m_nodes->raise();
+    m_nodes->activateWindow();
+    m_nodes->Evaluate();
+    return true;
+  };
   // Editor di script Python (ScriptEditor): in basso, nascosto finche' non serve
   auto* scriptDock = new QDockWidget("Editor di script", this);
   scriptDock->setObjectName("scriptDock");
@@ -620,6 +634,8 @@ void MainWindow::BuildMenus() {
   }
   auto* scripts = menuBar()->addMenu("&Script");
   scripts->addAction("Editor di script", this, [this] { Submit("_ScriptEditor"); });
+  scripts->addAction("Editor a nodi", this, [this] { Submit("_NodeEditor"); });
+  scripts->addSeparator();
   scripts->addAction("Esegui script Python…", this, [this] {
     const QString f = QFileDialog::getOpenFileName(this, "Esegui script Python", QString(), "Script Python (*.py)");
     if (!f.isEmpty()) Run(("_RunPythonScript \"" + f + "\"").toStdString());
@@ -1044,6 +1060,7 @@ bool MainWindow::OpenFile(const QString& path) {
   const bool hasViews = AdoptFileViews();
   const bool is3dm = QFileInfo(path).suffix().compare("3dm", Qt::CaseInsensitive) == 0;
   if (is3dm && m_engine.currentPath.empty()) return false;
+  if (is3dm && m_nodes) m_nodes->LoadFromDocument();
   if (!hasViews) ZoomExtentsAll();
   return true;
 }
@@ -1192,6 +1209,7 @@ void MainWindow::UpdatePrompt() {
 }
 
 void MainWindow::AfterCommand() {
+  if (m_nodes && m_nodes->isVisible()) m_nodes->DocumentChanged();
   if (m_historyBtn && m_historyBtn->isChecked() != m_engine.recordHistory) {
     const QSignalBlocker block(m_historyBtn);
     m_historyBtn->setChecked(m_engine.recordHistory);

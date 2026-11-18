@@ -35,9 +35,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Rendering (luci e immagini) | 9 / 9 |
 | Viste e sezioni | 7 / 7 |
 | Tavole e stampa | 5 / 5 |
-| Script | 2 / 2 |
+| Script | 3 / 3 |
 | Storia | 5 / 5 |
-| **Totale** | **338 / 338** |
+| **Totale** | **339 / 339** |
 
 ## Punti
 
@@ -483,6 +483,7 @@ Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale sem
 |---|---|
 | RunPythonScript | ✔ (Python 3 con un sottoinsieme di rhinoscriptsyntax; anche codice in linea `-RunPythonScript (codice)`; D-064) |
 | ScriptEditor | ✔ (editor con evidenziazione, Apri/Salva, Esegui F5; senza debugger, D-064) |
+| Grasshopper | ✔ come **NodeEditor**: editor visuale a nodi di Kurva3D, con componenti propri; non legge i file .gh (D-066) |
 
 ## Storia
 
