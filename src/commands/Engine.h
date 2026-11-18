@@ -162,6 +162,11 @@ public:
   size_t UndoDepth() const { return m_undo.size(); }
   void SquashUndo(size_t depth);
   bool RestoreUndo(size_t depth);
+  // Collaborazione: modifica ricevuta da un altro computer. Si applica al modello e si
+  // ricorda, cosi' Annulla/Ripeti dei propri comandi non cancellano il lavoro degli altri.
+  bool ApplyRemote(const std::function<bool(ONX_Model&)>& change);
+  // Nuovo documento o fine della sessione: si dimenticano le modifiche ricevute e la cronologia.
+  void ClearUndo() { m_undo.clear(); m_redo.clear(); m_remote.clear(); }
   // Dopo annulla/apertura: se la tavola attiva non esiste piu' si torna al modello.
   void CheckActiveLayout();
 
@@ -227,7 +232,14 @@ private:
                      const std::vector<std::string>& inputHashes);
   std::vector<std::string> HashObjects(const std::vector<ON_UUID>& ids) const;
   int m_commandDepth = 0;
-  std::vector<std::vector<unsigned char>> m_undo, m_redo;
+  struct UndoStep {
+    std::vector<unsigned char> state;
+    size_t remote = 0;  // modifiche ricevute (collaborazione) gia' contenute in "state"
+  };
+  std::vector<UndoStep> m_undo, m_redo;
+  std::vector<std::function<bool(ONX_Model&)>> m_remote;
+  UndoStep Step(std::vector<unsigned char>&& state) const { return {std::move(state), m_remote.size()}; }
+  bool RestoreStep(const UndoStep& step);
   std::string m_lastError;
   bool m_needsInput = false;
   std::string m_prompt, m_lastCommandName;

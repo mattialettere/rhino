@@ -171,7 +171,7 @@ bool Engine::Transaction(const std::string& name, const std::function<bool()>& f
     m_doc.FromBuffer(before);
     return false;
   }
-  m_undo.push_back(std::move(before));
+  m_undo.push_back(Step(std::move(before)));
   m_redo.clear();
   m_lastCommandName = name;
   return true;
@@ -260,7 +260,7 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
     }
   }
   if ((ok || keepChangesOnFailure) && cmd.modifiesModel) {
-    m_undo.push_back(std::move(before));
+    m_undo.push_back(Step(std::move(before)));
     m_redo.clear();
   }
   if (!ok && !keepChangesOnFailure && cmd.modifiesModel && !before.empty()) {
@@ -492,10 +492,23 @@ std::vector<ON_UUID> Engine::RequireSelection(const char* command, const char* p
   return sel;
 }
 
+bool Engine::RestoreStep(const UndoStep& step) {
+  if (!m_doc.FromBuffer(step.state)) return false;
+  // le modifiche ricevute dopo questo stato restano: si riapplicano nell'ordine di arrivo
+  for (size_t i = step.remote; i < m_remote.size(); i++) m_remote[i](Model());
+  return true;
+}
+
+bool Engine::ApplyRemote(const std::function<bool(ONX_Model&)>& change) {
+  if (!change(Model())) return false;
+  m_remote.push_back(change);
+  return true;
+}
+
 bool Engine::Undo() {
   if (m_undo.empty()) return Fail("niente da annullare");
-  m_redo.push_back(m_doc.ToBuffer());
-  if (!m_doc.FromBuffer(m_undo.back())) return Fail("ripristino non riuscito");
+  m_redo.push_back(Step(m_doc.ToBuffer()));
+  if (!RestoreStep(m_undo.back())) return Fail("ripristino non riuscito");
   m_undo.pop_back();
   CheckActiveLayout();
   return true;
@@ -508,7 +521,7 @@ void Engine::SquashUndo(size_t depth) {
 
 bool Engine::RestoreUndo(size_t depth) {
   if (m_undo.size() <= depth) return true;  // nessun passo da togliere
-  if (!m_doc.FromBuffer(m_undo[depth])) return false;
+  if (!RestoreStep(m_undo[depth])) return false;
   m_undo.resize(depth);
   m_redo.clear();
   ClearSelection();
@@ -518,8 +531,8 @@ bool Engine::RestoreUndo(size_t depth) {
 
 bool Engine::Redo() {
   if (m_redo.empty()) return Fail("niente da ripetere");
-  m_undo.push_back(m_doc.ToBuffer());
-  if (!m_doc.FromBuffer(m_redo.back())) return Fail("ripristino non riuscito");
+  m_undo.push_back(Step(m_doc.ToBuffer()));
+  if (!RestoreStep(m_redo.back())) return Fail("ripristino non riuscito");
   m_redo.pop_back();
   CheckActiveLayout();
   return true;

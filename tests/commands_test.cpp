@@ -6,6 +6,7 @@
 #include "commands/Engine.h"
 #include "python/PythonHost.h"
 #include "nodes/Graph.h"
+#include "collab/Patch.h"
 #include "commands/Grips.h"
 #include "commands/Materials.h"
 #include "commands/Exchange.h"
@@ -2554,6 +2555,104 @@ int main(int argc, char** argv) {
 #endif
   }
 #endif
+
+  {
+    std::printf("Collaborazione (patch)\n");
+    using namespace cad::collab;
+    auto same = [](const collab::Snapshot& x, const collab::Snapshot& y) {
+      return x.objects == y.objects && x.tables == y.tables && x.userStrings == y.userStrings;
+    };
+    Ctx a, b;
+    CHECK(a.e.Run("_Line 0,0 10,0\n_Circle 0,0 5\n_Point 3,3"));
+    CHECK(b.doc.FromBuffer(a.doc.ToBuffer()));
+    collab::Snapshot sa = collab::TakeSnapshot(a.e.Model()), sb = collab::TakeSnapshot(b.e.Model());
+    CHECK(same(sa, sb) && sa.objects.size() == 3);
+    PatchInfo pi;
+    std::string p0 = MakePatch(a.e.Model(), sa, &pi);
+    CHECK(pi.Empty());
+    // in B un gruppo in piu': gli indici dei gruppi non coincidono piu'
+    CHECK(b.e.Run("_Point 50,50\n_SelAll _Group\n_SelNone"));
+    collab::Snapshot sb2 = collab::TakeSnapshot(b.e.Model());
+    std::string pb = MakePatch(b.e.Model(), sb, &pi);
+    CHECK(pi.upserted == 4 && pi.tables == 1);  // 3 oggetti nel gruppo + 1 nuovo, 1 gruppo
+    // modifiche in A: livello nuovo, oggetto spostato su quel livello, gruppo, eliminazione, testo utente
+    const int li = a.e.Model().AddLayer(L"Muri", ON_Color(200, 30, 30));
+    CHECK(li > 0);
+    auto ids = a.e.AllObjectIds();
+    CHECK(ids.size() == 3);
+    a.e.EditableAttributes(ids[0])->m_layer_index = li;
+    CHECK(a.e.Run("_SelNone\n_Line 0,5 10,5\n_Line 0,6 10,6\n_SelLast\n_Circle 20,0 1"));
+    CHECK(a.e.Run("_SelAll _SelNone"));
+    a.e.Select(ids[2]);
+    CHECK(a.e.Run("_Delete"));
+    auto ids2 = a.e.AllObjectIds();
+    for (const auto& id : ids2)
+      if (id != ids[0] && id != ids[1]) a.e.Select(id);
+    CHECK(a.e.Run("_Group\n_SelNone"));
+    a.e.Model().SetDocumentUserString(L"Kurva3D.Prova", L"ciao");
+    std::string pa = MakePatch(a.e.Model(), sa, &pi);
+    CHECK(pi.deleted == 1 && pi.upserted == 4 && pi.tables == 2 && pi.strings == 1);
+    Document3dm copy;
+    CHECK(copy.FromBuffer(b.doc.ToBuffer()));
+    // B riceve le modifiche di A
+    std::string err;
+    if (!ApplyPatch(b.e.Model(), pa, &pi, &err)) { std::printf("err %s\n", err.c_str()); CHECK(false); }
+    CHECK(pi.deleted == 1 && pi.upserted == 4);
+    {
+      const ON_ModelComponent* l = b.e.Model().ComponentFromId(ON_ModelComponent::Type::Layer,
+          a.e.Model().ComponentFromIndex(ON_ModelComponent::Type::Layer, li).ModelComponent()->Id()).ModelComponent();
+      CHECK(l && ON_Layer::Cast(l)->Color() == ON_Color(200, 30, 30));
+      const auto* o = b.e.Object(ids[0]);
+      CHECK(o && o->Attributes(nullptr)->m_layer_index == l->Index());
+      CHECK(!b.e.Object(ids[2]));
+      ON_wString v;
+      CHECK(b.e.Model().GetDocumentUserString(L"Kurva3D.Prova", v) && v == L"ciao");
+      // il gruppo nuovo di A in B ha un altro indice (B aveva gia' un gruppo)
+      int newGroupObjs = 0;
+      for (const auto& id : b.e.AllObjectIds()) {
+        ON_SimpleArray<int> gl;
+        b.e.Object(id)->Attributes(nullptr)->GetGroupList(gl);
+        if (gl.Count() == 1 && gl[0] == 1) newGroupObjs++;
+      }
+      CHECK(newGroupObjs == 3);
+    }
+    // A riceve le modifiche di B fatte in parallelo (punto e gruppo): vince l'ultima, il punto
+    // eliminato in A torna perche' B lo aveva modificato (gruppo)
+    CHECK(ApplyPatch(a.e.Model(), pb, &pi, &err));
+    CHECK(a.e.AllObjectIds().size() == 7 && a.e.Object(ids[2]) != nullptr);
+    // modifica di una voce esistente: il colore del livello cambia sul posto, l'indice resta
+    collab::Snapshot s1 = collab::TakeSnapshot(b.e.Model());
+    {
+      auto* l = const_cast<ON_Layer*>(ON_Layer::Cast(b.e.Model().ComponentFromIndex(ON_ModelComponent::Type::Layer, li).ModelComponent()));
+      CHECK(l != nullptr);
+      if (l) l->SetColor(ON_Color(0, 0, 255));
+    }
+    std::string pc = MakePatch(b.e.Model(), s1, &pi);
+    CHECK(pi.tables == 1 && pi.upserted == 0);
+    CHECK(ApplyPatch(a.e.Model(), pc, &pi, &err));
+    {
+      const auto* l = ON_Layer::Cast(a.e.Model().ComponentFromIndex(ON_ModelComponent::Type::Layer, li).ModelComponent());
+      CHECK(l && l->Color() == ON_Color(0, 0, 255) && std::wstring(static_cast<const wchar_t*>(l->Name())) == L"Muri");
+    }
+    // dati non validi
+    CHECK(!ApplyPatch(a.e.Model(), "spazzatura", &pi, &err) && !err.empty());
+    // il modello che ha ricevuto le patch si salva e si rilegge
+    CHECK(!a.doc.ToBuffer().empty() && copy.FromBuffer(a.doc.ToBuffer()));
+    (void)sb2; (void)p0;
+    // Annulla dei propri comandi non cancella le modifiche ricevute
+    {
+      Ctx x, y;
+      CHECK(y.doc.FromBuffer(x.doc.ToBuffer()));
+      const collab::Snapshot sy = collab::TakeSnapshot(y.e.Model());
+      CHECK(y.e.Run("_Circle 0,0 3"));
+      const std::string py = MakePatch(y.e.Model(), sy);
+      CHECK(x.e.Run("_Line 0,0 10,0"));
+      CHECK(x.e.ApplyRemote([&](ONX_Model& mm) { return ApplyPatch(mm, py); }));
+      CHECK(x.e.AllObjectIds().size() == 2);
+      CHECK(x.e.Run("_Undo") && x.e.AllObjectIds().size() == 1 && ON_ArcCurve::Cast(x.Last()) != nullptr);
+      CHECK(x.e.Run("_Redo") && x.e.AllObjectIds().size() == 2);
+    }
+  }
 
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);
