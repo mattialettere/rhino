@@ -2447,6 +2447,23 @@ int main(int argc, char** argv) {
     CHECK(k.Get(loft)->error.empty() && k.Get(loft)->outputs[0].size() == 1 && ON_Brep::Cast(k.Get(loft)->outputs[0][0].geo.get()));
     CHECK(Near(k.Get(vol)->outputs[0][0].num, 1, 1e-6) && Near(k.Get(area)->outputs[0][0].num, 1, 1e-6));
     CHECK(NearPt(k.Get(area)->outputs[1][0].pt, ON_3dPoint(0.5, 0.5, 0), 1e-6));
+    // solidi su un piano inclinato e volumi
+    Graph v;
+    const int pn = v.Add("PlaneNormal");
+    const int vx = v.Add("VectorXYZ");
+    v.Get(vx)->params.clear();
+    const int one = v.Add("Panel");
+    v.Get(one)->params["text"] = "1";
+    CHECK(v.Connect(one, 0, vx, 0) && v.Connect(one, 0, vx, 2) && v.Connect(vx, 0, pn, 1));
+    const int cy = v.Add("Cylinder"), co = v.Add("Cone"), sp = v.Add("Sphere");
+    CHECK(v.Connect(pn, 0, cy, 0) && v.Connect(pn, 0, co, 0));
+    const int v1 = v.Add("Volume"), v2 = v.Add("Volume"), v3 = v.Add("Volume");
+    CHECK(v.Connect(cy, 0, v1, 0) && v.Connect(co, 0, v2, 0) && v.Connect(sp, 0, v3, 0));
+    v.Evaluate(&c.e);
+    CHECK(v.Get(v1)->outputs[0].size() == 1 && Near(v.Get(v1)->outputs[0][0].num, ON_PI * 10, 1e-5));
+    CHECK(v.Get(v2)->outputs[0].size() == 1 && Near(v.Get(v2)->outputs[0][0].num, ON_PI * 10 / 3, 1e-5));
+    CHECK(v.Get(v3)->outputs[0].size() == 1 && Near(v.Get(v3)->outputs[0][0].num, ON_PI * 4 / 3, 1e-5));
+    { ON_BoundingBox b; v.Get(cy)->outputs[0][0].geo->GetTightBoundingBox(b); CHECK(b.m_max.x > 7 && b.m_max.z > 7); }
 #endif
     // espressioni
     double r = 0;
@@ -2528,6 +2545,7 @@ int main(int argc, char** argv) {
                   "print('vol %.4f %.4f %.4f' % (rs.SurfaceVolume(ids[0])[0], rs.SurfaceVolume(ids[1])[0], rs.SurfaceVolume(ids[3])[0])); "
                   "u = rs.BooleanUnion([ids[0], ids[2]]); print('unione', len(u), '%.3f' % rs.SurfaceVolume(u[0])[0]))"));
     const std::string fl = f.log.str();
+    if (fl.find("vol 1000.0000") == std::string::npos) std::printf("%s\n%s\n", f.e.LastError().c_str(), fl.c_str());
     CHECK(fl.find("vol 1000.0000 33.5103 56.5487") != std::string::npos);
     // cilindro (r=1, h=20) sullo spigolo del cubo: dentro solo un quarto della parte z<10
     char want[64];

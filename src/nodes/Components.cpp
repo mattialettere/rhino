@@ -72,6 +72,24 @@ std::string P3(const ON_3dPoint& p) {
   return b;
 }
 
+Value TransformValue(const Value& v, const ON_Xform& x);
+
+std::string G17(double v) {
+  char b[64];
+  std::snprintf(b, sizeof b, "%.17g", v);
+  return b;
+}
+
+// Solido creato con un comando nell'origine (asse Z) e portato sul piano
+bool OnPlane(EvalContext& c, const std::string& cmd, const ON_Plane& pl, List& out) {
+  List tmp;
+  if (!RunScratch(c, cmd, {}, tmp)) return false;
+  ON_Xform x;
+  x.Rotation(ON_Plane::World_xy, pl);
+  for (auto& v : tmp) out.push_back(TransformValue(v, x));
+  return true;
+}
+
 // Parametri a lunghezza d'arco uguale (n segmenti, n+1 punti; curve chiuse: n punti)
 std::vector<double> DivideParams(const ON_Curve& c, int n) {
   std::vector<double> t;
@@ -539,26 +557,19 @@ std::vector<ComponentDef> Build() {
   add("Sphere", "Sfera", "Superfici", "Sfera di centro B e raggio R", {PD("Centro", "B", Kind::Point, origin), PD("Raggio", "R", Kind::Number, one)},
       {P("Sfera", "S", Kind::Brep)}, [](EvalContext& c, const std::vector<List>& in, std::vector<List>& out) {
         if (N(in, 1) <= 0) return Fail(c, "raggio non positivo");
-        out[0].push_back(Value::Geo(ON_BrepSphere(ON_Sphere(Pt(in, 0), N(in, 1)))));
-        return true;
+        return RunScratch(c, "_Sphere " + P3(Pt(in, 0)) + " " + G17(N(in, 1)), {}, out[0]);
       });
   add("Cylinder", "Cilindro", "Superfici", "Cilindro sul piano B, raggio R, altezza L",
       {PD("Base", "B", Kind::Plane, xy), PD("Raggio", "R", Kind::Number, one), PD("Altezza", "L", Kind::Number, Value::Num(10))},
       {P("Cilindro", "C", Kind::Brep)}, [](EvalContext& c, const std::vector<List>& in, std::vector<List>& out) {
         if (N(in, 1) <= 0 || N(in, 2) == 0) return Fail(c, "raggio o altezza non validi");
-        ON_Cylinder cyl(ON_Circle(Pl(in, 0), N(in, 1)), N(in, 2));
-        out[0].push_back(Value::Geo(ON_BrepCylinder(cyl, true, true)));
-        return true;
+        return OnPlane(c, "_Cylinder 0,0,0 " + G17(N(in, 1)) + " " + G17(N(in, 2)), Pl(in, 0), out[0]);
       });
   add("Cone", "Cono", "Superfici", "Cono con base sul piano B, raggio R, altezza L",
       {PD("Base", "B", Kind::Plane, xy), PD("Raggio", "R", Kind::Number, one), PD("Altezza", "L", Kind::Number, Value::Num(10))},
       {P("Cono", "C", Kind::Brep)}, [](EvalContext& c, const std::vector<List>& in, std::vector<List>& out) {
         if (N(in, 1) <= 0 || N(in, 2) <= 0) return Fail(c, "raggio o altezza non validi");
-        const ON_Plane& b = Pl(in, 0);
-        ON_Plane apex(b.origin + b.zaxis * N(in, 2), -b.zaxis);
-        ON_Cone cone(apex, N(in, 2), N(in, 1));
-        out[0].push_back(Value::Geo(ON_BrepCone(cone, true)));
-        return true;
+        return OnPlane(c, "_Cone 0,0,0 " + G17(N(in, 1)) + " " + G17(N(in, 2)), Pl(in, 0), out[0]);
       });
   add("Pipe", "Tubo", "Superfici", "Tubo di raggio R lungo la curva", {P("Curva", "C", Kind::Curve), PD("Raggio", "R", Kind::Number, one)},
       {P("Tubo", "P", Kind::Brep)}, [](EvalContext& c, const std::vector<List>& in, std::vector<List>& out) {

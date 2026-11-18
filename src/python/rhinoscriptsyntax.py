@@ -638,9 +638,29 @@ def AddBox(corners):
     return _kurva.add_box(pts)
 
 
+def _plane_xform(plane):
+    # WorldXY -> piano: colonne = assi del piano, traslazione = origine
+    o, x, y, z = plane.Origin, plane.XAxis, plane.YAxis, plane.ZAxis
+    return [x[0], y[0], z[0], o[0], x[1], y[1], z[1], o[1], x[2], y[2], z[2], o[2], 0, 0, 0, 1]
+
+
+def _solid(cmd, plane):
+    # i solidi si creano con i comandi di Kurva3D (stessa geometria della riga di comando)
+    # nell'origine lungo Z e poi si portano sul piano
+    sid = _cmd_created(cmd)
+    if sid is None:
+        return None
+    pl = _plane(plane)
+    if pl.Origin != Point3d(0, 0, 0) or pl.ZAxis != Vector3d(0, 0, 1) or pl.XAxis != Vector3d(1, 0, 0):
+        _kurva.transform([sid], _plane_xform(pl), False)
+    return sid
+
+
 def AddSphere(center_or_plane, radius):
     c = center_or_plane.Origin if isinstance(center_or_plane, Plane) else _pt(center_or_plane)
-    return _kurva.add_sphere(c, float(radius))
+    if radius <= 0:
+        raise ValueError("raggio non positivo")
+    return _solid("_Sphere 0,0,0 %.17g" % radius, _plane(c))
 
 
 def _base_axis(base, height):
@@ -657,12 +677,22 @@ def _base_axis(base, height):
 
 def AddCylinder(base, height, radius, cap=True):
     o, axis = _base_axis(base, height)
-    return _kurva.add_cylinder(o, axis, float(radius), bool(cap))
+    h = VectorLength(axis)
+    if h <= 0 or radius <= 0:
+        raise ValueError("cilindro non valido")
+    if not cap:
+        return _kurva.add_cylinder(o, axis, float(radius), False)
+    return _solid("_Cylinder 0,0,0 %.17g %.17g" % (radius, h), PlaneFromNormal(o, axis))
 
 
 def AddCone(base, height, radius, cap=True):
     o, axis = _base_axis(base, height)
-    return _kurva.add_cone(o, axis, float(radius), bool(cap))
+    h = VectorLength(axis)
+    if h <= 0 or radius <= 0:
+        raise ValueError("cono non valido")
+    if not cap:
+        return _kurva.add_cone(o, axis, float(radius), False)
+    return _solid("_Cone 0,0,0 %.17g %.17g" % (radius, h), PlaneFromNormal(o, axis))
 
 
 def AddTorus(base, major_radius, minor_radius, direction=None):
@@ -672,7 +702,7 @@ def AddTorus(base, major_radius, minor_radius, direction=None):
         o, n = _pt(base), Vector3d(0, 0, 1)
     if direction is not None:
         n = _pt(direction) - o
-    return _kurva.add_torus(o, n, float(major_radius), float(minor_radius))
+    return _solid("_Torus 0,0,0 %.17g %.17g" % (major_radius, minor_radius), PlaneFromNormal(o, n))
 
 
 def AddPlaneSurface(plane, u_dir, v_dir):
