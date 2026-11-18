@@ -46,7 +46,10 @@ add_library(cadcore STATIC
   src/commands/CmdExtra6.cpp
   src/commands/Deform.cpp
   src/commands/Deform.h
-  src/commands/Grips.h)
+  src/commands/Grips.h
+  src/ai/Assistant.cpp
+  src/ai/Assistant.h
+  src/ai/Hardware.cpp)
 target_include_directories(cadcore PUBLIC src)
 
 # Motore geometrico opzionale: OpenCASCADE (booleane, raccordi, offset, ...)
@@ -75,6 +78,10 @@ else()
   target_link_libraries(cadcore PUBLIC "$<LINK_GROUP:RESCAN,opennurbsStatic,zlib>")
 endif()
 
+if(WIN32)
+  target_link_libraries(cadcore PUBLIC dxgi)
+endif()
+
 add_executable(3dm-info tools/3dm-info/main.cpp)
 target_link_libraries(3dm-info PRIVATE cadcore)
 
@@ -82,7 +89,7 @@ add_executable(cad-console tools/cad-console/main.cpp)
 target_link_libraries(cad-console PRIVATE cadcore)
 
 # Interfaccia grafica (Qt 6, opzionale)
-find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets)
+find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets Network)
 if(Qt6_FOUND)
   message(STATUS "Qt ${Qt6_VERSION}: interfaccia grafica kurva3d attiva")
   set(CMAKE_AUTOMOC ON)
@@ -109,7 +116,17 @@ if(Qt6_FOUND)
     set_source_files_properties(${_icns} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     list(APPEND _kurva_res ${_icns})
   endif()
+  # Assistente AI (llama.cpp locale): servizi Qt condivisi da kurva3d e dal test kurva3d-ai-test
+  add_library(kurva3d-ai STATIC src/aiqt/AiService.cpp src/aiqt/AiService.h)
+  target_link_libraries(kurva3d-ai PUBLIC cadcore Qt6::Core Qt6::Network)
+  add_executable(kurva3d-ai-test tools/ai-test/main.cpp)
+  target_link_libraries(kurva3d-ai-test PRIVATE kurva3d-ai)
+  if(MSVC)
+    target_compile_options(kurva3d-ai PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/UWIN32>)
+    target_compile_options(kurva3d-ai-test PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/UWIN32>)
+  endif()
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
+    src/ui/AiPanel.cpp src/ui/AiPanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h ${_kurva_res})
   if(APPLE)
@@ -121,7 +138,7 @@ if(Qt6_FOUND)
   endif()
   target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_PUBLISHER="${KURVA3D_PUBLISHER}">)
   target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_VERSION="${PROJECT_VERSION}">)
-  target_link_libraries(kurva3d PRIVATE cadcore Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+  target_link_libraries(kurva3d PRIVATE cadcore kurva3d-ai Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
   if(MSVC)
     target_compile_options(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/UWIN32>)
   endif()

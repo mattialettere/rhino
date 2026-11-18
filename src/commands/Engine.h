@@ -86,6 +86,7 @@ public:
   bool RunCommand(const std::string& name, TokenStream& ts);
 
   const std::map<std::string, CommandInfo>& Commands() const { return m_commands; }
+  Document3dm& Document() { return m_doc; }
   void Register(CommandInfo info);
 
   // --- input per i comandi ---
@@ -137,6 +138,11 @@ public:
   // --- annulla ---
   bool Undo();
   bool Redo();
+  // Gruppi di comandi annullabili in un passo (assistente AI): profondita' attuale,
+  // fusione dei passi successivi in uno solo, ripristino dello stato a quella profondita'.
+  size_t UndoDepth() const { return m_undo.size(); }
+  void SquashUndo(size_t depth);
+  bool RestoreUndo(size_t depth);
 
   // --- messaggi ---
   std::ostream& Out() { return m_out; }

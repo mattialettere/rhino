@@ -2,6 +2,7 @@
 // Alla fine ogni modello viene salvato in formato Rhino 8, riletto e
 // confrontato (nessuna differenza ammessa).
 #include "commands/Annotation.h"
+#include "ai/Assistant.h"
 #include "commands/Engine.h"
 #include "commands/Grips.h"
 #include "core/SubDLimit.h"
@@ -1775,6 +1776,63 @@ int main(int argc, char** argv) {
     if (moved) { ON_BoundingBox bb; moved->GetTightBoundingBox(bb); CHECK(Near(bb.m_max.x, 12.0, 1e-3)); }
   });
 #endif
+
+  // --- Assistente AI: istruzioni, lettura delle risposte, verifica, scelta del modello ---
+  {
+    std::printf("AI_esempi_delle_istruzioni\n");
+    Ctx c;
+    for (const auto& line : ai::ReferenceExamples()) {
+      const auto v = ai::Validate(c.e, {line});
+      if (!v.ok) std::printf("  %s -> %s\n", line.c_str(), v.error.c_str());
+      CHECK(v.ok && v.created >= 1);
+    }
+    // gli script di esempio nelle istruzioni devono funzionare
+    const std::string sp = ai::SystemPrompt();
+    int blocks = 0;
+    for (size_t a = 0; (a = sp.find("\n```kurva\n", a)) != std::string::npos; a += 8) {
+      const size_t b = sp.find("```", a + 9);
+      const auto lines = ai::ExtractScript(sp.substr(a, b + 3 - a));
+      const auto v = ai::Validate(c.e, lines);
+      if (!v.ok) std::printf("  esempio %d, riga %d: %s\n", blocks + 1, v.line + 1, v.error.c_str());
+      CHECK(v.ok && v.created == 1);
+      blocks++;
+    }
+    CHECK(blocks == 2);
+    CHECK(c.e.AllObjectIds(true).empty());  // la verifica non tocca il documento
+  }
+  {
+    std::printf("AI_lettura_risposta\n");
+    const auto l = ai::ExtractScript("<think>devo fare un cubo</think>Ecco:\n```kurva\n_Box 0,0,0 10,10 10 => Cubo\n\n# commento\nSphere 0,0,0 3\n```\nFatto.");
+    CHECK(l.size() == 2 && l[0] == "_Box 0,0,0 10,10 10 => Cubo" && l[1] == "_Sphere 0,0,0 3");
+    std::vector<int> origin;
+    const auto x = ai::ExpandScript(l, &origin);
+    CHECK(x.size() == 6 && x[3] == "_SetObjectName \"Cubo\"" && origin[5] == 1 && origin[4] == 0);
+    Ctx c;
+    auto v = ai::Validate(c.e, {"_Box 0,0,0 10,10 10", "_Volare 1"});
+    CHECK(!v.ok && v.line == 1);
+    v = ai::Validate(c.e, {"_Save \"x.3dm\""});
+    CHECK(!v.ok && v.error.find("non permesso") != std::string::npos);
+    v = ai::Validate(c.e, {"_Sphere 0,0,0"});
+    CHECK(!v.ok && v.line == 0);
+    CHECK(ai::RepairRequest({"_Sphere 0,0,0"}, v).find("Line 1") != std::string::npos);
+  }
+  {
+    std::printf("AI_scelta_del_modello\n");
+    auto pick = [](double ram, double vram) {
+      ai::HardwareInfo hw;
+      hw.ramGB = ram;
+      if (vram > 0) hw.gpus.push_back({"GPU", vram, true});
+      return ai::Catalog()[ai::RecommendModel(hw)].id;
+    };
+    CHECK(pick(4, 0) == "qwen3-1.7b");
+    CHECK(pick(8, 0) == "qwen3-4b");
+    CHECK(pick(16, 0) == "qwen3-8b");
+    CHECK(pick(32, 0) == "qwen3-14b");
+    CHECK(pick(64, 0) == "qwen3-32b");
+    CHECK(pick(16, 24) == "qwen3-14b");
+    for (const auto& m : ai::Catalog()) CHECK(ai::LicenseAllowed(m.license));
+    CHECK(!ai::LicenseAllowed("llama3.1") && !ai::LicenseAllowed("gemma") && !ai::LicenseAllowed("other"));
+  }
 
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);

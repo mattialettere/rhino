@@ -170,6 +170,24 @@ bool CmdSaveAs(Engine& e, TokenStream& ts) {
 bool CmdUndo(Engine& e, TokenStream&) { return e.Undo(); }
 bool CmdRedo(Engine& e, TokenStream&) { return e.Redo(); }
 
+// SelName: aggiunge alla selezione gli oggetti con i nomi dati (Invio per finire),
+// nell'ordine dei nomi: conta per BooleanDifference (prima l'oggetto di base).
+bool CmdSelName(Engine& e, TokenStream& ts) {
+  int n = 0, names = 0;
+  while (!ts.AtEnd() && !IsEnter(ts.Peek())) {
+    const std::string name = ts.Next();
+    names++;
+    for (const auto& id : e.AllObjectIds(false)) {
+      const auto* a = e.Object(id)->Attributes(nullptr);
+      if (a && ON_wString::EqualOrdinal(a->m_name, ON_wString(name.c_str()), true) && !e.IsSelected(id)) { e.Select(id); n++; }
+    }
+  }
+  e.SkipEnter(ts);
+  if (!names) return e.Fail("scrivi i nomi degli oggetti da selezionare");
+  e.Out() << "  Selezionati " << n << " oggetti per nome\n";
+  return true;
+}
+
 // Nome dell'oggetto (campo Nome del pannello Proprieta'). "" toglie il nome.
 bool CmdSetObjectName(Engine& e, TokenStream& ts) {
   auto sel = e.RequireSelection("SetObjectName");
@@ -273,6 +291,7 @@ void RegisterDocumentCommands(Engine& e) {
   reg("Invert", "Seleziona", "Inverte la selezione", CmdInvert, false);
   reg("Layer", "Livelli", "-Layer New/Current <nome>", CmdLayer, true);
   reg("ChangeLayer", "Livelli", "Sposta la selezione su un livello", CmdChangeLayer, true);
+  reg("SelName", "Seleziona", "Seleziona gli oggetti per nome", CmdSelName, false);
   reg("SetObjectName", "Proprietà", "Nome degli oggetti selezionati", CmdSetObjectName, true);
   reg("SetObjectColor", "Proprietà", "Colore degli oggetti (ByLayer, ByParent, r,g,b)", CmdSetObjectColor, true);
   reg("What", "Analisi", "Descrive gli oggetti selezionati", CmdWhat, false);

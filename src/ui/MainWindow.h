@@ -17,6 +17,8 @@ class QPushButton;
 
 namespace cad::ui {
 
+class AiPanel;
+
 class MainWindow : public QMainWindow {
   Q_OBJECT
 public:
@@ -77,6 +79,7 @@ private:
   Viewport* m_views[4] = {};
   Viewport* m_maximized = nullptr;
   Viewport* m_active = nullptr;
+  AiPanel* m_ai = nullptr;
 };
 
 }  // namespace cad::ui

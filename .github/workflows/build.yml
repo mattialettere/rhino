@@ -90,6 +90,37 @@ jobs:
           Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\*\copyright" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName ("dist\licenses\vcpkg\" + $_.Directory.Name + ".txt") }
           Get-ChildItem dist
 
+      # Motore dell'assistente AI: llama-server di llama.cpp (MIT), versione fissa.
+      # Lo zip "vulkan" contiene anche i backend CPU: senza GPU Vulkan usa il processore.
+      - name: llama.cpp per l'assistente AI
+        shell: pwsh
+        run: |
+          $tag = 'b12000'
+          $url = "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-win-vulkan-x64.zip"
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\llama.zip"
+          Expand-Archive "$env:RUNNER_TEMP\llama.zip" -DestinationPath "$env:RUNNER_TEMP\llama" -Force
+          $srv = Get-ChildItem "$env:RUNNER_TEMP\llama" -Recurse -Filter llama-server.exe | Select-Object -First 1
+          if (-not $srv) { throw "llama-server.exe non trovato nello zip" }
+          New-Item -ItemType Directory -Force dist\llama | Out-Null
+          Copy-Item "$($srv.DirectoryName)\*" dist\llama\ -Recurse
+          Get-ChildItem dist\llama | Format-Table Name, Length
+
+      - name: Cache del modello di prova
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Kurva3D\models
+          key: kurva3d-ai-model-qwen3-0.6b-v1
+
+      # Prova completa: licenza e SHA-256 del modello, avvio di llama-server, richiesta e verifica dei comandi
+      - name: Prova dell'assistente AI
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
+          & dist\kurva3d-ai-test.exe --model qwen3-0.6b --prompt "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro"
+          if ($LASTEXITCODE -ne 0) { throw "prova dell'assistente AI fallita" }
+          Remove-Item dist\kurva3d-ai-test.exe
+
       # Avvio reale di kurva3d.exe dalla cartella dello zip: script, screenshot e uscita
       - name: Prova dell'interfaccia
         shell: pwsh

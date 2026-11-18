@@ -40,6 +40,25 @@ Kurva3D non e' affiliato, approvato o sponsorizzato da McNeel. Il formato
    licenze di ognuna sono nella cartella licenses/vcpkg, copiate
    automaticamente al momento della compilazione.
 
+5. llama.cpp e ggml (programma separato llama-server, cartella "llama")
+   Copyright (c) 2023-2026 The ggml authors.
+   Licenza: MIT - licenses/llama.cpp/llama.cpp-MIT.txt
+   Sorgente: https://github.com/ggml-org/llama.cpp (release b12000)
+   Contiene: cpp-httplib (MIT, licenses/llama.cpp/cpp-httplib-MIT.txt),
+   nlohmann/json (MIT, licenses/llama.cpp/nlohmann-json-MIT.txt),
+   stb_image (MIT o pubblico dominio, licenses/llama.cpp/stb_image.txt),
+   miniaudio (MIT-0 o pubblico dominio, licenses/llama.cpp/miniaudio.txt),
+   subprocess.h (Unlicense, licenses/llama.cpp/subprocess-Unlicense.txt),
+   BoringSSL (Apache 2.0, licenses/Apache-2.0.txt;
+   https://boringssl.googlesource.com/boringssl/+/HEAD/LICENSE).
+
+6. Modelli linguistici dell'assistente AI (non inclusi: li scarica l'utente
+   da Hugging Face quando li sceglie)
+   Qwen3 (0.6B, 1.7B, 4B, 8B, 14B, 32B) di Alibaba Cloud / Qwen Team.
+   Licenza: Apache 2.0 - licenses/Apache-2.0.txt. Kurva3D scarica solo
+   modelli con licenza Apache 2.0 o MIT e controlla la licenza dichiarata nel
+   repository prima del download.
+
 Sostituzione delle librerie LGPL: Open CASCADE e Qt sono DLL separate nella
 cartella del programma. Si possono sostituire con versioni compatibili,
 anche ricompilate dall'utente, senza modificare kurva3d.exe. Il codice

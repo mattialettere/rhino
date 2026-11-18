@@ -380,6 +380,20 @@ bool Engine::Undo() {
   return true;
 }
 
+void Engine::SquashUndo(size_t depth) {
+  if (m_undo.size() > depth + 1) m_undo.erase(m_undo.begin() + (long)depth + 1, m_undo.end());
+  m_redo.clear();
+}
+
+bool Engine::RestoreUndo(size_t depth) {
+  if (m_undo.size() <= depth) return true;  // nessun passo da togliere
+  if (!m_doc.FromBuffer(m_undo[depth])) return false;
+  m_undo.resize(depth);
+  m_redo.clear();
+  ClearSelection();
+  return true;
+}
+
 bool Engine::Redo() {
   if (m_redo.empty()) return Fail("niente da ripetere");
   m_undo.push_back(m_doc.ToBuffer());

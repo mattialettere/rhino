@@ -1,4 +1,5 @@
 #include "ui/MainWindow.h"
+#include "ui/AiPanel.h"
 #include <QAbstractItemView>
 #include <QAction>
 #include <QColorDialog>
@@ -210,6 +211,15 @@ MainWindow::MainWindow(QWidget* parent)
   });
   addDockWidget(Qt::RightDockWidgetArea, propsDock);
 
+  // Assistente AI (modello locale): accanto al pannello Proprieta'
+  auto* aiDock = new QDockWidget("Assistente AI", this);
+  aiDock->setObjectName("aiDock");
+  m_ai = new AiPanel(m_engine, [this] { AfterCommand(); }, aiDock);
+  aiDock->setWidget(m_ai);
+  addDockWidget(Qt::RightDockWidgetArea, aiDock);
+  tabifyDockWidget(propsDock, aiDock);
+  propsDock->raise();
+
   BuildMenus();
   BuildSidebar();
   BuildStatusBar();
@@ -326,6 +336,12 @@ void MainWindow::BuildMenus() {
                          {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"}});
   addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"}, {"Modifica blocco (BlockEdit)", "_BlockEdit"},
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
+  auto* aiMenu = menuBar()->addMenu("&AI");
+  aiMenu->addAction("Assistente AI", this, [this] {
+    for (auto* d : findChildren<QDockWidget*>())
+      if (d->objectName() == "aiDock") { d->show(); d->raise(); }
+  });
+  aiMenu->addAction("Modello dell'assistente…", this, [this] { m_ai->ShowModelDialog(); });
   auto* help = menuBar()->addMenu("&?");
   help->addAction("Elenco comandi", this, [this] { Submit("?"); });
   help->addAction("Licenza d'uso", this, [this] { ShowTextFile("EULA.txt", "Licenza d'uso di Kurva3D"); });
