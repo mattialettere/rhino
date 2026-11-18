@@ -1,9 +1,11 @@
 #include "ui/Scene.h"
 #ifdef CAD_WITH_OCCT
+#include "core/SubDLimit.h"
 #include "kernel/OcctConvert.h"
 #endif
 #include <cmath>
 #include <memory>
+#include <set>
 
 namespace cad::ui {
 
@@ -203,30 +205,6 @@ void AddBrep(const ON_Brep& b, DisplayObject& d) {
   for (int i = 0; i < b.m_V.Count(); i++) d.snapPoints.push_back({b.m_V[i].point, SnapKind::End});
 }
 
-std::shared_ptr<ON_Mesh> SubDMesh(const ON_SubD& s) {
-  // Mesh della superficie limite costruita dai frammenti (griglie di quad)
-  ON_Mesh* m = new ON_Mesh();
-  ON_SubDMeshFragmentIterator frit(s);
-  for (const ON_SubDMeshFragment* f = frit.FirstFragment(); f; f = frit.NextFragment()) {
-    const unsigned n = f->m_grid.SidePointCount();
-    if (n < 2) continue;
-    const int base = m->m_V.Count();
-    for (unsigned j = 0; j < n; j++)
-      for (unsigned i = 0; i < n; i++) m->m_V.Append(ON_3fPoint(f->VertexPoint(i, j)));
-    for (unsigned j = 0; j + 1 < n; j++)
-      for (unsigned i = 0; i + 1 < n; i++) {
-        const int a = base + int(j * n + i);
-        m->SetQuad(m->m_F.Count(), a, a + 1, a + 1 + int(n), a + int(n));
-      }
-  }
-  if (m->m_F.Count() == 0) {
-    delete m;
-    m = s.GetControlNetMesh(nullptr, ON_SubDGetControlNetMeshPriority::Geometry);
-  }
-  if (m) m->ComputeVertexNormals();
-  return std::shared_ptr<ON_Mesh>(m);
-}
-
 }  // namespace
 
 void Scene::AddShaded(DisplayObject& d, const std::shared_ptr<ON_Mesh>& m) {
@@ -261,16 +239,26 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
                          ON_3dPoint(top.m_topv[e.m_topvi[1]].m_v_count ? m->m_V[top.m_topv[e.m_topvi[1]].m_vi[0]] : ON_3fPoint::Origin)});
     }
   } else if (const auto* s = ON_SubD::Cast(g)) {
-    ON_SubDEdgeIterator eit(*s);
-    for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge())
-      if (e->m_vertex[0] && e->m_vertex[1])
-        d.wires.push_back({ON_3dPoint(e->m_vertex[0]->m_P), ON_3dPoint(e->m_vertex[1]->m_P)});
     ON_SubDVertexIterator vit(*s);
     for (const ON_SubDVertex* v = vit.FirstVertex(); v; v = vit.NextVertex())
       d.snapPoints.push_back({ON_3dPoint(v->m_P), SnapKind::Vertex});
+    // superficie limite e spigoli limite (come Rhino), calcolati una volta per firma
     auto it = m_meshCache.find(sig);
-    auto sm = it != m_meshCache.end() ? it->second : SubDMesh(*s);
+    auto ie = m_subdEdges.find(sig);
+    std::shared_ptr<ON_Mesh> sm;
+    std::shared_ptr<EdgeList> edges;
+    if (it != m_meshCache.end() && ie != m_subdEdges.end()) {
+      sm = it->second;
+      edges = ie->second;
+    } else {
+      SubDLimitDisplay lim = BuildSubDLimit(*s, 3);
+      sm = std::shared_ptr<ON_Mesh>(lim.mesh.release());
+      edges = std::make_shared<EdgeList>(std::move(lim.edges));
+      if (!sm) sm = std::shared_ptr<ON_Mesh>(s->GetControlNetMesh(nullptr, ON_SubDGetControlNetMeshPriority::Geometry));
+    }
     newCache[sig] = sm;
+    m_newSubdEdges[sig] = edges;
+    for (const auto& w : *edges) d.wires.push_back(w);
     AddShaded(d, sm);
     if (sm) AddSilhouetteCandidates(*sm, d);
   } else if (const auto* dot = ON_TextDot::Cast(g)) {
@@ -416,6 +404,8 @@ void Scene::Rebuild() {
     m_objects.push_back(std::move(d));
   }
   m_meshCache.swap(newCache);
+  m_subdEdges.swap(m_newSubdEdges);
+  m_newSubdEdges.clear();
   RefreshSelection();
 }
 

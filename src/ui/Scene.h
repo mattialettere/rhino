@@ -51,6 +51,8 @@ private:
   Engine& m_engine;
   std::vector<DisplayObject> m_objects;
   std::map<std::string, std::shared_ptr<ON_Mesh>> m_meshCache;  // chiave: id + firma
+  using EdgeList = std::vector<std::vector<ON_3dPoint>>;
+  std::map<std::string, std::shared_ptr<EdgeList>> m_subdEdges, m_newSubdEdges;  // spigoli limite dei SubD
 };
 
 void TessellateCurve(const ON_Curve& c, std::vector<ON_3dPoint>& out);

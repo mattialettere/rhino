@@ -6,6 +6,7 @@
 // trasformazioni (Shear, SetPt, Align), selezione (SelColor, SelSmall),
 // proprieta' (MatchProperties, SetUserText, GetUserText), Purge.
 #include "commands/Engine.h"
+#include "core/SubDLimit.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -419,16 +420,10 @@ ON_SubD* SubDFromCage(ON_Mesh* cage) {
   return ON_SubD::CreateFromMesh(m.get(), nullptr, nullptr);
 }
 
-// Massima distanza dei punti limite dei vertici da un asse (o da un centro se axis nullo).
-double LimitExtent(const ON_SubD& s, const ON_3dPoint& c, const ON_3dVector* axis) {
-  double r = 0;
-  ON_SubDVertexIterator it(s);
-  for (const ON_SubDVertex* v = it.FirstVertex(); v; v = it.NextVertex()) {
-    ON_3dVector d = v->SurfacePoint() - c;
-    if (axis) d = d - *axis * (d * *axis);
-    r = std::max(r, d.Length());
-  }
-  return r;
+// Riquadro della superficie limite.
+ON_BoundingBox LimitBox(const ON_SubD& s) {
+  SubDLimitDisplay lim = BuildSubDLimit(s, 2);
+  return lim.mesh ? lim.mesh->BoundingBox() : s.BoundingBox();
 }
 
 bool AddSubD(Engine& e, ON_SubD* s, const char* what) {
@@ -451,8 +446,10 @@ bool CmdSubDSphere(Engine& e, TokenStream& ts) {
     return ON_3dPoint(std::cos(b) * std::cos(a), std::cos(b) * std::sin(a), std::sin(b));
   }));
   if (!s) return e.Fail("SubD non valido");
-  const double ext = LimitExtent(*s, ON_3dPoint::Origin, nullptr);
-  ON_Xform x = ON_Xform::TranslationTransformation(C - ON_3dPoint::Origin) * ON_Xform::DiagonalTransformation(*r / ext);
+  const ON_BoundingBox bb = LimitBox(*s);
+  const ON_3dVector half = 0.5 * (bb.m_max - bb.m_min);
+  ON_Xform x = ON_Xform::TranslationTransformation(C - ON_3dPoint::Origin) *
+               ON_Xform::DiagonalTransformation(*r / half.x, *r / half.y, *r / half.z);
   s->Transform(x);
   return AddSubD(e, s, "sfera SubD");
 }
@@ -491,8 +488,9 @@ bool CmdSubDCylinder(Engine& e, TokenStream& ts) {
     return ON_3dPoint(std::cos(a), std::sin(a), v * H);
   }));
   if (!s) return e.Fail("SubD non valido");
-  const ON_3dVector z(0, 0, 1);
-  const double ext = LimitExtent(*s, ON_3dPoint::Origin, &z);
+  const ON_BoundingBox bb = LimitBox(*s);
+  // i bordi sono pieghe: in altezza il limite coincide con la gabbia
+  const double ext = 0.5 * (bb.m_max.x - bb.m_min.x);
   ON_Xform sc = ON_Xform::DiagonalTransformation(*r / ext, *r / ext, 1.0);
   s->Transform(ON_Xform::TranslationTransformation(C - ON_3dPoint::Origin) * sc);
   return AddSubD(e, s, "cilindro SubD");
@@ -520,9 +518,7 @@ bool CmdSubDTorus(Engine& e, TokenStream& ts) {
       return ON_3dPoint((Rr + rr * std::cos(b)) * std::cos(a), (Rr + rr * std::cos(b)) * std::sin(a), rr * std::sin(b));
     }, true));
     if (!s) return e.Fail("SubD non valido");
-    double zmax = 0;
-    ON_SubDVertexIterator vit(*s);
-    for (const ON_SubDVertex* v = vit.FirstVertex(); v; v = vit.NextVertex()) zmax = std::max(zmax, v->SurfacePoint().z);
+    const double zmax = LimitBox(*s).m_max.z;
     if (zmax <= 0) break;
     k *= *r / zmax;
   }

@@ -3,6 +3,7 @@
 // confrontato (nessuna differenza ammessa).
 #include "commands/Annotation.h"
 #include "commands/Engine.h"
+#include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
 #include <cmath>
 #include <cstdlib>
@@ -870,9 +871,27 @@ int main(int argc, char** argv) {
     Case("SubDSphere", "_SubDSphere 0,0,0 10", [](Ctx& c) {
       const auto* s = ON_SubD::Cast(c.Last());
       CHECK(s && s->FaceCount() == 32);
-      ON_BoundingBox bb;
-      if (s) bb = s->BoundingBox();
-      CHECK(bb.m_max.x > 9.5);
+      if (!s) return;
+      SubDLimitDisplay lim = BuildSubDLimit(*s, 2);
+      CHECK(lim.mesh != nullptr);
+      if (lim.mesh) {
+        ON_BoundingBox bb = lim.mesh->BoundingBox();
+        CHECK(Near(bb.m_max.x, 10, 1e-3) && Near(bb.m_max.z, 10, 1e-3) && Near(bb.m_min.y, -10, 1e-3));
+      }
+    });
+    Case("SubDLimit_punti", "_SubDBox 0,0,0 10,10 10", [](Ctx& c) {
+      // i punti limite dei vertici della gabbia coincidono con quelli di openNURBS
+      const auto* s = ON_SubD::Cast(c.Last());
+      if (!s) { CHECK(false); return; }
+      SubDLimitDisplay lim = BuildSubDLimit(*s, 3);
+      CHECK(lim.mesh && lim.mesh->m_F.Count() == 6 * 64);
+      CHECK(lim.edges.size() == 12);
+      int i = 0;
+      double worst = 0;
+      ON_SubDVertexIterator vit(*s);
+      for (const ON_SubDVertex* v = vit.FirstVertex(); v && lim.mesh; v = vit.NextVertex(), i++)
+        worst = std::max(worst, ON_3dPoint(lim.mesh->m_V[i]).DistanceTo(v->SurfacePoint()));
+      CHECK(worst < 1e-4);
     });
     Case("SubDPlane", "_SubDPlane 0,0 10,10", [](Ctx& c) {
       CHECK(ON_SubD::Cast(c.Last()) && ON_SubD::Cast(c.Last())->FaceCount() == 1);

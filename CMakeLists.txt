@@ -26,6 +26,8 @@ add_library(cadcore STATIC
   src/core/Document3dm.cpp
   src/core/Document3dm.h
   src/core/ModelCompare.cpp
+  src/core/SubDLimit.cpp
+  src/core/SubDLimit.h
   src/core/ModelCompare.h
   src/commands/Engine.cpp
   src/commands/Engine.h
