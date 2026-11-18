@@ -1,5 +1,8 @@
 #include "ui/AiPanel.h"
 #include <QTimer>
+#include <QTextBlock>
+#include <QTextCursor>
+#include <algorithm>
 #include "ui/Theme.h"
 #include "commands/Engine.h"
 #include <QDialog>
@@ -71,12 +74,7 @@ AiPanel::AiPanel(cad::Engine& engine, std::function<void()> afterChange, QWidget
     std::vector<std::string> lines;
     for (const auto& l : s) lines.push_back(l.toStdString());
     if (m_previewing) Discard();
-    const auto v = ai::Validate(m_engine, lines);
-    if (!v.ok) {
-      m_status->setText(QString("Riga %1: %2").arg(v.line + 1).arg(QString::fromStdString(v.error)));
-      return;
-    }
-    ApplyPreview(s);
+    PreviewValidPart(s);
   });
   connect(m_confirm, &QPushButton::clicked, this, &AiPanel::Confirm);
   connect(m_discard, &QPushButton::clicked, this, &AiPanel::Discard);
@@ -87,9 +85,17 @@ AiPanel::AiPanel(cad::Engine& engine, std::function<void()> afterChange, QWidget
     QTimer::singleShot(0, this, [this] { StartNextTask(); });  // compiti in fila dopo questa richiesta
     m_script->setPlainText(script.join('\n'));
     if (!ok) {
-      m_status->setText("Il modello non ha prodotto comandi validi (" + err +
-                        "). Puoi correggerli a mano e premere Anteprima, o riformulare la richiesta.");
-      if (m_task) FinishTask("nessun comando valido (" + err + ")");
+      if (script.isEmpty()) {
+        m_status->setText("Il modello non ha prodotto comandi (" + err + "). Riformula la richiesta.");
+        if (m_task) FinishTask("nessun comando (" + err + ")");
+        return;
+      }
+      // comandi in parte sbagliati: anteprima della parte che funziona, errore indicato nel testo
+      PreviewValidPart(script);
+      if (m_task) {
+        if (m_previewing) Confirm();
+        FinishTask("fatto in parte, errore alla " + err);
+      }
       return;
     }
     ApplyPreview(script);
@@ -188,6 +194,27 @@ void AiPanel::ApplyPreview(const QStringList& script) {
   m_status->setText(m_previewing ? "Anteprima nel disegno: premi Conferma per tenerla o Scarta per toglierla."
                                  : "Nessuna modifica al disegno.");
   if (m_after) m_after();
+}
+
+void AiPanel::PreviewValidPart(const QStringList& script) {
+  std::vector<std::string> lines;
+  for (const auto& l : script) lines.push_back(l.toStdString());
+  const auto v = ai::Validate(m_engine, lines);
+  if (v.ok) {
+    ApplyPreview(script);
+    return;
+  }
+  const int bad = std::clamp(v.line, 0, (int)script.size());
+  if (bad > 0) ApplyPreview(script.mid(0, bad));
+  const QString msg = QString("Riga %1: %2.").arg(bad + 1).arg(QString::fromStdString(v.error));
+  m_status->setText(bad > 0 ? msg + QString(" Nel disegno c'e' l'anteprima delle righe 1-%1: puoi confermarla, "
+                                           "oppure correggere la riga evidenziata e premere di nuovo Anteprima.").arg(bad)
+                            : msg + " Correggi la riga evidenziata e premi di nuovo Anteprima, o riformula la richiesta.");
+  // riga sbagliata evidenziata nel testo dei comandi
+  QTextCursor c(m_script->document()->findBlockByNumber(bad));
+  c.select(QTextCursor::LineUnderCursor);
+  m_script->setTextCursor(c);
+  m_script->setFocus();
 }
 
 void AiPanel::Confirm() {

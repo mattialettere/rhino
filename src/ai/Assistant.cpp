@@ -164,6 +164,13 @@ Rules of the command language:
 - Never use commands for files, undo, layers or settings.
 - Build solids from simple primitives, then combine them with the boolean commands.
 - Place parts so that solids to be joined overlap a little (at least 0.5 mm).
+- Compute every coordinate from the requested size: each part must be at its final position.
+  Never create several identical objects at the same place: _SelLast selects only the last one.
+  Name each part (=> Name) and select parts by name, or create one part and _Copy it.
+- Flat parts with a non-rectangular outline (rhombus, triangle, L shape, ...): draw the closed outline
+  with _Polyline ... _Close at the right height, then _ExtrudeCrv _Solid=_Yes thickness. Then delete the curve.
+- _Revolve is only for round objects (vases, bottles, wheels); never revolve a flat shape to make a plate.
+- Use _BooleanUnion only on solids that really touch or overlap; if unsure, leave the parts separate.
 
 Example: "un tavolo 120x80 alto 75 cm" (cm -> mm)
 ```kurva
@@ -173,6 +180,24 @@ _SelNone
 _SelName Leg
 _Copy 0,0,0 1060,0,0 1060,660,0 0,660,0 _Enter
 _SelAll
+_BooleanUnion
+```
+
+Example: "un tavolo a forma di rombo con le gambe sotto ogni vertice" (diagonals 1200 and 800, height 750)
+```kurva
+_Polyline 600,0,720 0,400,720 -600,0,720 0,-400,720 _Close => Outline
+_SelNone
+_SelName Outline
+_ExtrudeCrv _Solid=_Yes 30 => Top
+_SelNone
+_SelName Outline
+_Delete
+_Cylinder 520,0,0 25 725 => Leg1
+_Cylinder 0,330,0 25 725 => Leg2
+_Cylinder -520,0,0 25 725 => Leg3
+_Cylinder 0,-330,0 25 725 => Leg4
+_SelNone
+_SelName Top Leg1 Leg2 Leg3 Leg4
 _BooleanUnion
 ```
 

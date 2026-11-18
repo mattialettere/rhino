@@ -1820,7 +1820,7 @@ int main(int argc, char** argv) {
       CHECK(v.ok && v.created == 1);
       blocks++;
     }
-    CHECK(blocks == 2);
+    CHECK(blocks == 3);
     CHECK(c.e.AllObjectIds(true).empty());  // la verifica non tocca il documento
   }
   {

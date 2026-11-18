@@ -16,6 +16,7 @@ Non serve installare nulla: Qt, OpenCASCADE e il runtime di Visual C++ sono già
 - Tutti i 303 comandi di Rhino 8 inventariati, più 5 di mappatura delle texture (elenco in `docs/COMANDI.md`): curve, superfici, solidi e booleane (OpenCASCADE), trasformazioni, Trim/Extend/Fillet/Chamfer, blocchi e gruppi, quote e testi (Text, Dim, DimAligned, DimRotated, DimRadius, DimDiameter, DimAngle, Leader, Centermark), analisi.
 - Osnap (Fine, Vicino, Punto, Medio, Centro, Intersezione, Perpendicolare, Quadrante, Nodo, Vertice), viste Top/Front/Right/Perspective e le altre dal menu del titolo, modalità Wireframe/Shaded/Ghosted/X-Ray.
 - Pannello Proprietà modificabile (nome, livello, colore).
+- Novità della 0.9.1: **Assistente AI** più affidabile. Se una riga dei comandi generati non funziona, l'anteprima mostra comunque le righe giuste, la riga sbagliata resta evidenziata e si può correggere e riprovare (prima non succedeva niente e Conferma restava spento). Istruzioni al modello migliorate per i pezzi piatti di forma qualsiasi (piani a rombo, triangolo, L) e per la posizione delle parti.
 - Novità della 0.9:
   - **Scambio di file**: Import/Export STEP, IGES, STL, OBJ e DXF; **ViewCaptureToFile** e ViewCaptureToClipboard.
   - **Viste**: piani di sezione (**ClippingPlane**), viste e piani di costruzione con nome (NamedView, NamedCPlane), **Snapshots**.

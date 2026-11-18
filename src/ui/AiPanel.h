@@ -40,6 +40,8 @@ class AiPanel : public QWidget {
   std::optional<Task> m_task;
   void Generate();
   void ApplyPreview(const QStringList& script);
+  // anteprima delle righe che funzionano; la prima sbagliata resta evidenziata
+  void PreviewValidPart(const QStringList& script);
   void Confirm();
   void Discard();
   void SetBusy(bool busy, const QString& status);
