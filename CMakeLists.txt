@@ -128,7 +128,8 @@ if(Qt6_FOUND)
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
     src/ui/AiPanel.cpp src/ui/AiPanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
-    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h ${_kurva_res})
+    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h
+    src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})
   if(APPLE)
     # versione minima di macOS: quella delle librerie Homebrew con cui si compila
     set(KURVA3D_MACOS_MIN "15.0" CACHE STRING "macOS minimo per Kurva3D.app")

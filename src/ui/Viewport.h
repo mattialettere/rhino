@@ -1,4 +1,5 @@
 #pragma once
+#include <QColor>
 // Viewport stile Rhino 8: Top, Front, Right (paralleli) e Perspective.
 // Rendering OpenGL 1.1 (funziona su qualsiasi scheda/driver Windows).
 #include "ui/Scene.h"
@@ -53,6 +54,22 @@ public:
     bool gumball = true;          // Gumball sugli oggetti selezionati (barra di stato)
     // Analisi attive (Zebra, DraftAngleAnalysis, CurvatureGraph, ShowEdges) per oggetto
     std::vector<ON_UUID> zebra, draft, curvature, edges;
+    // Colori delle viste (tema chiaro o scuro)
+    struct Colors {
+      bool dark = false;
+      QColor bgTop{204, 207, 212}, bgBottom{184, 187, 192};
+      QColor gridMinor{168, 171, 176}, gridMajor{140, 143, 148};
+      QColor axisX{176, 70, 70}, axisY{70, 150, 80};
+      QColor ink{0, 0, 0};          // oggetti neri (colore predefinito dei livelli)
+      QColor overlay{32, 34, 38};   // titolo della vista, cornice, elastico
+      QColor cage{70, 70, 70};
+      QColor selected{255, 214, 0};
+    } colors;
+    // Colore con cui disegnare un oggetto: il nero diventa l'inchiostro del tema
+    QColor ObjectColor(const ON_Color& c) const {
+      if (c.Red() == 0 && c.Green() == 0 && c.Blue() == 0) return colors.ink;
+      return QColor(c.Red(), c.Green(), c.Blue());
+    }
   };
   enum OsnapBit : unsigned { End = 1, Near = 2, Point = 4, Mid = 8, Cen = 16, Int = 32, Perp = 64,
                              Tan = 128, Quad = 256, Knot = 512, Vertex = 1024 };

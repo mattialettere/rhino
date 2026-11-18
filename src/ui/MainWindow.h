@@ -1,10 +1,14 @@
 #pragma once
 #include "commands/Engine.h"
 #include "ui/Scene.h"
+#include "ui/Theme.h"
 #include "ui/Viewport.h"
 #include <QMainWindow>
 #include <sstream>
+#include <utility>
+#include <vector>
 
+class QAction;
 class QLineEdit;
 class QCompleter;
 class QLabel;
@@ -44,6 +48,8 @@ private:
   void Log(const QString& s);
   void BuildMenus();
   void BuildSidebar();
+  void SetTheme(ThemeMode m);
+  void RefreshThemeIcons();
   QWidget* BuildToolTabs();
   Viewport* Active() { return m_active ? m_active : m_views[1]; }
   void BuildStatusBar();
@@ -80,6 +86,7 @@ private:
   Viewport* m_maximized = nullptr;
   Viewport* m_active = nullptr;
   AiPanel* m_ai = nullptr;
+  std::vector<std::pair<QAction*, QString>> m_iconActions;  // azioni con icona del tema
 };
 
 }  // namespace cad::ui

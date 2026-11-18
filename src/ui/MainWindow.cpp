@@ -1,5 +1,9 @@
 #include "ui/MainWindow.h"
 #include "ui/AiPanel.h"
+#include "ui/Theme.h"
+#include <QActionGroup>
+#include <QStyleHints>
+#include <QGuiApplication>
 #include <QAbstractItemView>
 #include <QAction>
 #include <QColorDialog>
@@ -15,6 +19,7 @@
 #include <QFileDialog>
 #include <QFile>
 #include <QIcon>
+#include <QPixmap>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -97,15 +102,23 @@ MainWindow::MainWindow(QWidget* parent)
   // Area comandi in alto (come Rhino 8): cronologia + riga "Comando:"
   auto* central = new QWidget;
   auto* vbox = new QVBoxLayout(central);
-  vbox->setContentsMargins(2, 2, 2, 2);
-  vbox->setSpacing(2);
+  vbox->setContentsMargins(6, 4, 6, 4);
+  vbox->setSpacing(4);
+  auto* cmdBar = new QWidget;
+  cmdBar->setObjectName("commandBar");
+  cmdBar->setAttribute(Qt::WA_StyledBackground);
+  auto* cmdBox = new QVBoxLayout(cmdBar);
+  cmdBox->setContentsMargins(8, 4, 8, 4);
+  cmdBox->setSpacing(0);
   m_history = new QPlainTextEdit;
   m_history->setReadOnly(true);
   m_history->setMaximumHeight(70);
   m_history->setFont(QFont("Consolas", 9));
-  vbox->addWidget(m_history);
+  m_history->setFrameShape(QFrame::NoFrame);
+  cmdBox->addWidget(m_history);
   auto* line = new QHBoxLayout;
   m_prompt = new QLabel("Comando:");
+  m_prompt->setObjectName("panelTitle");
   m_input = new QLineEdit;
   m_input->setFont(QFont("Consolas", 10));
   m_input->installEventFilter(this);
@@ -121,7 +134,8 @@ MainWindow::MainWindow(QWidget* parent)
   }
   line->addWidget(m_prompt);
   line->addWidget(m_input, 1);
-  vbox->addLayout(line);
+  cmdBox->addLayout(line);
+  vbox->addWidget(cmdBar);
   vbox->addWidget(BuildToolTabs());
 
   // Quattro viewport
@@ -222,6 +236,13 @@ MainWindow::MainWindow(QWidget* parent)
 
   BuildMenus();
   BuildSidebar();
+  RefreshThemeIcons();
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+  // In modo automatico segue il cambio chiaro/scuro di Windows anche a programma aperto
+  connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this] {
+    if (SavedThemeMode() == ThemeMode::Auto) SetTheme(ThemeMode::Auto);
+  });
+#endif
   BuildStatusBar();
   Log("Kurva3D - modello nuovo in millimetri. Scrivi un comando, ? per l'elenco.");
   AfterCommand();
@@ -271,6 +292,20 @@ void MainWindow::BuildMenus() {
   edit->addAction("Punti di controllo disattivi", QKeySequence(Qt::Key_F11), this, [this] { Submit("_PointsOff"); });
 
   auto* view = menuBar()->addMenu("&Vista");
+  {
+    auto* theme = view->addMenu("Tema");
+    auto* group = new QActionGroup(theme);
+    const std::pair<const char*, ThemeMode> modes[] = {
+        {"Automatico (come Windows)", ThemeMode::Auto}, {"Chiaro", ThemeMode::Light}, {"Scuro", ThemeMode::Dark}};
+    const ThemeMode cur = SavedThemeMode();
+    for (auto& [label, m] : modes) {
+      QAction* a = theme->addAction(label, this, [this, m = m] { SetTheme(m); });
+      a->setCheckable(true);
+      a->setChecked(m == cur);
+      group->addAction(a);
+    }
+    view->addSeparator();
+  }
   view->addAction("Zoom estensione (tutte le viste)", this, [this] { ZoomExtentsAll(); });
   view->addAction("Ombreggiato / Wireframe (vista attiva)", this, [this] {
     for (auto* v : m_views)
@@ -397,15 +432,17 @@ void MainWindow::ShowTextFile(const QString& file, const QString& title) {
 QWidget* MainWindow::BuildToolTabs() {
   auto* tabs = new QTabWidget;
   tabs->setDocumentMode(true);
-  tabs->setMaximumHeight(62);
+  tabs->setMaximumHeight(70);
   using Btn = std::pair<const char*, const char*>;
   auto addTab = [&](const char* title, std::initializer_list<Btn> buttons) {
     auto* tb = new QToolBar;
-    tb->setIconSize(QSize(16, 16));
-    tb->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    tb->setIconSize(QSize(18, 18));
+    tb->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     for (auto& [label, cmd] : buttons) {
       QString c = cmd;
-      tb->addAction(label, this, [this, c] { Submit(c); });
+      QAction* a = tb->addAction(label, this, [this, c] { Submit(c); });
+      a->setToolTip(QString("%1  (%2)").arg(label, c.mid(c.indexOf('_') + 1)));
+      m_iconActions.push_back({a, c});
     }
     tabs->addTab(tb, title);
     return tb;
@@ -468,10 +505,17 @@ QWidget* MainWindow::BuildToolTabs() {
 }
 
 void MainWindow::BuildSidebar() {
-  // Barra laterale con i comandi piu' usati (testo: le icone di Rhino non si copiano).
+  // Barra laterale a due colonne con i comandi piu' usati: icone originali di
+  // Kurva3D (disegnate dal programma), nome e comando nel suggerimento.
   auto* tb = new QToolBar("Comandi");
   tb->setOrientation(Qt::Vertical);
+  tb->setMovable(false);
   addToolBar(Qt::LeftToolBarArea, tb);
+  auto* panel = new QWidget;
+  panel->setObjectName("sidebar");
+  auto* grid = new QGridLayout(panel);
+  grid->setContentsMargins(2, 2, 2, 2);
+  grid->setSpacing(2);
   const std::pair<const char*, const char*> items[] = {
     {"Linea", "_Line"}, {"Polilinea", "_Polyline"}, {"Cerchio", "_Circle"}, {"Arco", "_Arc"},
     {"Rettangolo", "_Rectangle"}, {"Curva", "_Curve"}, {"Interp", "_InterpCrv"}, {"Box", "_Box"},
@@ -481,10 +525,36 @@ void MainWindow::BuildSidebar() {
     {"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
     {"Specchia", "_Mirror"}, {"Unisci", "_Join"}, {"Esplodi", "_Explode"}, {"Dividi", "_Split"},
     {"Elimina", "_Delete"}};
+  int n = 0;
   for (auto& [label, cmd] : items) {
-    QString c = cmd;
-    tb->addAction(label, this, [this, c] { Submit(c); });
+    const QString c = cmd;
+    auto* b = new QToolButton;
+    auto* a = new QAction(label, b);
+    a->setToolTip(QString("%1  (%2)").arg(label, c.mid(1)));
+    connect(a, &QAction::triggered, this, [this, c] { Submit(c); });
+    b->setDefaultAction(a);
+    b->setIconSize(QSize(24, 24));
+    b->setFixedSize(36, 36);
+    b->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    m_iconActions.push_back({a, c});
+    grid->addWidget(b, n / 2, n % 2);
+    n++;
   }
+  grid->setRowStretch(n / 2 + 1, 1);
+  tb->addWidget(panel);
+}
+
+// Tema dell'interfaccia: tavolozza, icone e colori delle viste.
+void MainWindow::SetTheme(ThemeMode m) {
+  SaveThemeMode(m);
+  ApplyTheme(m);
+  RefreshThemeIcons();
+}
+
+void MainWindow::RefreshThemeIcons() {
+  for (auto& [a, c] : m_iconActions) a->setIcon(CommandIcon(c));
+  for (auto* v : m_views)
+    if (v) v->update();
 }
 
 void MainWindow::BuildStatusBar() {
@@ -830,7 +900,9 @@ void MainWindow::RefreshPanels() {
     item->setText(1, ON_UuidCompare(l->Id(), current) == 0 ? "✓" : "");
     item->setText(2, l->IsVisible() ? "sì" : "no");
     const ON_Color col = l->Color();
-    item->setForeground(0, QColor(col.Red(), col.Green(), col.Blue()));
+    QPixmap sw(12, 12);  // colore del livello come campione accanto al nome
+    sw.fill(QColor(col.Red(), col.Green(), col.Blue()));
+    item->setIcon(0, QIcon(sw));
   }
   m_layers->resizeColumnToContents(0);
   // Proprieta' della selezione

@@ -201,17 +201,18 @@ void Viewport::DrawGrid() {
   for (int i = -n; i <= n; i++) {
     if (i == 0) continue;
     const bool major = (i % 10) == 0;
-    if (major) gl->glColor3ub(120, 120, 120); else gl->glColor3ub(152, 152, 152);
+    const QColor& gc = major ? Shared().colors.gridMajor : Shared().colors.gridMinor;
+    gl->glColor3ub(gc.red(), gc.green(), gc.blue());
     ON_3dPoint a = cp.PointAt(i * s, -n * s), b = cp.PointAt(i * s, n * s);
     ON_3dPoint c = cp.PointAt(-n * s, i * s), d = cp.PointAt(n * s, i * s);
     gl->glVertex3d(a.x, a.y, a.z); gl->glVertex3d(b.x, b.y, b.z);
     gl->glVertex3d(c.x, c.y, c.z); gl->glVertex3d(d.x, d.y, d.z);
   }
   // assi del piano di costruzione: X rosso, Y verde
-  gl->glColor3ub(150, 75, 75);
+  gl->glColor3ub(Shared().colors.axisX.red(), Shared().colors.axisX.green(), Shared().colors.axisX.blue());
   ON_3dPoint a = cp.PointAt(-n * s, 0), b = cp.PointAt(n * s, 0);
   gl->glVertex3d(a.x, a.y, a.z); gl->glVertex3d(b.x, b.y, b.z);
-  gl->glColor3ub(75, 150, 75);
+  gl->glColor3ub(Shared().colors.axisY.red(), Shared().colors.axisY.green(), Shared().colors.axisY.blue());
   a = cp.PointAt(0, -n * s); b = cp.PointAt(0, n * s);
   gl->glVertex3d(a.x, a.y, a.z); gl->glVertex3d(b.x, b.y, b.z);
   gl->glEnd();
@@ -354,8 +355,26 @@ void Viewport::paintGL() {
   auto* gl = GL(context());
   const int w = width(), h = height();
   gl->glViewport(0, 0, w * devicePixelRatio(), h * devicePixelRatio());
-  gl->glClearColor(190 / 255.f, 190 / 255.f, 190 / 255.f, 1.f);
-  gl->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  {  // sfondo sfumato (dall'alto in basso) con i colori del tema
+    const auto& C = Shared().colors;
+    gl->glClearColor(C.bgBottom.redF(), C.bgBottom.greenF(), C.bgBottom.blueF(), 1.f);
+    gl->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    gl->glMatrixMode(GL_PROJECTION);
+    gl->glLoadIdentity();
+    gl->glMatrixMode(GL_MODELVIEW);
+    gl->glLoadIdentity();
+    gl->glDisable(GL_DEPTH_TEST);
+    gl->glDisable(GL_LIGHTING);
+    gl->glBegin(GL_QUADS);
+    gl->glColor3f(C.bgBottom.redF(), C.bgBottom.greenF(), C.bgBottom.blueF());
+    gl->glVertex2f(-1, -1);
+    gl->glVertex2f(1, -1);
+    gl->glColor3f(C.bgTop.redF(), C.bgTop.greenF(), C.bgTop.blueF());
+    gl->glVertex2f(1, 1);
+    gl->glVertex2f(-1, 1);
+    gl->glEnd();
+    gl->glEnable(GL_DEPTH_TEST);
+  }
 
   // Matrici: proiezione e vista calcolate qui (le stesse usate per la selezione).
   const double aspect = double(w) / std::max(1, h);
@@ -438,9 +457,11 @@ void Viewport::paintGL() {
   for (int pass = 0; pass < 2; pass++) {  // selezionati per ultimi, sopra
     for (const auto& obj : m_scene.Objects()) {
       if (obj.selected != (pass == 1)) continue;
-      if (obj.selected) gl->glColor3ub(255, 255, 0);
-      else if (obj.locked) gl->glColor3ub(110, 110, 110);
-      else gl->glColor3ub(obj.color.Red(), obj.color.Green(), obj.color.Blue());
+      {
+        const auto& SC = Shared();
+        const QColor oc = obj.selected ? SC.colors.selected : obj.locked ? QColor(128, 128, 128) : SC.ObjectColor(obj.color);
+        gl->glColor3ub(oc.red(), oc.green(), oc.blue());
+      }
       gl->glLineWidth(obj.selected ? 2.0f : 1.0f);
       if (mode == DisplayMode::Wireframe || mode == DisplayMode::XRay || mode == DisplayMode::Ghosted) {
         // contorno apparente: spigoli dove una faccia guarda la camera e l'altra no
@@ -483,7 +504,7 @@ void Viewport::paintGL() {
   gl->glLineWidth(1.0f);
   for (const auto& obj : m_scene.Objects()) {
     if (obj.cage.empty()) continue;
-    gl->glColor3ub(70, 70, 70);
+    gl->glColor3ub(Shared().colors.cage.red(), Shared().colors.cage.green(), Shared().colors.cage.blue());
     for (const auto& poly : obj.cage) {
       gl->glBegin(GL_LINE_STRIP);
       for (const auto& q : poly) gl->glVertex3d(q.x, q.y, q.z);
@@ -492,7 +513,7 @@ void Viewport::paintGL() {
   }
   if (m_gripDrag.active) {  // anteprima del punto trascinato
     gl->glDisable(GL_DEPTH_TEST);
-    gl->glColor3ub(60, 60, 60);
+    gl->glColor3ub(Shared().colors.cage.red(), Shared().colors.cage.green(), Shared().colors.cage.blue());
     if (const ON_Geometry* g = m_scene.Geometry(m_gripDrag.id)) {
       std::unique_ptr<ON_Geometry> moved(MoveGrip(g, m_gripDrag.i, m_gripDrag.j, m_gripDrag.cur));
       if (const auto* c = ON_Curve::Cast(moved.get())) {
@@ -519,7 +540,7 @@ void Viewport::paintGL() {
     for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) m[c * 4 + r] = x[r][c];
     gl->glPushMatrix();
     gl->glMultMatrixd(m);
-    gl->glColor3ub(80, 80, 80);
+    gl->glColor3ub(Shared().colors.cage.red(), Shared().colors.cage.green(), Shared().colors.cage.blue());
     gl->glLineWidth(1.0f);
     for (const auto& obj : m_scene.Objects()) {
       if (!obj.selected) continue;
@@ -537,7 +558,7 @@ void Viewport::paintGL() {
   const Settings& S = Shared();
   gl->glDisable(GL_DEPTH_TEST);
   if (S.waitingForPoint && S.hasLastPoint && underMouse()) {
-    gl->glColor3ub(0, 0, 0);
+    gl->glColor3ub(S.colors.overlay.red(), S.colors.overlay.green(), S.colors.overlay.blue());
     gl->glLineWidth(1.0f);
     gl->glBegin(GL_LINES);
     gl->glVertex3d(S.lastPoint.x, S.lastPoint.y, S.lastPoint.z);
@@ -551,14 +572,14 @@ void Viewport::paintGL() {
   DrawLabels(p);
   DrawGrips(p);
   DrawGumball(p);
-  p.setPen(QColor(30, 30, 30));
+  p.setPen(Shared().colors.overlay);
   QFont f = p.font(); f.setBold(true); p.setFont(f);
   QString title = KindName(m_cam.kind);
   p.drawText(8, 16, title);
   {  // freccia del menu della vista
     const int tx = 8 + p.fontMetrics().horizontalAdvance(title) + 8;
     QPolygonF tri({QPointF(tx, 9), QPointF(tx + 8, 9), QPointF(tx + 4, 14)});
-    p.setBrush(QColor(30, 30, 30));
+    p.setBrush(Shared().colors.overlay);
     p.drawPolygon(tri);
     p.setBrush(Qt::NoBrush);
   }
@@ -576,7 +597,7 @@ void Viewport::paintGL() {
   axis(ON_3dVector::ZAxis, QColor(0, 0, 200), "z");
   if (m_windowSelecting) {
     const bool crossing = m_hover.x() < m_pressPos.x();
-    QPen pen(QColor(0, 0, 0), 1, crossing ? Qt::DashLine : Qt::SolidLine);
+    QPen pen(Shared().colors.overlay, 1, crossing ? Qt::DashLine : Qt::SolidLine);
     p.setPen(pen);
     p.setBrush(crossing ? QColor(80, 200, 80, 40) : QColor(80, 80, 200, 40));
     p.drawRect(QRect(m_pressPos, m_hover).normalized());
@@ -596,7 +617,8 @@ void Viewport::paintGL() {
     }
   }
   if (hasFocus()) {
-    p.setPen(QPen(QColor(60, 60, 60), 2)); p.setBrush(Qt::NoBrush);
+    QColor fc = Shared().colors.selected.isValid() ? QColor(59, 130, 246) : Shared().colors.overlay;
+    p.setPen(QPen(fc, 2)); p.setBrush(Qt::NoBrush);
     p.drawRect(rect().adjusted(1, 1, -1, -1));
   }
 }
@@ -608,8 +630,7 @@ void Viewport::DrawLabels(QPainter& p) const {
   const int W = width(), H = height();
   for (const auto& obj : m_scene.Objects()) {
     if (obj.labels.empty()) continue;
-    QColor c = obj.selected ? QColor(255, 255, 0) : obj.locked ? QColor(110, 110, 110)
-                                                              : QColor(obj.color.Red(), obj.color.Green(), obj.color.Blue());
+    QColor c = obj.selected ? Shared().colors.selected : obj.locked ? QColor(128, 128, 128) : Shared().ObjectColor(obj.color);
     for (const auto& L : obj.labels) {
       if (L.dot) {  // punto di testo: riquadro pieno del colore dell'oggetto, testo bianco
         double sx, sy;
@@ -826,7 +847,7 @@ void Viewport::DrawGumball(QPainter& p) const {
     if (m_gbDrag.mode == 1) t = QString::number(m_gbCurrent - m_gbStart, 'f', 3);
     else if (m_gbDrag.mode == 2) t = QString::number((m_gbCurrent - m_gbStart) * 180.0 / ON_PI, 'f', 2) + "°";
     else if (std::fabs(m_gbStart) > 1e-12) t = "× " + QString::number(m_gbCurrent / m_gbStart, 'f', 3);
-    p.setPen(QColor(0, 0, 0));
+    p.setPen(Shared().colors.ink);
     p.drawText(QPointF(m_hover.x() + 14, m_hover.y() - 8), t);
   }
   p.restore();
