@@ -1808,7 +1808,7 @@ int main(int argc, char** argv) {
     const std::string dir = g_outDir + "/scambio";
     fs::create_directories(dir);
     auto bboxOf = [](Ctx& c) { return c.BBox(); };
-    auto near = [](const ON_BoundingBox& a, const ON_BoundingBox& b, double t) {
+    auto nearBox = [](const ON_BoundingBox& a, const ON_BoundingBox& b, double t) {
       return a.m_min.DistanceTo(b.m_min) < t && a.m_max.DistanceTo(b.m_max) < t;
     };
     auto count = [](Ctx& c, auto pred) { int n = 0; for (auto* g : c.Objects()) if (pred(g)) n++; return n; };
@@ -1824,8 +1824,8 @@ int main(int argc, char** argv) {
       CHECK(ok);
       const ON_BoundingBox b1 = bboxOf(back);
       const bool exact = std::string(ext) == "stp" || std::string(ext) == "igs";
-      if (!near(b0, b1, exact ? 1e-3 : 0.05)) std::printf("  bbox %s: %g %g %g - %g %g %g\n", ext, b1.m_min.x, b1.m_min.y, b1.m_min.z, b1.m_max.x, b1.m_max.y, b1.m_max.z);
-      CHECK(near(b0, b1, exact ? 1e-3 : 0.05));
+      if (!nearBox(b0, b1, exact ? 1e-3 : 0.05)) std::printf("  bbox %s: %g %g %g - %g %g %g\n", ext, b1.m_min.x, b1.m_min.y, b1.m_min.z, b1.m_max.x, b1.m_max.y, b1.m_max.z);
+      CHECK(nearBox(b0, b1, exact ? 1e-3 : 0.05));
       if (exact) CHECK(count(back, [](const ON_Geometry* g) { return ON_Brep::Cast(g) != nullptr; }) >= 2);
       else CHECK(count(back, [](const ON_Geometry* g) { return ON_Mesh::Cast(g) != nullptr; }) >= 1);
     }
@@ -1862,7 +1862,7 @@ int main(int argc, char** argv) {
       CHECK(count(back, [](const ON_Geometry* g) { return ON_ArcCurve::Cast(g) != nullptr; }) == 2);
       CHECK(count(back, [](const ON_Geometry* g) { return ON_Point::Cast(g) != nullptr; }) == 1);
       CHECK(count(back, [](const ON_Geometry* g) { return ON_PolyCurve::Cast(g) != nullptr || ON_PolylineCurve::Cast(g) != nullptr; }) == 2);
-      CHECK(near(c.BBox(), back.BBox(), 1e-6));
+      CHECK(nearBox(c.BBox(), back.BBox(), 1e-6));
       bool layer = false;
       for (const auto& id : back.e.AllObjectIds(true)) {
         const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(back.e.Object(id)->Attributes(nullptr)->m_layer_index).ModelComponent());
