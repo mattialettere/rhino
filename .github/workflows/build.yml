@@ -1,0 +1,270 @@
+# Compilazione di Kurva3D per Windows 64 bit e macOS (Apple Silicon e Intel):
+# compila, esegue i test, prova l'interfaccia, crea zip/installer/dmg e, se il
+# file RELEASE contiene una versione nuova, pubblica la Release con tutti i file.
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # per pubblicare la Release (file RELEASE)
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 300
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}\vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # OpenCASCADE via vcpkg: la prima volta ~1 ora, poi dalla cache
+      - name: Cache vcpkg (ripristino)
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-opencascade-win64-v1
+      - name: OpenCASCADE (vcpkg)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install opencascade:x64-windows
+      - name: Cache vcpkg (salvataggio)
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-opencascade-win64-v1
+
+      # Qt 6 precompilato
+      - name: Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.3'
+          arch: 'win64_msvc2019_64'
+          cache: true
+
+      - name: Configura
+        shell: pwsh
+        run: >
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+
+      - name: Compila
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Prepara lo zip
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build\Release\*.exe dist\ -ErrorAction SilentlyContinue
+          Copy-Item build\Release\*.dll dist\ -ErrorAction SilentlyContinue
+          Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" dist\ -ErrorAction SilentlyContinue
+          if (Test-Path dist\kurva3d.exe) { windeployqt --release --no-translations dist\kurva3d.exe }
+          # runtime di Visual C++ accanto all'exe: parte anche sui PC senza "VC++ Redistributable"
+          foreach ($d in 'msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll') {
+            if (Test-Path "C:\Windows\System32\$d") { Copy-Item "C:\Windows\System32\$d" dist\ }
+          }
+          Copy-Item examples dist\examples -Recurse
+          Copy-Item README.md dist\
+          Copy-Item THIRD_PARTY_NOTICES.txt dist\
+          Copy-Item EULA.txt dist\
+          Copy-Item LICENSE.txt dist\
+          Copy-Item licenses dist\licenses -Recurse
+          # note di copyright delle librerie installate da vcpkg (OCCT, Qt e dipendenze)
+          New-Item -ItemType Directory -Force dist\licenses\vcpkg | Out-Null
+          Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\*\copyright" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName ("dist\licenses\vcpkg\" + $_.Directory.Name + ".txt") }
+          Get-ChildItem dist
+
+      # Avvio reale di kurva3d.exe dalla cartella dello zip: script, screenshot e uscita
+      - name: Prova dell'interfaccia
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList '--script', "$PWD\tests\ui_smoke.txt", '--screenshot', "$PWD\dist\screenshot-avvio.png" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "kurva3d.exe non si e' chiuso entro 2 minuti" }
+          Write-Host "Codice di uscita: $($p.ExitCode)"
+          if (-not (Test-Path dist\screenshot-avvio.png)) { throw "screenshot non creato: la finestra non si e' aperta" }
+          Get-Item dist\screenshot-avvio.png | Format-List Name, Length
+          if ((Get-Item dist\screenshot-avvio.png).Length -lt 20000) { throw "screenshot troppo piccolo" }
+
+      # Installer (Inno Setup): crea Kurva3D-Setup-<versione>.exe, poi lo prova
+      # con un'installazione silenziosa in una cartella temporanea e la disinstalla.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup non disponibile" }
+          $ver = (Get-Content RELEASE -First 1).Trim().TrimStart('v')
+          & $iscc /Qp "/DAppVersion=$ver" "/DSourceDir=$PWD\dist" "/DOutputDir=$PWD\out" installer\kurva3d.iss
+          if ($LASTEXITCODE -ne 0) { throw "compilazione dell'installer fallita" }
+          $setup = Get-ChildItem out\Kurva3D-Setup-*.exe | Select-Object -First 1
+          $dir = "$env:RUNNER_TEMP\k3d-test"
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir" -PassThru -Wait
+          if (-not (Test-Path "$dir\kurva3d.exe")) { throw "installazione silenziosa non riuscita (codice $($p.ExitCode))" }
+          if (-not (Test-Path "$dir\EULA.txt")) { throw "EULA non installata" }
+          $u = Get-ChildItem "$dir\unins*.exe" | Select-Object -First 1
+          Start-Process -FilePath $u.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait
+          Get-Item $setup.FullName | Format-List Name, Length
+
+      - name: Pubblica l'installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-setup
+          path: out
+
+      - name: Pubblica lo zip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-windows-x64
+          path: dist
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: AppleSilicon
+          - runner: macos-15-intel
+            arch: Intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dipendenze (Homebrew)
+        run: brew install qt opencascade ninja
+
+      - name: Configura
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix opencascade)"
+
+      - name: Compila
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      # App autonoma: framework Qt e librerie OpenCASCADE copiati dentro Kurva3D.app
+      - name: Prepara Kurva3D.app
+        run: |
+          mkdir -p dist
+          cp -R build/kurva3d.app dist/Kurva3D.app
+          "$(brew --prefix qt)/bin/macdeployqt" dist/Kurva3D.app -always-overwrite
+          R=dist/Kurva3D.app/Contents/Resources
+          cp EULA.txt LICENSE.txt THIRD_PARTY_NOTICES.txt "$R/"
+          cp -R licenses "$R/licenses"
+          # nessuna libreria deve restare collegata a Homebrew
+          bad=0
+          while IFS= read -r f; do
+            if otool -L "$f" 2>/dev/null | tail -n +2 | grep -E "/opt/homebrew|/usr/local" ; then echo "^ in $f"; bad=1; fi
+          done < <(find dist/Kurva3D.app -type f \( -perm -111 -o -name "*.dylib" \))
+          if [ $bad -ne 0 ]; then echo "librerie esterne non incluse"; exit 1; fi
+          du -sh dist/Kurva3D.app
+
+      - name: Firma
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -n "$MACOS_CERTIFICATE" ]; then
+            KC="$RUNNER_TEMP/firma.keychain-db"; KP="$(uuidgen)"
+            echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security create-keychain -p "$KP" "$KC"
+            security set-keychain-settings -lut 21600 "$KC"
+            security unlock-keychain -p "$KP" "$KC"
+            security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KP" "$KC" >/dev/null
+            security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+            ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | awk '{print $2}')
+            if [ -z "$ID" ]; then echo "certificato Developer ID Application non trovato"; exit 1; fi
+            codesign --force --deep --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" dist/Kurva3D.app
+            echo "FIRMATA=1" >> "$GITHUB_ENV"
+          else
+            echo "Nessun certificato nei Secrets: firma ad hoc (app non firmata da Apple)"
+            codesign --force --deep -s - dist/Kurva3D.app
+          fi
+          codesign --verify --deep --strict --verbose=2 dist/Kurva3D.app
+
+      # Avvio reale dell'app impacchettata: script, screenshot e uscita
+      - name: Prova dell'interfaccia
+        run: |
+          ( dist/Kurva3D.app/Contents/MacOS/kurva3d --script "$PWD/tests/ui_smoke.txt" --screenshot "$PWD/screenshot-mac.png" & echo $! > pid )
+          for i in $(seq 1 120); do kill -0 $(cat pid) 2>/dev/null || break; sleep 1; done
+          if kill -0 $(cat pid) 2>/dev/null; then kill $(cat pid); echo "l'app non si e' chiusa entro 2 minuti"; exit 1; fi
+          test -s screenshot-mac.png || { echo "screenshot non creato"; exit 1; }
+          ls -la screenshot-mac.png
+
+      - name: Crea il dmg
+        run: |
+          VER=$(head -1 RELEASE | tr -d '[:space:]' | sed 's/^v//')
+          DMG="Kurva3D-$VER-mac-${{ matrix.arch }}.dmg"
+          mkdir -p dmg out
+          cp -R dist/Kurva3D.app dmg/
+          ln -s /Applications dmg/Applicazioni
+          cp EULA.txt "dmg/Licenza d'uso.txt"
+          hdiutil create -volname "Kurva3D $VER" -srcfolder dmg -ov -format UDZO "out/$DMG"
+          echo "DMG=out/$DMG" >> "$GITHUB_ENV"
+
+      - name: Notarizzazione Apple
+        if: env.FIRMATA == '1'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ID=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk '{print $2}')
+          codesign --force --timestamp -s "$ID" "$DMG"
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait --timeout 30m | tee notary.txt
+          grep -q "status: Accepted" notary.txt || { echo "notarizzazione rifiutata"; exit 1; }
+          xcrun stapler staple "$DMG"
+          spctl -a -t open --context context:primary-signature -v "$DMG"
+
+      - name: Pubblica il dmg
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-mac-${{ matrix.arch }}
+          path: |
+            out
+            screenshot-mac.png
+
+  # Checkpoint: quando il file RELEASE contiene una versione nuova (es. v0.7.0) e
+  # tutte le compilazioni e i test sono passati sul ramo main, si crea la Release.
+  # Le versioni gia' pubblicate non vengono toccate.
+  release:
+    needs: [windows, macos]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Release (versione nel file RELEASE)
+        run: |
+          tag=$(head -1 RELEASE | tr -d '[:space:]')
+          [ -n "$tag" ] || exit 0
+          if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
+            if [ "$draft" != "true" ]; then echo "Release $tag gia' presente"; exit 0; fi
+            gh release delete "$tag" --yes   # bozza rimasta da un'esecuzione interrotta
+          fi
+          (cd art/kurva3d-windows-x64 && zip -qr "$GITHUB_WORKSPACE/kurva3d-windows-x64-$tag.zip" .)
+          files=("kurva3d-windows-x64-$tag.zip" art/kurva3d-setup/Kurva3D-Setup-*.exe art/kurva3d-mac-*/out/*.dmg)
+          ls -la "${files[@]}"
+          gh release create "$tag" "${files[@]}" --target "$GITHUB_SHA" --title "Kurva3D $tag (Windows e macOS)" --notes-file docs/RELEASE_NOTES.md

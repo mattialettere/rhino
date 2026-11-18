@@ -66,6 +66,9 @@ if(MSVC)
   # sorgenti in UTF-8 (testi italiani, simboli); file grandi di OpenCASCADE
   target_compile_options(cadcore PUBLIC /utf-8 /bigobj)
   target_link_libraries(cadcore PUBLIC opennurbsStatic)
+elseif(APPLE)
+  # il linker di Apple risolve i riferimenti incrociati tra librerie statiche da solo
+  target_link_libraries(cadcore PUBLIC opennurbsStatic zlib)
 else()
   # zlib e openNURBS si richiamano a vicenda (zcalloc/zcfree): gruppo di link.
   target_link_libraries(cadcore PUBLIC "$<LINK_GROUP:RESCAN,opennurbsStatic,zlib>")
@@ -100,9 +103,21 @@ if(Qt6_FOUND)
     configure_file(res/kurva3d.rc.in ${CMAKE_BINARY_DIR}/kurva3d.rc @ONLY)
     list(APPEND _kurva_res ${CMAKE_BINARY_DIR}/kurva3d.rc)
   endif()
-  add_executable(kurva3d WIN32
+  if(APPLE)
+    set(_icns ${CMAKE_SOURCE_DIR}/res/kurva3d.icns)
+    set_source_files_properties(${_icns} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    list(APPEND _kurva_res ${_icns})
+  endif()
+  add_executable(kurva3d WIN32 MACOSX_BUNDLE
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h ${_kurva_res})
+  if(APPLE)
+    # versione minima di macOS: quella delle librerie Homebrew con cui si compila
+    set(KURVA3D_MACOS_MIN "15.0" CACHE STRING "macOS minimo per Kurva3D.app")
+    configure_file(res/Info.plist.in ${CMAKE_BINARY_DIR}/Info.plist @ONLY)
+    set_target_properties(kurva3d PROPERTIES OUTPUT_NAME kurva3d
+      MACOSX_BUNDLE_INFO_PLIST ${CMAKE_BINARY_DIR}/Info.plist)
+  endif()
   target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_PUBLISHER="${KURVA3D_PUBLISHER}">)
   target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_VERSION="${PROJECT_VERSION}">)
   target_link_libraries(kurva3d PRIVATE cadcore Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)

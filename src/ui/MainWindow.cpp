@@ -308,7 +308,7 @@ void MainWindow::ShowAbout() {
 // Testo (licenza d'uso, avvisi di terze parti) dalla cartella del programma.
 void MainWindow::ShowTextFile(const QString& file, const QString& title) {
   QString text;
-  for (const QString& dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + "/..", QString(".")}) {
+  for (const QString& dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + "/../Resources", QCoreApplication::applicationDirPath() + "/..", QString(".")}) {
     QFile f(dir + "/" + file);
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) { text = QString::fromUtf8(f.readAll()); break; }
   }

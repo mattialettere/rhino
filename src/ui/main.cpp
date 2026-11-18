@@ -3,11 +3,24 @@
 #include "ui/MainWindow.h"
 #include <QApplication>
 #include <QFile>
+#include <QFileOpenEvent>
 #include <QIcon>
 #include <QScreen>
 #include <QSurfaceFormat>
 #include <QTimer>
+#include <functional>
 #include <QTextStream>
+
+// macOS: i file aperti dal Finder (doppio clic, trascinamento sull'icona)
+// arrivano come evento QFileOpenEvent invece che come argomento.
+class FileOpenFilter : public QObject {
+public:
+  std::function<void(const QString&)> open;
+  bool eventFilter(QObject* o, QEvent* e) override {
+    if (e->type() == QEvent::FileOpen && open) { open(static_cast<QFileOpenEvent*>(e)->file()); return true; }
+    return QObject::eventFilter(o, e);
+  }
+};
 
 int main(int argc, char** argv) {
   // Contesto OpenGL di compatibilita' (pipeline fissa, funziona ovunque)
@@ -27,11 +40,14 @@ int main(int argc, char** argv) {
   for (int i = 1; i < args.size(); i++) {
     if (args[i] == "--script" && i + 1 < args.size()) script = args[++i];
     else if (args[i] == "--screenshot" && i + 1 < args.size()) shot = args[++i];
-    else open = args[i];
+    else if (!args[i].startsWith("-psn")) open = args[i];
   }
   int rc;
   {
     cad::ui::MainWindow w;
+    FileOpenFilter fof;
+    fof.open = [&w](const QString& f) { w.OpenFile(f); };
+    app.installEventFilter(&fof);
     w.show();
     if (!open.isEmpty()) w.OpenFile(open);
     if (!script.isEmpty()) {
