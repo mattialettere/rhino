@@ -292,6 +292,87 @@ bool CmdOrientOnSrf(Engine& e, TokenStream& ts) {
   return true;
 }
 
+
+// --- Splop --------------------------------------------------------------------------------
+// Copie degli oggetti "avvolte" sulla superficie nel punto cliccato: il piano xy del
+// mondo attorno al punto base si stende sulla superficie seguendone la curvatura,
+// l'altezza z va lungo la normale. Scale= e Rotation= (gradi) come in Rhino.
+bool CmdSplop(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("Splop", "seleziona gli oggetti da avvolgere, poi Invio");
+  if (sel.empty()) return false;
+  auto base = e.ReadPoint(ts, "punto base di riferimento");
+  if (!base) return false;
+  opts.merge(e.ReadOptions(ts));
+  auto pk = e.ReadPick(ts, "punto sulla superficie");
+  if (!pk) return false;
+  opts.merge(e.ReadOptions(ts));
+  auto num = [&](const char* k, double d) { auto it = opts.find(k); return it == opts.end() ? d : std::atof(it->second.c_str()); };
+  const double scale = num("scale", 1.0), rot = num("rotation", 0.0) * ON_PI / 180.0;
+  if (scale <= 0) return e.Fail("scala non valida");
+  ON_UUID sid;
+  TopoDS_Shape sh;
+  TopoDS_Face face;
+  if (!NearestFace(e, *pk, sel, sid, sh, face)) return e.Fail("superficie non trovata");
+  double u0, u1, v0, v1;
+  BRepTools::UVBounds(face, u0, u1, v0, v1);
+  auto sas = std::make_shared<ShapeAnalysis_Surface>(BRep_Tool::Surface(face));
+  const double tol = e.Tolerance();
+  // punto e normale della superficie piu' vicini a q (ai poli ci si sposta appena dentro)
+  auto foot = [&](const ON_3dPoint& q, ON_3dPoint& P, ON_3dVector& N) {
+    gp_Pnt2d uv = sas->ValueOfUV(gp_Pnt(q.x, q.y, q.z), tol);
+    ON_3dVector X;
+    for (int k = 0; k <= 6; k++) {
+      if (FaceFrame(face, uv.X(), uv.Y(), P, X, N)) return true;
+      const double t = 1e-6 * std::pow(10.0, k);
+      uv.SetCoord(uv.X() + t * (0.5 * (u0 + u1) - uv.X()), uv.Y() + t * (0.5 * (v0 + v1) - uv.Y()));
+    }
+    return false;
+  };
+  ON_3dPoint P0;
+  ON_3dVector N0;
+  if (!foot(*pk, P0, N0)) return e.Fail("normale della superficie non definita");
+  // riferimento nel punto: x del mondo proiettata sul piano tangente
+  ON_3dVector X0 = ON_3dVector::XAxis - (ON_3dVector::XAxis * N0) * N0;
+  if (X0.Length() < 1e-6) X0 = ON_3dVector::YAxis - (ON_3dVector::YAxis * N0) * N0;
+  X0.Unitize();
+  const ON_3dVector Y0 = ON_CrossProduct(N0, X0);
+  const double cr = std::cos(rot), sr = std::sin(rot);
+  // il piano xy attorno al punto base si stende sulla superficie camminando
+  // sulla superficie nella direzione del punto (proiezione a ogni passo)
+  PointMap f = [&](const ON_3dPoint& p) {
+    const ON_3dVector d = (p - *base) * scale;
+    const double dx = d.x * cr - d.y * sr, dy = d.x * sr + d.y * cr;
+    const double L = std::sqrt(dx * dx + dy * dy);
+    ON_3dPoint P = P0;
+    ON_3dVector N = N0, w = X0 * dx + Y0 * dy;
+    const int K = std::max(1, std::min(64, (int)std::ceil(L / std::max(tol, 1e-9) / 50.0)));
+    for (int k = 0; k < K && L > 0; k++) {
+      ON_3dVector t = w - (w * N) * N;
+      if (!t.Unitize()) break;
+      w = t * L;
+      ON_3dPoint Q;
+      ON_3dVector M;
+      if (!foot(P + t * (L / K), Q, M)) break;
+      P = Q;
+      N = M;
+    }
+    return P + N * d.z;
+  };
+  int n = 0;
+  for (const auto& id : sel) {
+    ON_Geometry* g = nullptr;
+    try { g = DeformGeometry(Geo(e, id), f); } catch (...) {}
+    if (!g) continue;
+    ON_3dmObjectAttributes a = Attrs(e, id);
+    a.m_uuid = ON_nil_uuid;
+    e.AddObject(g, &a);
+    n++;
+  }
+  if (!n) return e.Fail("nessun oggetto avvolto");
+  e.Out() << "  " << n << " oggetti avvolti sulla superficie\n";
+  return true;
+}
 }  // namespace
 
 void RegisterKernel4Commands(Engine& e) {
@@ -303,6 +384,7 @@ void RegisterKernel4Commands(Engine& e) {
   reg("Make2D", "Curve", "Disegno 2D con linee nascoste (View=, ShowHidden=, ShowTangents=)", CmdMake2D);
   reg("MoveFace", "Solidi", "Sposta una faccia piana di un solido", CmdMoveFace);
   reg("FlowAlongSrf", "Trasforma", "Fa scorrere gli oggetti da una superficie di base a una di destinazione", CmdFlowAlongSrf);
+  reg("Splop", "Trasforma", "Copie degli oggetti avvolte sulla superficie nel punto cliccato (Scale=, Rotation=)", CmdSplop);
   reg("OrientOnSrf", "Trasforma", "Copie degli oggetti orientate nei punti di una superficie", CmdOrientOnSrf);
 }
 

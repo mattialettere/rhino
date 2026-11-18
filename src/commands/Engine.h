@@ -14,6 +14,7 @@
 #include "core/Document3dm.h"
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <ostream>
 #include <set>
@@ -156,6 +157,10 @@ public:
   std::function<bool(const std::string& path, int& w, int& h, std::vector<double>& gray)> imageLoader;
   std::function<bool(const std::string& text, const std::string& font, double height,
                      std::vector<std::vector<std::vector<ON_3dPoint>>>& contours)> textOutliner;
+  // CageEdit: geometria originale degli oggetti catturati (per id) e gabbia
+  // prima dell'ultima modifica (serve se l'originale non e' in memoria)
+  std::map<ON_UUID, std::shared_ptr<ON_Geometry>, UuidLess> cageOriginals;
+  std::shared_ptr<ON_MorphControl> cageBefore;
   // SubDDisplayToggle: SubD mostrati come gabbia piatta invece che lisci
   bool subdFlat = false;
   ON_3dPoint lastPoint = ON_3dPoint::Origin;
@@ -190,6 +195,8 @@ void RegisterExtra3Commands(Engine& e);
 void RegisterExtra4Commands(Engine& e);
 void RegisterExtra5Commands(Engine& e);
 void RegisterExtra6Commands(Engine& e);
+// CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti
+int UpdateCageCaptives(Engine& e, const ON_UUID& cageId);
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.
 ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(double, double)>& f, bool closedV = false);
 #ifdef CAD_WITH_OCCT

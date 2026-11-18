@@ -305,7 +305,7 @@ void MainWindow::BuildMenus() {
                       {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}});
   addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}, {"Sfera SubD", "_SubDSphere"}, {"Cilindro SubD", "_SubDCylinder"}, {"Cono SubD", "_SubDCone"}, {"Converti in SubD", "_ToSubD"},
                     {"Toro SubD", "_SubDTorus"}, {"Piano SubD", "_SubDPlane"}, {"SubD da mesh", "_SubDFromMesh"},
-                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}, {"Rifletti (Reflect)", "_Reflect"}, {"Sweep SubD", "_SubDSweep"}, {"Estrudi faccia SubD", "_SubDExtrude"}, {"Ponte (Bridge)", "_Bridge"}, {"Inserisci anello di spigoli", "_InsertEdge"}, {"Cuci (Stitch)", "_Stitch"}, {"Aggiungi faccia (Append)", "_Append"}, {"Quad remesh", "_QuadRemesh"}});
+                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}, {"Rifletti (Reflect)", "_Reflect"}, {"Sweep SubD", "_SubDSweep"}, {"Estrudi faccia SubD", "_SubDExtrude"}, {"Ponte (Bridge)", "_Bridge"}, {"Inserisci anello di spigoli", "_InsertEdge"}, {"Cuci (Stitch)", "_Stitch"}, {"Aggiungi faccia (Append)", "_Append"}, {"Quad remesh", "_QuadRemesh"}, {"Smussa spigoli SubD (Bevel)", "_Bevel"}, {"Tubi SubD (MultiPipe)", "_MultiPipe"}});
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano mesh", "_MeshPlane"}, {"Box mesh", "_MeshBox"},
                     {"Sfera mesh", "_MeshSphere"}, {"Cilindro mesh", "_MeshCylinder"}, {"Cono mesh", "_MeshCone"},
                     {"Toro mesh", "_MeshTorus"}, {"Mesh da polilinea", "_MeshPolyline"},
@@ -316,7 +316,7 @@ void MainWindow::BuildMenus() {
                       {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}, {"Stile di quota (DimStyle)", "_DimStyle"}, {"Testo in curve (TextObject)", "_TextObject"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
-                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Scorri lungo curva (Flow)", "_Flow"}, {"Scorri su superficie", "_FlowAlongSrf"}, {"Orienta su superficie", "_OrientOnSrf"},
+                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Avvolgi su superficie (Splop)", "_Splop"}, {"Gabbia di controllo (CageEdit)", "_CageEdit"}, {"Scorri lungo curva (Flow)", "_Flow"}, {"Scorri su superficie", "_FlowAlongSrf"}, {"Orienta su superficie", "_OrientOnSrf"},
                          {"Allinea", "_Align"}, {"Imposta punti (SetPt)", "_SetPt"}});
   addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Direzione (Dir)", "_Dir"}, {"Segna curvatura", "_MarkCurvature"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
                          {"Angolo", "_Angle"}, {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"},

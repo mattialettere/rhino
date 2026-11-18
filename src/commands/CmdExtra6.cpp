@@ -1,6 +1,7 @@
 // Comandi di Rhino 8, gruppo 6 (solo openNURBS): HandleCurve; SubD: Reflect,
 // SubDSweep, SubDExtrude, Bridge, InsertEdge, Stitch, Append; EditPtOn;
 // DimStyle; Heightfield; TextObject.
+#include "commands/Deform.h"
 #include "commands/Engine.h"
 #include <algorithm>
 #include <array>
@@ -779,6 +780,278 @@ bool CmdTextObject(Engine& e, TokenStream& ts) {
   return true;
 }
 
+
+// --- Bevel ---------------------------------------------------------------------------
+// Smussa gli spigoli del SubD cliccati (un punto per spigolo, Invio per finire):
+// lo spigolo diventa una faccia larga 2 x Distance= (default 1/5 dello spigolo).
+bool BevelEdge(Poly& p, int a, int b, double dist) {
+  auto findDir = [&](int x, int y) -> int {  // faccia con lo spigolo orientato x->y
+    for (size_t f = 0; f < p.F.size(); f++) {
+      const auto& F = p.F[f];
+      for (size_t k = 0; k < F.size(); k++) if (F[k] == x && F[(k + 1) % F.size()] == y) return (int)f;
+    }
+    return -1;
+  };
+  auto pos = [](const std::vector<int>& F, int v) { return (int)(std::find(F.begin(), F.end(), v) - F.begin()); };
+  const int f1 = findDir(a, b), f2 = findDir(b, a);
+  if (f1 < 0 || f2 < 0) return false;  // spigolo di bordo
+  const auto F1 = p.F[f1], F2 = p.F[f2];
+  const int n1 = (int)F1.size(), n2 = (int)F2.size();
+  const int pa1 = F1[(pos(F1, a) + n1 - 1) % n1], nb1 = F1[(pos(F1, b) + 1) % n1];
+  const int na2 = F2[(pos(F2, a) + 1) % n2], pb2 = F2[(pos(F2, b) + n2 - 1) % n2];
+  auto along = [&](int from, int to) {
+    ON_3dVector d = p.V[to] - p.V[from];
+    const double L = d.Length();
+    d.Unitize();
+    return p.V[from] + d * std::min(dist, 0.45 * L);
+  };
+  const int a1 = (int)p.V.size(); p.V.push_back(along(a, pa1));
+  const int b1 = (int)p.V.size(); p.V.push_back(along(b, nb1));
+  const int a2 = (int)p.V.size(); p.V.push_back(along(a, na2));
+  const int b2 = (int)p.V.size(); p.V.push_back(along(b, pb2));
+  for (int& v : p.F[f1]) { if (v == a) v = a1; else if (v == b) v = b1; }
+  for (int& v : p.F[f2]) { if (v == a) v = a2; else if (v == b) v = b2; }
+  // le facce vicine ricevono i nuovi vertici sugli spigoli; dove servono, triangoli di raccordo
+  auto insertAfter = [&](int f, int x, int nv) { auto& F = p.F[f]; F.insert(F.begin() + pos(F, x) + 1, nv); };
+  auto corner = [&](int v, int g1, int x1, int n1v, int g2, int x2, int n2v, bool firstAfterV) {
+    // g1 contiene l'arco v->x1 (si inserisce n1v dopo v); g2 contiene x2->v (si inserisce n2v dopo x2)
+    (void)x1; (void)firstAfterV;
+    if (g1 >= 0) insertAfter(g1, v, n1v);
+    if (g2 >= 0) insertAfter(g2, x2, n2v);
+  };
+  // vertice a: G1 ha a->pa1, G2 ha na2->a
+  const int G1 = findDir(a, pa1), G2 = findDir(na2, a);
+  corner(a, G1, pa1, a1, G2, na2, a2, true);
+  if (G1 >= 0 && G1 == G2) { auto& F = p.F[G1]; F.erase(F.begin() + pos(F, a)); }
+  else p.F.push_back({a1, a, a2});
+  // vertice b: H1 ha nb1->b, H2 ha b->pb2
+  const int H1 = findDir(nb1, b), H2 = findDir(b, pb2);
+  if (H1 >= 0) insertAfter(H1, nb1, b1);
+  if (H2 >= 0) insertAfter(H2, b, b2);
+  if (H1 >= 0 && H1 == H2) { auto& F = p.F[H1]; F.erase(F.begin() + pos(F, b)); }
+  else p.F.push_back({b, b1, b2});
+  p.F.push_back({b1, a1, a2, b2});
+  return true;
+}
+
+bool CmdBevel(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto first = e.ReadPick(ts, "spigolo del SubD da smussare");
+  if (!first) return false;
+  ON_UUID id;
+  if (!SubDNear(e, *first, id)) return e.Fail("nessun SubD");
+  Poly p = FromSubD(*ON_SubD::Cast(Geo(e, id)));
+  std::vector<ON_3dPoint> picks{*first};
+  while (e.MoreInput(ts)) {
+    opts.merge(e.ReadOptions(ts));
+    auto q = e.ReadPoint(ts, "altro spigolo (Invio per finire)");
+    if (!q) { if (e.NeedsInput()) return false; break; }
+    picks.push_back(*q);
+  }
+  opts.merge(e.ReadOptions(ts));
+  int done = 0;
+  for (const auto& q : picks) {
+    int ba = -1, bb = -1;
+    double best = 1e300;
+    for (const auto& F : p.F)
+      for (size_t k = 0; k < F.size(); k++) {
+        const int x = F[k], y = F[(k + 1) % F.size()];
+        const double d = SegDist(q, p.V[x], p.V[y]);
+        if (d < best) { best = d; ba = x; bb = y; }
+      }
+    if (ba < 0) continue;
+    const double L = p.V[ba].DistanceTo(p.V[bb]);
+    if (BevelEdge(p, ba, bb, OptNum(opts, "distance", 0.2 * L))) done++;
+  }
+  if (!done) return e.Fail("nessuno spigolo interno smussato (gli spigoli di bordo non si smussano)");
+  ON_SubD* s = ToSubD(p);
+  if (!s) return e.Fail("SubD non valido dopo lo smusso");
+  e.ReplaceObject(id, s);
+  e.Out() << "  Smussati " << done << " spigoli\n";
+  return true;
+}
+
+// --- MultiPipe ------------------------------------------------------------------------
+// Tubi SubD lungo le curve selezionate (Radius=, Sides=, Cap=None/Flat). Le curve
+// che si toccano agli estremi a due a due diventano un unico tubo continuo.
+bool CmdMultiPipe(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("MultiPipe", "seleziona le curve, poi Invio");
+  if (sel.empty()) return false;
+  opts.merge(e.ReadOptions(ts));
+  const double r = OptNum(opts, "radius", 1.0);
+  const int sides = std::max(3, (int)OptNum(opts, "sides", 4));
+  const bool cap = !(opts.count("cap") && opts["cap"] == "none");
+  if (r <= 0) return e.Fail("raggio non valido");
+  ON_SimpleArray<const ON_Curve*> in;
+  for (const auto& id : sel) if (const auto* c = ON_Curve::Cast(Geo(e, id))) in.Append(c);
+  if (in.Count() == 0) return e.Fail("nessuna curva selezionata");
+  ON_SimpleArray<ON_Curve*> joined;
+  ON_JoinCurves(in, joined, std::max(e.Tolerance(), r * 1e-3), false);
+  int made = 0;
+  for (int ci = 0; ci < joined.Count(); ci++) {
+    std::unique_ptr<ON_Curve> c(joined[ci]);
+    const bool closed = c->IsClosed();
+    const double L = CurveLengthOf(*c);
+    const int N = std::clamp((int)std::ceil(L / (1.5 * r)) + 1, 3, 200);
+    std::vector<double> t;
+    const auto rp = Sample(*c, N, closed, &t);
+    std::vector<ON_3dVector> T(N), X(N);
+    for (int i = 0; i < N; i++) { T[i] = c->TangentAt(t[i]); }
+    ON_3dVector x0 = ON_CrossProduct(T[0], ON_3dVector::ZAxis);
+    if (!x0.Unitize()) { x0 = ON_CrossProduct(T[0], ON_3dVector::XAxis); x0.Unitize(); }
+    X[0] = x0;
+    for (int i = 0; i + 1 < N; i++) {  // riferimenti a rotazione minima
+      ON_3dVector v1 = rp[i + 1] - rp[i];
+      const double c1 = v1 * v1;
+      if (c1 < 1e-24) { X[i + 1] = X[i]; continue; }
+      ON_3dVector rL = X[i] - (2 / c1) * (v1 * X[i]) * v1, tL = T[i] - (2 / c1) * (v1 * T[i]) * v1;
+      ON_3dVector v2 = T[i + 1] - tL;
+      const double c2 = v2 * v2;
+      X[i + 1] = c2 < 1e-24 ? rL : rL - (2 / c2) * (v2 * rL) * v2;
+      X[i + 1].Unitize();
+    }
+    Poly p;
+    // la gabbia e' piu' larga del tubo: il limite di Catmull-Clark di un anello di
+    // lati regolari passa ai vertici a (4 + 2 cos(2 pi/n)) / 6 volte il raggio della gabbia
+    const double rc = r * 6.0 / (4.0 + 2.0 * std::cos(2 * ON_PI / sides));
+    for (int i = 0; i < N; i++) {
+      const ON_3dVector Y = ON_CrossProduct(T[i], X[i]);
+      for (int j = 0; j < sides; j++) {
+        const double a = 2 * ON_PI * j / sides;
+        p.V.push_back(rp[i] + X[i] * (rc * std::cos(a)) + Y * (rc * std::sin(a)));
+      }
+    }
+    auto id = [&](int i, int j) { return (i % N) * sides + (j % sides); };
+    for (int i = 0; i < N - 1 + (closed ? 1 : 0); i++)
+      for (int j = 0; j < sides; j++) p.F.push_back({id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)});
+    if (cap && !closed) {
+      std::vector<int> c0, c1;
+      for (int j = sides - 1; j >= 0; j--) c0.push_back(id(0, j));
+      for (int j = 0; j < sides; j++) c1.push_back(id(N - 1, j));
+      p.F.push_back(c0);
+      p.F.push_back(c1);
+    }
+    if (ON_SubD* s = ToSubD(p)) { e.AddObject(s); made++; }
+  }
+  if (!made) return e.Fail("nessun tubo creato");
+  e.Out() << "  Creati " << made << " tubi SubD\n";
+  return true;
+}
+
+}  // namespace
+
+// --- CageEdit -------------------------------------------------------------------------
+// Gabbia di controllo (oggetto ON_MorphControl, come in Rhino) intorno agli oggetti
+// selezionati: spostando i suoi punti (PointsOn) gli oggetti catturati si deformano.
+namespace {
+
+ON_3dPoint CagePoint(const ON_MorphControl& mc, const ON_3dPoint& p) {
+  const ON_3dPoint rst = mc.m_nurbs_cage0 * p;
+  return mc.m_nurbs_cage.PointAt(rst.x, rst.y, rst.z);
+}
+
+// Inverso della deformazione (Newton con jacobiano numerico): serve quando la
+// geometria originale non e' in memoria (file riaperto).
+ON_3dPoint CageInverse(const ON_MorphControl& mc, const ON_3dPoint& q) {
+  ON_Xform inv = mc.m_nurbs_cage0;
+  if (!inv.Invert()) return q;
+  ON_3dPoint rst = mc.m_nurbs_cage0 * q;
+  for (int it = 0; it < 30; it++) {
+    const ON_3dPoint f = mc.m_nurbs_cage.PointAt(rst.x, rst.y, rst.z);
+    const ON_3dVector r = q - f;
+    if (r.Length() < 1e-10) break;
+    double J[3][3];
+    const double h = 1e-6;
+    for (int k = 0; k < 3; k++) {
+      ON_3dPoint d = rst;
+      d[k] += h;
+      const ON_3dVector col = (mc.m_nurbs_cage.PointAt(d.x, d.y, d.z) - f) / h;
+      for (int m = 0; m < 3; m++) J[m][k] = col[m];
+    }
+    ON_Matrix M(3, 3);
+    for (int m = 0; m < 3; m++) for (int k = 0; k < 3; k++) M[m][k] = J[m][k];
+    if (!M.Invert(1e-14)) break;
+    for (int m = 0; m < 3; m++) rst[m] += M[m][0] * r.x + M[m][1] * r.y + M[m][2] * r.z;
+  }
+  return inv * rst;
+}
+
+bool CmdCageEdit(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("CageEdit", "seleziona gli oggetti da catturare, poi Invio");
+  if (sel.empty()) return false;
+  opts.merge(e.ReadOptions(ts));
+  int cnt[3] = {4, 4, 4};
+  if (opts.count("pointcount")) std::sscanf(opts["pointcount"].c_str(), "%d,%d,%d", &cnt[0], &cnt[1], &cnt[2]);
+  const int deg = std::clamp((int)OptNum(opts, "degree", 3), 1, 5);
+  ON_BoundingBox bb;
+  std::vector<ON_UUID> caps;
+  for (const auto& id : sel) {
+    const ON_Geometry* g = Geo(e, id);
+    if (!g || ON_MorphControl::Cast(g)) continue;
+    ON_BoundingBox t;
+    if (g->GetTightBoundingBox(t)) { bb.Union(t); caps.push_back(id); }
+  }
+  if (caps.empty() || !bb.IsValid()) return e.Fail("nessun oggetto da catturare");
+  // spessore minimo (oggetti piani)
+  const double pad = std::max(bb.Diagonal().Length() * 0.01, e.Tolerance() * 10);
+  for (int k = 0; k < 3; k++) if (bb.m_max[k] - bb.m_min[k] < pad) { bb.m_min[k] -= pad / 2; bb.m_max[k] += pad / 2; }
+  for (int k = 0; k < 3; k++) cnt[k] = std::clamp(cnt[k], 2, 30);
+  auto* mc = new ON_MorphControl;
+  mc->m_varient = 3;
+  if (!mc->m_nurbs_cage.Create(bb, std::min(deg, cnt[0] - 1) + 1, std::min(deg, cnt[1] - 1) + 1, std::min(deg, cnt[2] - 1) + 1,
+                               cnt[0], cnt[1], cnt[2])) {
+    delete mc;
+    return e.Fail("gabbia non creata");
+  }
+  // trasformazione dal mondo ai parametri della gabbia
+  ON_Xform x = ON_Xform::IdentityTransformation;
+  for (int k = 0; k < 3; k++) {
+    const ON_Interval d = mc->m_nurbs_cage.Domain(k);
+    const double sc = d.Length() / (bb.m_max[k] - bb.m_min[k]);
+    x.m_xform[k][k] = sc;
+    x.m_xform[k][3] = d[0] - bb.m_min[k] * sc;
+  }
+  mc->m_nurbs_cage0 = x;
+  for (const auto& id : caps) mc->m_captive_id.AddUuid(id);
+  for (const auto& id : caps) e.cageOriginals[id].reset(Geo(e, id)->Duplicate());
+  const ON_UUID cid = e.AddObject(mc);
+  e.ClearSelection();
+  e.Select(cid);
+  e.pointsOn.insert(cid);
+  e.Out() << "  Gabbia " << cnt[0] << "x" << cnt[1] << "x" << cnt[2] << " di grado " << deg << " con " << caps.size()
+          << " oggetti catturati: sposta i suoi punti per deformarli\n";
+  return true;
+}
+
+}  // namespace
+
+// Ricalcola gli oggetti catturati dalla gabbia (dopo che un suo punto e' stato spostato).
+int UpdateCageCaptives(Engine& e, const ON_UUID& cageId) {
+  const auto* mc = ON_MorphControl::Cast(Geo(e, cageId));
+  if (!mc || mc->m_varient != 3) return 0;
+  int n = 0;
+  for (int i = 0; i < mc->m_captive_id.Count(); i++) {
+    const ON_UUID id = mc->m_captive_id.Array()[i];
+    const ON_Geometry* cur = Geo(e, id);
+    if (!cur) continue;
+    auto& orig = e.cageOriginals[id];
+    if (!orig) {
+      // file riaperto: l'originale si ricava togliendo la deformazione precedente
+      const ON_MorphControl* prev = e.cageBefore.get();
+      if (!prev) continue;
+      ON_MorphControl pc(*prev);
+      orig.reset(DeformGeometry(cur, [&](const ON_3dPoint& q) { return CageInverse(pc, q); }));
+      if (!orig) continue;
+    }
+    ON_Geometry* g = DeformGeometry(orig.get(), [&](const ON_3dPoint& q) { return CagePoint(*mc, q); });
+    if (g && !ON_UuidIsNil(e.ReplaceObject(id, g))) n++;
+  }
+  return n;
+}
+
+namespace {
 }  // namespace
 
 void RegisterExtra6Commands(Engine& e) {
@@ -799,6 +1072,9 @@ void RegisterExtra6Commands(Engine& e) {
   reg("DimStyle", "Annotazioni", "Crea o modifica lo stile di quota corrente (TextHeight=, ArrowSize=, Precision=...)", CmdDimStyle);
   reg("Heightfield", "Superfici", "Superficie dai toni di grigio di un'immagine", CmdHeightfield);
   reg("TextObject", "Annotazioni", "Testo trasformato in curve", CmdTextObject);
+  reg("Bevel", "SubD", "Smussa gli spigoli del SubD (Distance=)", CmdBevel);
+  reg("MultiPipe", "SubD", "Tubi SubD lungo le curve (Radius=, Sides=, Cap=None/Flat)", CmdMultiPipe);
+  reg("CageEdit", "Trasforma", "Gabbia di controllo per deformare gli oggetti (PointCount=X,Y,Z, Degree=)", CmdCageEdit);
 }
 
 }  // namespace cad

@@ -952,12 +952,14 @@ bool CmdGripMove(Engine& e, TokenStream& ts) {
   if (!g) return e.Fail("oggetto inesistente");
   ON_Geometry* ng = MoveGrip(g, *i, *j, *p);
   if (!ng) return e.Fail("punto di controllo non modificabile");
+  if (const auto* mc = ON_MorphControl::Cast(g)) e.cageBefore = std::make_shared<ON_MorphControl>(*mc);
   e.pointsOn.erase(id);
   const bool edit = e.editPointsOn.erase(id) > 0;
   const ON_UUID nid = e.ReplaceObject(id, ng);
   if (ON_UuidIsNil(nid)) return e.Fail("sostituzione non riuscita");
   e.pointsOn.insert(nid);
   if (edit) e.editPointsOn.insert(nid);
+  if (ON_MorphControl::Cast(ng)) UpdateCageCaptives(e, nid);
   return true;
 }
 

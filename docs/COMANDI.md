@@ -21,9 +21,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Curve da oggetti | 14 / 14 |
 | Superfici | 29 / 29 |
 | Solidi | 24 / 24 |
-| SubD | 21 / 23 |
+| SubD | 23 / 23 |
 | Mesh | 19 / 19 |
-| Trasformazioni | 28 / 30 |
+| Trasformazioni | 30 / 30 |
 | Modifica | 34 / 34 |
 | Selezione | 19 / 19 |
 | Blocchi | 6 / 6 |
@@ -31,7 +31,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Annotazioni | 14 / 14 |
 | Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **299 / 303** |
+| **Totale** | **303 / 303** |
 
 ## Punti
 
@@ -208,7 +208,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SubDLoft | ✔ |
 | SubDSweep | ✔ |
 | SubDExtrude | ✔ |
-| Bevel | 🧱 |
+| Bevel | ✔ |
 | Bridge | ✔ |
 | Crease | ✔ |
 | Uncrease | ✔ |
@@ -217,7 +217,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Append | ✔ |
 | Fill | ✔ |
 | Reflect | ✔ |
-| MultiPipe | 🧱 |
+| MultiPipe | ✔ |
 | SubDDisplayToggle | ✔ |
 
 ## Mesh
@@ -273,8 +273,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Taper | ✔ |
 | Flow | ✔ |
 | FlowAlongSrf | ✔ |
-| Splop | 🧱 |
-| CageEdit | 🧱 |
+| Splop | ✔ |
+| CageEdit | ✔ |
 | Smash | ✔ |
 | UnrollSrf | ✔ |
 | Squish | ✔ |

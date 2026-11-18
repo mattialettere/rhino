@@ -1689,6 +1689,54 @@ int main(int argc, char** argv) {
     const ON_BoundingBox b = c.BBox();
     CHECK(Near(b.m_min.x, 10.0, 1e-6) && Near(b.m_min.z, 5.0, 1e-6) && Near(b.m_max.z, 7.0, 1e-6));
   });
+  // --- v0.8 ---
+  Case("Bevel", "_SubDBox 0,0,0 10,10 10\n_Bevel Distance=2 5,0,0 _Enter", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 7 && s->VertexCount() == 10);
+  });
+  Case("Bevel_due_spigoli", "_SubDBox 0,0,0 10,10 10\n_Bevel Distance=1 5,0,0 5,10,10 _Enter", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 8);
+  });
+  Case("MultiPipe", "_Line 0,0,0 10,0,0\n_Line 10,0,0 10,10,0\n_Line 50,0,0 50,0,10\n_SelAll _MultiPipe Radius=1", [](Ctx& c) {
+    int subds = 0;
+    for (auto* g : c.Objects()) if (ON_SubD::Cast(g)) subds++;
+    CHECK(subds == 2);  // le prime due linee si toccano: un solo tubo
+    const ON_SubD* s = nullptr;
+    for (auto* g : c.Objects()) if (auto* x = ON_SubD::Cast(g)) { ON_BoundingBox b = x->BoundingBox(); if (b.m_min.x > 40) s = x; }
+    CHECK(s != nullptr);
+    if (s) {
+      // gabbia di 4 lati: raggio 1,5 perche' il limite passi a 1 dall'asse
+      const ON_BoundingBox b = s->BoundingBox();
+      CHECK(Near(b.m_max.x - 50.0, 1.5, 1e-6) && Near(b.m_min.x - 50.0, -1.5, 1e-6));
+    }
+  });
+  Case("CageEdit", "_Box 0,0,0 10,10 10\n_SelAll _CageEdit PointCount=2,2,2 Degree=1", [](Ctx& c) {
+    const ON_MorphControl* mc = nullptr;
+    ON_UUID cid = ON_nil_uuid;
+    for (const auto& id : c.e.AllObjectIds(true))
+      if (auto* m = ON_MorphControl::Cast(c.e.Object(id)->Geometry(nullptr))) { mc = m; cid = id; }
+    CHECK(mc && mc->m_captive_id.Count() == 1 && c.e.pointsOn.count(cid) == 1);
+    if (!mc) return;
+    char s[64];
+    ON_UuidToString(cid, s);
+    // angolo (10,10,10) = indice 7: portato a (20,20,20) la scatola si allunga
+    CHECK(c.e.Run(std::string("_GripMove ") + s + " 7 -3 20,20,20"));
+    ON_BoundingBox b;
+    for (const auto& id : c.e.AllObjectIds(true)) {
+      const ON_Geometry* g = c.e.Object(id)->Geometry(nullptr);
+      if (!ON_MorphControl::Cast(g)) g->GetTightBoundingBox(b, true);
+    }
+    CHECK(Near(b.m_max.x, 20.0, 1e-3) && Near(b.m_max.z, 20.0, 1e-3) && Near(b.m_min.x, 0.0, 1e-3));
+    // seconda modifica dallo stato originale (non cumulativa)
+    CHECK(c.e.Run(std::string("_GripMove ") + s + " 7 -3 10,10,10"));
+    ON_BoundingBox b2;
+    for (const auto& id : c.e.AllObjectIds(true)) {
+      const ON_Geometry* g = c.e.Object(id)->Geometry(nullptr);
+      if (!ON_MorphControl::Cast(g)) g->GetTightBoundingBox(b2, true);
+    }
+    CHECK(Near(b2.m_max.x, 10.0, 1e-3));
+  });
 #ifdef CAD_WITH_OCCT
   Case("Sketch", "_Sketch 0,0 1,1 2,1.5 3,1 4,0 5,-1 _Enter", [](Ctx& c) {
     const auto* cv = ON_Curve::Cast(c.Last());
@@ -1712,6 +1760,13 @@ int main(int argc, char** argv) {
   Case("QuadRemesh", "_Plane 0,0,0 10,10\n_SelAll _QuadRemesh TargetQuadCount=100", [](Ctx& c) {
     const auto* m = ON_Mesh::Cast(c.Last());
     CHECK(m && m->QuadCount() == m->FaceCount() && m->FaceCount() == 100);
+  });
+  Case("Splop", "_Sphere 0,0,0 10\n_Box 30,0,0 32,2 1\n_SelNone _SelLast _Splop 31,1,0 0,0,10", [](Ctx& c) {
+    CHECK(c.Objects().size() == 3);
+    ON_BoundingBox b;
+    for (auto* g : c.Objects()) { ON_BoundingBox t; g->GetTightBoundingBox(t); if (t.m_min.z > 5) b = t; }
+    // la copia sta in cima alla sfera, alta 1 lungo la normale
+    CHECK(Near(b.m_max.z, 11.0, 0.05) && b.m_min.z > 9.7 && std::fabs(b.Center().x) < 1.5 && std::fabs(b.Center().y) < 1.5);
   });
   Case("MatchSrf", "_Plane 0,0,0 10,10\n_PlaneVertical 12,0,0 12,10,0 10\n_MatchSrf Continuity=Position 10,5,0 12,5,0", [](Ctx& c) {
     const ON_Brep* moved = nullptr;

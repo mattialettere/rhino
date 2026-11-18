@@ -135,10 +135,31 @@ bool GetGrips(const ON_Geometry* g, GripSet& out, bool editPoints) {
       if (e->m_vertex[0] && e->m_vertex[1]) out.cage.push_back({e->m_vertex[0]->ControlNetPoint(), e->m_vertex[1]->ControlNetPoint()});
     return !out.grips.empty();
   }
+  if (const auto* mc = ON_MorphControl::Cast(g)) {  // gabbia (CageEdit): i = indice lineare, j = -3
+    if (mc->m_varient != 3) return false;
+    const ON_NurbsCage& c = mc->m_nurbs_cage;
+    const int n0 = c.CVCount(0), n1 = c.CVCount(1), n2 = c.CVCount(2);
+    auto P = [&](int a, int b, int d) { ON_3dPoint q; c.GetCV(a, b, d, q); return q; };
+    for (int a = 0; a < n0; a++) for (int b = 0; b < n1; b++) for (int d = 0; d < n2; d++)
+      out.grips.push_back({P(a, b, d), (a * n1 + b) * n2 + d, -3});
+    for (int a = 0; a < n0; a++) for (int b = 0; b < n1; b++) { std::vector<ON_3dPoint> l; for (int d = 0; d < n2; d++) l.push_back(P(a, b, d)); out.cage.push_back(l); }
+    for (int a = 0; a < n0; a++) for (int d = 0; d < n2; d++) { std::vector<ON_3dPoint> l; for (int b = 0; b < n1; b++) l.push_back(P(a, b, d)); out.cage.push_back(l); }
+    for (int b = 0; b < n1; b++) for (int d = 0; d < n2; d++) { std::vector<ON_3dPoint> l; for (int a = 0; a < n0; a++) l.push_back(P(a, b, d)); out.cage.push_back(l); }
+    return true;
+  }
   return false;
 }
 
 ON_Geometry* MoveGrip(const ON_Geometry* g, int i, int j, const ON_3dPoint& p) {
+  if (const auto* mc = ON_MorphControl::Cast(g)) {
+    if (j != -3 || mc->m_varient != 3) return nullptr;
+    auto* nm = new ON_MorphControl(*mc);
+    ON_NurbsCage& c = nm->m_nurbs_cage;
+    const int n1 = c.CVCount(1), n2 = c.CVCount(2);
+    const int a = i / (n1 * n2), b = (i / n2) % n1, d = i % n2;
+    if (i < 0 || a >= c.CVCount(0) || !c.SetCV(a, b, d, p)) { delete nm; return nullptr; }
+    return nm;
+  }
   if (j == -2) {  // punto di modifica: la curva si reinterpola per i punti di modifica
     auto* nc = new ON_NurbsCurve;
     std::vector<double> t;
