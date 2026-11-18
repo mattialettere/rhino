@@ -66,6 +66,9 @@ Kurva3D non e' affiliato, approvato o sponsorizzato da McNeel. Il formato
    licenses/Python-PSF-LICENSE.txt (contiene anche le licenze delle librerie
    incluse, per esempio OpenSSL, libffi, SQLite, zlib, bzip2, xz)
    Sorgente: https://www.python.org/downloads/source/
+   Su Mac: CPython 3.12.10 di python-build-standalone (licenza MIT per gli
+   script di compilazione, https://github.com/astral-sh/python-build-standalone)
+   in Kurva3D.app/Contents/Frameworks e Contents/Resources/python.
 
 Sostituzione delle librerie LGPL: Open CASCADE e Qt sono DLL separate nella
 cartella del programma. Si possono sostituire con versioni compatibili,

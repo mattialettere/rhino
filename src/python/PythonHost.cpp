@@ -698,6 +698,12 @@ bool EnsurePython() {
       }
     }
   }
+  // app per Mac: Python (python-build-standalone) in Contents/Resources/python
+  if (!g_programDir.empty()) {
+    const fs::path macHome = fs::path((const char8_t*)g_programDir.c_str()) / ".." / "Resources" / "python";
+    if (fs::is_directory(macHome / "lib", ec))
+      PyConfig_SetString(&config, &config.home, fs::weakly_canonical(macHome, ec).wstring().c_str());
+  }
   if (const char* home = std::getenv("KURVA3D_PYTHONHOME")) {
     PyConfig_SetBytesString(&config, &config.home, home);
   }

@@ -217,26 +217,56 @@ jobs:
       - name: Dipendenze (Homebrew)
         run: brew install qt opencascade ninja
 
+      # Python per gli script: python-build-standalone (CPython 3.12.10, licenza PSF), relocabile,
+      # finisce dentro Kurva3D.app (Frameworks/libpython, Resources/python con la libreria standard)
+      - name: Python 3.12 (python-build-standalone)
+        run: |
+          if [ "${{ matrix.arch }}" = AppleSilicon ]; then a=aarch64; sum=2d6477ecd10191675b7e7979e4b9e811fef36833ef3a7f3aa445eec305ce59a2
+          else a=x86_64; sum=d0d51fa22c0e99b58de1b1b4baeca467d6fd0a1424c7509ea280c0796306c481; fi
+          curl -fsSL -o "$RUNNER_TEMP/py.tgz" "https://github.com/astral-sh/python-build-standalone/releases/download/20250409/cpython-3.12.10+20250409-$a-apple-darwin-install_only.tar.gz"
+          echo "$sum  $RUNNER_TEMP/py.tgz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/py.tgz" -C "$RUNNER_TEMP"
+          echo "PBS=$RUNNER_TEMP/python" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/python/bin/python3" --version
+          otool -D "$RUNNER_TEMP/python/lib/libpython3.12.dylib"
+
       - name: Configura
         run: >
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKURVA3D_PYTHON=OFF
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DPython3_ROOT_DIR="$PBS" -DPython3_FIND_FRAMEWORK=NEVER -DPython3_FIND_STRATEGY=LOCATION
           -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix opencascade)"
 
       - name: Compila
-        run: cmake --build build --parallel
+        run: |
+          cmake --build build --parallel
+          grep -q "CAD_WITH_PYTHON" build/build.ninja || { echo "Python non trovato dalla configurazione"; exit 1; }
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: KURVA3D_PYTHONHOME="$PBS" ctest --test-dir build --output-on-failure
 
       # App autonoma: framework Qt e librerie OpenCASCADE copiati dentro Kurva3D.app
       - name: Prepara Kurva3D.app
         run: |
           mkdir -p dist
           cp -R build/kurva3d.app dist/Kurva3D.app
+          # Python dentro l'app: libpython in Frameworks, libreria standard in Resources/python
+          C=dist/Kurva3D.app/Contents
+          mkdir -p "$C/Frameworks" "$C/Resources/python/lib"
+          cp "$PBS/lib/libpython3.12.dylib" "$C/Frameworks/"
+          install_name_tool -id @executable_path/../Frameworks/libpython3.12.dylib "$C/Frameworks/libpython3.12.dylib"
+          old=$(otool -L "$C/MacOS/kurva3d" | awk '/libpython3\.12/{print $1}')
+          [ -n "$old" ] || { echo "kurva3d non usa libpython"; exit 1; }
+          install_name_tool -change "$old" @executable_path/../Frameworks/libpython3.12.dylib "$C/MacOS/kurva3d"
+          rsync -a --exclude test --exclude idlelib --exclude tkinter --exclude turtledemo --exclude ensurepip \
+            --exclude site-packages --exclude '__pycache__' --exclude '_tkinter*' --exclude 'config-3.12-*' \
+            "$PBS/lib/python3.12" "$C/Resources/python/lib/"
+          mkdir -p "$C/Resources/python/lib/python3.12/site-packages"
+          du -sh "$C/Resources/python"
           "$(brew --prefix qt)/bin/macdeployqt" dist/Kurva3D.app -always-overwrite
           R=dist/Kurva3D.app/Contents/Resources
           cp EULA.txt LICENSE.txt THIRD_PARTY_NOTICES.txt "$R/"
           cp -R licenses "$R/licenses"
+          cp "$PBS/lib/python3.12/LICENSE.txt" "$R/licenses/Python-PSF-LICENSE.txt"
           # nessuna libreria deve restare collegata a Homebrew
           bad=0
           while IFS= read -r f; do
@@ -302,14 +332,14 @@ jobs:
             security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
             ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | awk '{print $2}')
             if [ -z "$ID" ]; then echo "certificato Developer ID Application non trovato"; exit 1; fi
-            # prima gli eseguibili e le librerie di llama.cpp (Helpers non e' coperto da --deep)
-            find dist/Kurva3D.app/Contents/Helpers -type f \( -perm -111 -o -name "*.dylib" \) -exec \
+            # prima gli eseguibili e le librerie di llama.cpp e i moduli di Python (non coperti da --deep)
+            find dist/Kurva3D.app/Contents/Helpers dist/Kurva3D.app/Contents/Resources/python -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
               codesign --force --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" {} \;
             codesign --force --deep --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" dist/Kurva3D.app
             echo "FIRMATA=1" >> "$GITHUB_ENV"
           else
             echo "Nessun certificato nei Secrets: firma ad hoc (app non firmata da Apple)"
-            find dist/Kurva3D.app/Contents/Helpers -type f \( -perm -111 -o -name "*.dylib" \) -exec codesign --force -s - {} \;
+            find dist/Kurva3D.app/Contents/Helpers dist/Kurva3D.app/Contents/Resources/python -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec codesign --force -s - {} \;
             codesign --force --deep -s - dist/Kurva3D.app
           fi
           codesign --verify --deep --strict --verbose=2 dist/Kurva3D.app
@@ -322,6 +352,19 @@ jobs:
           if kill -0 $(cat pid) 2>/dev/null; then kill $(cat pid); echo "l'app non si e' chiusa entro 2 minuti"; exit 1; fi
           test -s screenshot-mac.png || { echo "screenshot non creato"; exit 1; }
           ls -la screenshot-mac.png
+
+      # Script Python con il Python dentro l'app (quello scaricato viene tolto di mezzo)
+      - name: Prova degli script Python (Python incluso nell'app)
+        run: |
+          mv "$PBS" "$PBS.via"
+          rm -f "$RUNNER_TEMP/py-ok.txt"
+          printf '%s\n' "-_RunPythonScript (import rhinoscriptsyntax as rs, json; rs.AddCircle(rs.WorldXYPlane(), 5); open('$RUNNER_TEMP/py-ok.txt', 'w').write('python-ok ' + json.dumps(len(rs.AllObjects()))))" > pytest.txt
+          ( env -u KURVA3D_PYTHONHOME dist/Kurva3D.app/Contents/MacOS/kurva3d --script "$PWD/pytest.txt" --screenshot "$RUNNER_TEMP/py.png" & echo $! > pid )
+          for i in $(seq 1 120); do kill -0 $(cat pid) 2>/dev/null || break; sleep 1; done
+          kill $(cat pid) 2>/dev/null || true
+          mv "$PBS.via" "$PBS"
+          cat "$RUNNER_TEMP/py-ok.txt" || true
+          grep -q "python-ok 1" "$RUNNER_TEMP/py-ok.txt" || { echo "lo script Python non e' partito con il Python dell'app"; exit 1; }
 
       - name: Crea il dmg
         run: |
