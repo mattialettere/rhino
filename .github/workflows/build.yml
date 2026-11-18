@@ -277,6 +277,7 @@ jobs:
             if [ "$draft" != "true" ]; then
               if [ ${#dmgs[@]} -gt 0 ]; then
                 gh release upload "$tag" "${dmgs[@]}" --clobber
+                gh release edit "$tag" --title "Kurva3D $tag" --notes-file docs/RELEASE_NOTES.md
                 echo "dmg aggiunti alla release $tag"
               else
                 echo "Release $tag gia' presente"
