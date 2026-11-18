@@ -5,10 +5,12 @@
 #include "ui/Theme.h"
 #include "ui/Viewport.h"
 #include <QMainWindow>
+#include <functional>
 #include <sstream>
 #include <utility>
 #include <vector>
 
+class QDialog;
 class QAction;
 class QLineEdit;
 class QCompleter;
@@ -74,6 +76,12 @@ private:
   void ToggleMaximize(Viewport* v);
   void ShowSelectionFilter();
   void ShowBlockManager();
+  // Analisi visive (Zebra, DraftAngleAnalysis, CurvatureAnalysis, EMap, CurvatureGraph, ShowEdges)
+  // e la finestra delle loro opzioni (AnalysisPanel.cpp). true se il testo era un comando di analisi.
+  bool HandleAnalysisCommand(const std::string& text);
+  void ShowAnalysisOptions(int page);
+  QDialog* m_analysisDlg = nullptr;
+  std::function<void()> m_analysisRefresh;
   void ShowAbout();
   void ShowTextFile(const QString& file, const QString& title);
   bool PassesFilter(const ON_UUID& id) const;

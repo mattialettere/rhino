@@ -571,21 +571,46 @@ void Ramp(double f, float c[3]) {
 }
 }  // namespace
 
-// Analisi come in Rhino: strisce di zebra (riflessione di strisce verticali),
-// angolo di sformo rispetto a z del mondo (0..10 gradi, rosso -> blu), grafico
-// della curvatura delle curve e spigoli nudi delle polisuperfici.
+std::shared_ptr<cad::CurvatureData> Viewport::CurvatureOf(const Scene& scene, const DisplayObject& obj) {
+  auto& cache = Shared().curvCache;
+  const std::string key = [&] { char b[40]; ON_UuidToString(obj.id, b); return std::string(b); }();
+  const ON_Geometry* g = scene.Geometry(obj.id);
+  const void* src = obj.shaded ? static_cast<const void*>(obj.shaded.get()) : static_cast<const void*>(g);
+  auto it = cache.find(key);
+  if (it != cache.end() && it->second.source == src) return it->second.data;
+  std::shared_ptr<cad::CurvatureData> d;
+#ifdef CAD_WITH_OCCT
+  if (g) {
+    auto nd = std::make_shared<cad::CurvatureData>();
+    if (cad::ComputeCurvature(*g, scene.GetEngine().Tolerance(), *nd, obj.shaded.get())) d = nd;
+  }
+#endif
+  cache[key] = {src, d};
+  return d;
+}
+
+// Analisi come in Rhino: strisce di zebra (riflessione di strisce verticali o orizzontali),
+// angolo di sformo rispetto a z del mondo (intervallo impostabile, rosso -> blu), curvatura a
+// falsi colori, mappa d'ambiente (EMap), grafico della curvatura delle curve e spigoli nudi.
 void Viewport::DrawAnalysis() {
   const Settings& S = Shared();
-  if (S.zebra.empty() && S.draft.empty() && S.curvature.empty() && S.edges.empty()) return;
+  const auto& A = S.analysis;
+  if (S.zebra.empty() && S.draft.empty() && S.curvature.empty() && S.edges.empty() && S.curvatureAnalysis.empty() &&
+      S.emap.empty())
+    return;
   auto* gl = GL(context());
   const bool persp = m_cam.kind == Camera::Kind::Perspective;
   const ON_3dPoint eye = m_cam.Eye();
   ON_3dVector vd = m_cam.Dir();
   vd.Unitize();
-  if (!S.zebra.empty() && !m_zebraTex) {
-    GLuint t = 0;
-    gl->glGenTextures(1, &t);
+  ON_3dVector camRight = m_cam.Right(), camUp = m_cam.Up();
+  camRight.Unitize();
+  camUp.Unitize();
+  if (!S.zebra.empty() && (!m_zebraTex || m_zebraSize != A.zebraSize)) {
+    GLuint t = m_zebraTex;
+    if (!t) gl->glGenTextures(1, &t);
     m_zebraTex = t;
+    m_zebraSize = A.zebraSize;
     gl->glBindTexture(GL_TEXTURE_1D, t);
     unsigned char px[64 * 3];
     for (int i = 0; i < 64; i++) { const unsigned char v = i < 32 ? 20 : 245; px[3 * i] = px[3 * i + 1] = px[3 * i + 2] = v; }
@@ -594,17 +619,82 @@ void Viewport::DrawAnalysis() {
     gl->glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     gl->glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
   }
+  if (!S.emap.empty() && (!m_emapTex || m_emapRevision != A.emapRevision)) {
+    GLuint t = m_emapTex;
+    if (!t) gl->glGenTextures(1, &t);
+    m_emapTex = t;
+    m_emapRevision = A.emapRevision;
+    QImage img;
+    if (!A.emapFile.empty()) img.load(QString::fromStdString(A.emapFile));
+    if (img.isNull()) {
+      // ambiente da studio: cielo chiaro in alto, due luci morbide, pavimento scuro (vista come "sfera cromata")
+      const int N = 256;
+      img = QImage(N, N, QImage::Format_RGB888);
+      for (int y = 0; y < N; y++)
+        for (int x = 0; x < N; x++) {
+          const double nx = (x + 0.5) / N * 2 - 1, ny = 1 - (y + 0.5) / N * 2;
+          const double r2 = nx * nx + ny * ny;
+          double v;
+          if (r2 > 1) v = 0.2;
+          else {
+            const double el = ny;  // -1 basso, +1 alto
+            v = el > 0 ? 0.55 + 0.4 * el : 0.12 + 0.25 * (1 + el);
+            const double l1 = std::exp(-((nx + 0.45) * (nx + 0.45) + (ny - 0.45) * (ny - 0.45)) / 0.02);
+            const double l2 = std::exp(-((nx - 0.55) * (nx - 0.55) + (ny - 0.2) * (ny - 0.2)) / 0.01);
+            const double horizon = std::exp(-(ny * ny) / 0.002) * 0.35;
+            v = std::min(1.0, v + 0.6 * l1 + 0.5 * l2 + horizon);
+          }
+          const int c = int(std::clamp(v, 0.0, 1.0) * 255);
+          img.setPixel(x, y, qRgb(int(c * 0.96), int(c * 0.98), c));
+        }
+    }
+    img = img.convertToFormat(QImage::Format_RGB888).scaled(256, 256, Qt::IgnoreAspectRatio, Qt::SmoothTransformation).mirrored();
+    gl->glBindTexture(GL_TEXTURE_2D, t);
+    gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    gl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 256, 0, GL_RGB, GL_UNSIGNED_BYTE, img.constBits());
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+  }
+  const double zebraFreq = A.zebraSize == 0 ? 10.0 : A.zebraSize == 2 ? 3.0 : 6.0;
+  const double draftSpan = std::max(1e-6, A.draftMax - A.draftMin);
+  const auto style = static_cast<cad::CurvatureStyle>(std::clamp(A.curvStyle, 0, 3));
   gl->glDisable(GL_LIGHTING);
   gl->glEnable(GL_POLYGON_OFFSET_FILL);
   gl->glPolygonOffset(1.f, 1.f);
   for (const auto& obj : m_scene.Objects()) {
-    const bool z = InList(S.zebra, obj.id), d = InList(S.draft, obj.id);
-    if ((z || d) && obj.shaded) {
+    // curvatura a falsi colori: mesh di analisi propria, colore per vertice
+    if (InList(S.curvatureAnalysis, obj.id)) {
+      if (auto cd = CurvatureOf(m_scene, obj)) {
+        const ON_Mesh& m = cd->mesh;
+        gl->glBegin(GL_TRIANGLES);
+        for (int i = 0; i < m.m_F.Count(); i++) {
+          const ON_MeshFace& f = m.m_F[i];
+          const int tri[2][3] = {{f.vi[0], f.vi[1], f.vi[2]}, {f.vi[0], f.vi[2], f.vi[3]}};
+          for (int t = 0; t < (f.IsQuad() ? 2 : 1); t++)
+            for (int k = 0; k < 3; k++) {
+              const int vi = tri[t][k];
+              float c[3];
+              cad::CurvatureColor(style, cad::CurvatureValue(style, cd->k1[vi], cd->k2[vi]), A.curvMin, A.curvMax, c);
+              gl->glColor3fv(c);
+              gl->glVertex3f(m.m_V[vi].x, m.m_V[vi].y, m.m_V[vi].z);
+            }
+        }
+        gl->glEnd();
+      }
+    }
+    const bool z = InList(S.zebra, obj.id), d = InList(S.draft, obj.id), em = InList(S.emap, obj.id);
+    if ((z || d || em) && obj.shaded) {
       const ON_Mesh& m = *obj.shaded;
       if (!m.HasVertexNormals()) continue;
       if (z) {
         gl->glEnable(GL_TEXTURE_1D);
         gl->glBindTexture(GL_TEXTURE_1D, m_zebraTex);
+        gl->glColor3f(1, 1, 1);
+      } else if (em) {
+        gl->glEnable(GL_TEXTURE_2D);
+        gl->glBindTexture(GL_TEXTURE_2D, m_emapTex);
         gl->glColor3f(1, 1, 1);
       }
       gl->glBegin(GL_TRIANGLES);
@@ -616,16 +706,26 @@ void Viewport::DrawAnalysis() {
             const int vi = tri[t][k];
             const ON_3dPoint p(m.m_V[vi]);
             ON_3dVector n(m.m_N[vi]);
-            if (z) {
+            if (z || em) {
               ON_3dVector dir = persp ? ON_3dVector(p - eye) : vd;
               dir.Unitize();
               if (n * dir > 0) n = -n;  // lato visto
-              const ON_3dVector r = dir - 2.0 * (dir * n) * n;
-              gl->glTexCoord1d(std::atan2(r.y, r.x) / ON_PI * 6.0);
+              if (z) {
+                const ON_3dVector r = dir - 2.0 * (dir * n) * n;
+                const double s = A.zebraHorizontal ? std::asin(std::clamp(r.z, -1.0, 1.0)) : std::atan2(r.y, r.x);
+                gl->glTexCoord1d(s / ON_PI * zebraFreq);
+              } else {
+                // mappa sferica nello spazio della vista (come una sfera cromata fotografata)
+                const ON_3dVector r = dir - 2.0 * (dir * n) * n;
+                ON_3dVector h(r * camRight, r * camUp, -(r * vd) + 1.0);
+                const double len = h.Length();
+                if (len > 1e-9) h = h / len;
+                gl->glTexCoord2d(0.5 + 0.5 * h.x, 0.5 + 0.5 * h.y);
+              }
             } else {
               float c[3];
               const double ang = std::asin(std::clamp(n.z, -1.0, 1.0)) * 180.0 / ON_PI;
-              Ramp(ang / 10.0, c);
+              Ramp((ang - A.draftMin) / draftSpan, c);
               gl->glColor3fv(c);
             }
             gl->glVertex3d(p.x, p.y, p.z);
@@ -633,6 +733,7 @@ void Viewport::DrawAnalysis() {
       }
       gl->glEnd();
       if (z) gl->glDisable(GL_TEXTURE_1D);
+      if (em && !z) gl->glDisable(GL_TEXTURE_2D);
     }
     if (InList(S.curvature, obj.id)) {
       const auto* c = ON_Curve::Cast(m_scene.Geometry(obj.id));

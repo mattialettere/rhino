@@ -131,6 +131,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterKernel4Commands(*this);
   RegisterKernel5Commands(*this);
   RegisterKernel6Commands(*this);
+  RegisterAnalysisCommands(*this);
 #endif
 }
 

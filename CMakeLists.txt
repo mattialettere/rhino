@@ -68,7 +68,7 @@ target_include_directories(cadcore PUBLIC src)
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
   message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: comandi del motore geometrico attivi")
-  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp)
+  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp src/kernel/CmdAnalysis.cpp src/kernel/SurfaceAnalysis.cpp src/kernel/SurfaceAnalysis.h)
   target_include_directories(cadcore PUBLIC ${OpenCASCADE_INCLUDE_DIR})
   target_link_libraries(cadcore PUBLIC TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo
     TKTopAlgo TKPrim TKBO TKShHealing TKBool TKFillet TKOffset TKMesh TKHLR)
@@ -193,7 +193,7 @@ if(Qt6_FOUND)
   endif()
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
     src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
-    src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
+    src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h src/ui/AnalysisPanel.cpp
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h src/ui/RenderWindow.cpp src/ui/RenderWindow.h
     src/ui/ScriptEditor.cpp src/ui/ScriptEditor.h src/ui/NodeEditor.cpp src/ui/NodeEditor.h
     src/ui/CollabPanel.cpp src/ui/CollabPanel.h

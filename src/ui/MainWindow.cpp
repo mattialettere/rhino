@@ -630,7 +630,11 @@ void MainWindow::BuildMenus() {
                          {"Scatola di ingombro", "_BoundingBox"}, {"Zebra", "_Zebra"}, {"Zebra spento", "_ZebraOff"},
                          {"Angolo di sformo", "_DraftAngleAnalysis"}, {"Angolo di sformo spento", "_DraftAngleAnalysisOff"},
                          {"Grafico di curvatura", "_CurvatureGraph"}, {"Grafico di curvatura spento", "_CurvatureGraphOff"},
-                         {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"}});
+                         {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"},
+                         {"Analisi di curvatura (falsi colori)", "_CurvatureAnalysis"}, {"Analisi di curvatura spenta", "_CurvatureAnalysisOff"},
+                         {"Mappa d'ambiente (EMap)", "_EMap"}, {"Mappa d'ambiente spenta", "_EMapOff"}, {"Opzioni analisi...", "_AnalysisOptions"},
+                         {"Continuità tra curve (GCon)", "_GCon"}, {"Continuità degli spigoli", "_EdgeContinuity"},
+                         {"Deviazione dei punti", "_PointDeviation"}});
   addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"}, {"Modifica blocco (BlockEdit)", "_BlockEdit"},
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
   {
@@ -797,7 +801,9 @@ QWidget* MainWindow::BuildToolTabs() {
                             {"Sfera", "_MeshSphere"}, {"Cilindro", "_MeshCylinder"}, {"Toro", "_MeshTorus"}});
   addTab("Analizza", {{"Cos'è", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"}, {"Angolo", "_Angle"},
                       {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"}, {"Ingombro", "_BoundingBox"},
-                      {"Zebra", "_Zebra"}, {"Sformo", "_DraftAngleAnalysis"}, {"Curvatura", "_CurvatureGraph"}, {"Spigoli", "_ShowEdges"}});
+                      {"Zebra", "_Zebra"}, {"Sformo", "_DraftAngleAnalysis"}, {"Curvatura", "_CurvatureGraph"}, {"Spigoli", "_ShowEdges"},
+                      {"Falsi colori", "_CurvatureAnalysis"}, {"EMap", "_EMap"}, {"GCon", "_GCon"}, {"Continuità spigoli", "_EdgeContinuity"},
+                      {"Deviazione punti", "_PointDeviation"}});
   addTab("Disegno", {{"Lineare", "_Dim"}, {"Allineata", "_DimAligned"}, {"Ruotata", "_DimRotated"},
                      {"Raggio", "_DimRadius"}, {"Diametro", "_DimDiameter"}, {"Angolare", "_DimAngle"},
                      {"Direttrice", "_Leader"}, {"Testo", "_Text"}, {"Segno del centro", "_Centermark"}});
@@ -1143,32 +1149,7 @@ void MainWindow::Submit(const QString& text) {
     if (bb.IsValid()) for (auto* v : m_views) v->ZoomBox(bb);
     return;
   }
-  {
-    // analisi di superfici e curve sugli oggetti selezionati (come le finestre di analisi di Rhino)
-    auto& S = Viewport::Shared();
-    struct A { const char* on; const char* on2; const char* off; std::vector<ON_UUID>* list; const char* what; const char* name; };
-    const A analyses[] = {{"zebra", "zebra", "zebraoff", &S.zebra, "Zebra", "Zebra"},
-                          {"draftangleanalysis", "draft", "draftangleanalysisoff", &S.draft, "Angolo di sformo", "DraftAngleAnalysis"},
-                          {"curvaturegraph", "curvaturegraphon", "curvaturegraphoff", &S.curvature, "Grafico di curvatura", "CurvatureGraph"},
-                          {"showedges", "showedges", "showedgesoff", &S.edges, "Spigoli nudi", "ShowEdges"}};
-    for (const auto& a : analyses) {
-      if (norm == a.off || (norm == "draftoff" && a.list == &S.draft)) {
-        a.list->clear();
-        Log(QString("%1: spento").arg(a.what));
-        for (auto* v : m_views) v->update();
-        return;
-      }
-      if (norm == a.on || norm == a.on2) {
-        int n = 0;
-        for (const auto& obj : m_scene.Objects())
-          if (obj.selected) { a.list->push_back(obj.id); n++; }
-        if (!n) { Log(QString("%1: seleziona prima gli oggetti").arg(a.what)); return; }
-        Log(QString("%1: attivo su %2 oggetti (%3Off per spegnerlo)").arg(a.what).arg(n).arg(a.name));
-        for (auto* v : m_views) v->update();
-        return;
-      }
-    }
-  }
+  if (HandleAnalysisCommand(t)) return;
   if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
   if (norm == "blockmanager") { ShowBlockManager(); return; }
   if (norm == "about") { ShowAbout(); return; }

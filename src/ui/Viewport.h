@@ -5,6 +5,7 @@
 // Viewport stile Rhino 8: Top, Front, Right (paralleli) e Perspective.
 // Rendering OpenGL 1.1 (funziona su qualsiasi scheda/driver Windows).
 #include "ui/Scene.h"
+#include "kernel/SurfaceAnalysis.h"
 #include <QOpenGLWidget>
 #include <memory>
 #include <QPainter>
@@ -65,6 +66,22 @@ public:
     bool gumball = true;          // Gumball sugli oggetti selezionati (barra di stato)
     // Analisi attive (Zebra, DraftAngleAnalysis, CurvatureGraph, ShowEdges) per oggetto
     std::vector<ON_UUID> zebra, draft, curvature, edges;
+    // CurvatureAnalysis (falsi colori) ed EMap (riflesso di un'immagine), per oggetto
+    std::vector<ON_UUID> curvatureAnalysis, emap;
+    // Opzioni delle analisi (finestra "Opzioni analisi" e opzioni dei comandi)
+    struct Analysis {
+      bool zebraHorizontal = false;   // strisce orizzontali invece che verticali
+      int zebraSize = 1;              // 0 sottili, 1 medie, 2 spesse
+      double draftMin = 0, draftMax = 10;  // gradi: rosso <= min, blu >= max
+      int curvStyle = 0;              // CurvatureStyle: Gaussian, Mean, MinRadius, MaxRadius
+      double curvMin = 0, curvMax = 1;
+      bool curvRangeSet = false;      // false: intervallo automatico alla prima visualizzazione
+      std::string emapFile;           // vuoto: ambiente da studio predefinito
+      int emapRevision = 0;           // cambia quando cambia l'immagine
+    } analysis;
+    // Mesh e curvature di CurvatureAnalysis per oggetto (ricalcolate se cambia la geometria)
+    struct CurvEntry { const void* source = nullptr; std::shared_ptr<cad::CurvatureData> data; };
+    std::map<std::string, CurvEntry> curvCache;
     // Colori delle viste (tema chiaro o scuro)
     struct Colors {
       bool dark = false;
@@ -85,6 +102,8 @@ public:
   enum OsnapBit : unsigned { End = 1, Near = 2, Point = 4, Mid = 8, Cen = 16, Int = 32, Perp = 64,
                              Tan = 128, Quad = 256, Knot = 512, Vertex = 1024 };
   static Settings& Shared();
+  // Curvature di un oggetto per CurvatureAnalysis (dalla cache, calcolate se serve; nullptr se non analizzabile)
+  static std::shared_ptr<cad::CurvatureData> CurvatureOf(const Scene& scene, const DisplayObject& obj);
   void SetView(Camera::Kind k);
   void ZoomExtents();
   void ZoomBox(const ON_BoundingBox& b);
@@ -150,6 +169,9 @@ private:
   void SetupRenderedLights();
   void DrawGroundShadows();
   unsigned m_zebraTex = 0;
+  unsigned m_emapTex = 0;
+  int m_emapRevision = -1;
+  int m_zebraSize = -1;
   GripDrag m_gripDrag;
   GumballHit m_gbDrag;
   double m_gbStart = 0, m_gbCurrent = 0;

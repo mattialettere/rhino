@@ -418,6 +418,11 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Zebra | ✔ |
 | Draft | ✔ |
 | ShowEdges | ✔ |
+| CurvatureAnalysis | ✔ (0.12) |
+| EMap | ✔ (0.12) |
+| GCon | ✔ (0.12) |
+| EdgeContinuity | ✔ (0.12) |
+| PointDeviation | ✔ (0.12) |
 | Check | ✔ |
 | SelBadObjects | ✔ |
 

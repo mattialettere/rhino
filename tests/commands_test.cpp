@@ -1264,6 +1264,65 @@ int main(int argc, char** argv) {
   }
 
 #ifdef CAD_WITH_OCCT
+  // Analisi di continuita' e deviazione (0.12)
+  {
+    std::printf("Analisi: GCon, EdgeContinuity, PointDeviation\n");
+    auto has = [](Ctx& c, const char* t) { return c.log.str().find(t) != std::string::npos; };
+    Case("GCon_G1", "_Line 0,0,0 10,0,0\n_Arc 10,10,0 10,0,0 20,10,0\n_SelAll _GCon", [&](Ctx& c) {
+      CHECK(has(c, "Le curve sono G1."));
+      CHECK(has(c, "l'altra ha raggio 10 mm"));
+    });
+    Case("GCon_G2", "_Line 0,0,0 10,0,0\n_Line 20,0,0 10,0,0\n_SelAll _GCon", [&](Ctx& c) { CHECK(has(c, "Le curve sono G2.")); });
+    Case("GCon_G0", "_Line 0,0,0 10,0,0\n_Line 10,0,0 20,5,0\n_SelAll _GCon", [&](Ctx& c) {
+      CHECK(has(c, "Le curve sono G0."));
+      CHECK(has(c, "Differenza di tangenza = 26.56"));
+    });
+    Case("GCon_aperte", "_Line 0,0,0 10,0,0\n_Line 11,0,0 20,0,0\n_SelAll _GCon", [&](Ctx& c) {
+      CHECK(has(c, "Differenza fra gli estremi = 1 mm"));
+      CHECK(has(c, "non sono continue"));
+    });
+    Case("GCon_archi_G2", "_Arc 0,0,0 10,0,0 0,10,0\n_SelLast _Rotate 0,0,0 90\n_Arc 0,0,0 10,0,0 0,10,0\n_SelAll _GCon",
+         [&](Ctx& c) { CHECK(has(c, "Le curve sono G2.")); });
+    Case("EdgeContinuity_box", "_Box 0,0,0 10,10 10\n_SelAll _EdgeContinuity", [&](Ctx& c) {
+      CHECK(has(c, "Spigoli analizzati: 12 (G0 12, G1 0, G2 0)"));
+      CHECK(has(c, "angolo 90 gradi"));
+    });
+    Case("EdgeContinuity_separate",
+         "_Line 0,0,0 10,0,0\n_Arc 10,10,0 10,0,0 20,10,0\n_Line 20,10,0 20,20,0\n_SelCrv _ExtrudeCrv 5\n_SelLast _EdgeContinuity",
+         [&](Ctx& c) {
+           CHECK(has(c, "Spigoli analizzati: 2 (G0 2, G1 2, G2 0)"));
+           CHECK(has(c, "curvatura 100 %"));
+         });
+    Case("EdgeContinuity_complanari", "_Line 0,0,0 10,0,0\n_Line 10,0,0 20,0,0\n_SelCrv _ExtrudeCrv 5\n_SelLast _EdgeContinuity",
+         [&](Ctx& c) { CHECK(has(c, "Spigoli analizzati: 1 (G0 1, G1 1, G2 1)")); });
+    Case("CurvatureAnalysis_sfera", "_Sphere 0,0,0 10\n_SelAll _CurvatureAnalysis Style=Mean", [&](Ctx& c) {
+      CHECK(has(c, "Intervallo massimo: 0.09 .. 0.11"));  // 1/R costante, intervallo allargato del 10%
+    });
+    Case("CurvatureAnalysis_toro", "_Torus 0,0,0 10 3\n_SelAll _CurvatureAnalysis Style=Gaussian", [&](Ctx& c) {
+      CHECK(has(c, "Intervallo massimo: -0.047619 .. 0.025641"));  // -1/(3*7) .. 1/(3*13)
+    });
+    Case("CurvatureAnalysis_raggi", "_Cylinder 0,0,0 5 20\n_SelAll _CurvatureAnalysis Style=MinRadius", [&](Ctx& c) {
+      CHECK(has(c, "Intervallo automatico: 5 .. 1e+06"));
+    });
+    Case("CurvatureAnalysis_mesh", "_MeshSphere 0,0,0 10\n_SelAll _CurvatureAnalysis Style=Mean", [&](Ctx& c) {
+      CHECK(has(c, "Intervallo massimo: 0.09"));
+    });
+    Case("PointDeviation", "_Sphere 0,0,0 10\n_Point 0,0,10.05\n_Point 0,0.5,10\n_Point 0,11,0\n_Point 0,0,30\n_SelAll _PointDeviation BadPoint=0.8",
+         [&](Ctx& c) {
+           CHECK(has(c, "Punti: 3 confrontati, 1 ignorati"));
+           CHECK(has(c, "Buoni (<= 0.1 mm): 1   Intermedi: 0   Cattivi (> 0.8 mm): 1") ||
+                 has(c, "Buoni (<= 0.1 mm): 2   Intermedi: 0   Cattivi (> 0.8 mm): 1"));
+           CHECK(has(c, "massima = 1 mm"));
+         });
+    Case("PointDeviation_mesh_curva", "_MeshBox 0,0,0 10,10 10\n_Line 0,20,0 10,20,0\n_Point 5,5,12\n_Point 5,21,0\n_Point 5,5,5\n_SelAll _PointDeviation",
+         [&](Ctx& c) {
+           CHECK(has(c, "Punti: 3 confrontati"));
+           CHECK(has(c, "massima = 5 mm"));
+           CHECK(has(c, "minima = 1 mm"));
+         });
+  }
+#endif
+#ifdef CAD_WITH_OCCT
   // Superfici, terza parte (ExtrudeCrvTapered, Slab, ExtendSrf, Pull, Sweep2, Flow, ArraySrf)
   {
     std::printf("Superfici (3)\n");
