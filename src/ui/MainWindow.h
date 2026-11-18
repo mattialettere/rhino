@@ -22,6 +22,7 @@ class QPushButton;
 namespace cad::ui {
 
 class AiPanel;
+class TexturePanel;
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -48,6 +49,7 @@ private:
   void Log(const QString& s);
   void BuildMenus();
   void BuildSidebar();
+  bool ApplyTextureToSelection(const QString& file);
   void SetTheme(ThemeMode m);
   void RefreshThemeIcons();
   QWidget* BuildToolTabs();
@@ -86,6 +88,7 @@ private:
   Viewport* m_maximized = nullptr;
   Viewport* m_active = nullptr;
   AiPanel* m_ai = nullptr;
+  TexturePanel* m_textures = nullptr;
   std::vector<std::pair<QAction*, QString>> m_iconActions;  // azioni con icona del tema
 };
 

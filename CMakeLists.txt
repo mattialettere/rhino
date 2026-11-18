@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(kurva3d VERSION 0.7.0 LANGUAGES C CXX)
+project(kurva3d VERSION 0.8.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -127,7 +127,7 @@ if(Qt6_FOUND)
     target_compile_options(kurva3d-ai-test PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/UWIN32>)
   endif()
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
-    src/ui/AiPanel.cpp src/ui/AiPanel.h
+    src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h
     src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})

@@ -4,6 +4,7 @@
 #include "ui/Theme.h"
 #include <QApplication>
 #include <QFile>
+#include <QDockWidget>
 #include <QFileOpenEvent>
 #include <QIcon>
 #include <QScreen>
@@ -38,11 +39,12 @@ int main(int argc, char** argv) {
   QApplication::setWindowIcon(QIcon(":/kurva3d.png"));
   cad::ui::ApplyTheme(cad::ui::SavedThemeMode());
   cad::InitLibrary();
-  QString open, script, shot;
+  QString open, script, shot, panel;
   const QStringList args = app.arguments();
   for (int i = 1; i < args.size(); i++) {
     if (args[i] == "--script" && i + 1 < args.size()) script = args[++i];
     else if (args[i] == "--screenshot" && i + 1 < args.size()) shot = args[++i];
+    else if (args[i] == "--panel" && i + 1 < args.size()) panel = args[++i];  // es. textureDock
     else if (!args[i].startsWith("-psn")) open = args[i];
   }
   int rc;
@@ -72,6 +74,8 @@ int main(int argc, char** argv) {
       }
       w.ZoomExtentsAll();
     }
+    for (auto* d : w.findChildren<QDockWidget*>())
+      if (!panel.isEmpty() && d->objectName() == panel) { d->show(); d->raise(); }
     if (!shot.isEmpty()) {
       QTimer::singleShot(800, [&] {
         // cattura dello schermo (include i titoli delle viste disegnati sopra OpenGL)

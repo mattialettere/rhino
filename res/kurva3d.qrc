@@ -3,5 +3,9 @@
     <file>kurva3d.png</file>
     <file>theme/check.png</file>
     <file>theme/check@2x.png</file>
+    <file>theme/up.png</file>
+    <file>theme/up@2x.png</file>
+    <file>theme/down.png</file>
+    <file>theme/down@2x.png</file>
   </qresource>
 </RCC>

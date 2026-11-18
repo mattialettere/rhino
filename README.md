@@ -120,6 +120,18 @@ interruttori Snap griglia, Orto, Osnap.
 - `kurva3d file.3dm` apre un file; `--script comandi.txt` esegue uno script.
 - **Vista > Tema**: Automatico (segue il chiaro/scuro di Windows), Chiaro o Scuro.
 
+## Texture
+
+Pannello **Texture** (a destra, o menu **Render > Pannello Texture**): mostra le
+immagini di una cartella (predefinita `Documenti\Kurva3D\Texture`, si cambia
+con **Cartella…**; **Aggiungi…** copia immagini nella cartella). Doppio clic o
+**Applica** mette la texture sugli oggetti selezionati; si puo' anche trascinare
+l'anteprima (o un'immagine da Esplora file) su un oggetto in una vista. Mappatura
+(Automatica, Superficie, Box, Piana, Cilindrica, Sferica) e Ripetizioni si
+scelgono nel pannello. L'immagine viene salvata dentro il file .3dm, quindi il
+file si apre con le texture anche su un altro computer. Le texture si vedono
+nella modalita' Ombreggiato.
+
 ## Assistente AI
 
 Menu **AI > Assistente AI**: descrivi a parole cosa disegnare (per esempio

@@ -4,6 +4,12 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QOpenGLFunctions_1_1>
+#include <QImage>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
+#include "ui/TexturePanel.h"
 #include <QOpenGLVersionFunctionsFactory>
 #include <QPainter>
 #include <QWheelEvent>
@@ -135,6 +141,34 @@ Viewport::Viewport(Scene& scene, Camera::Kind kind, QWidget* parent) : QOpenGLWi
   setMouseTracking(true);
   setFocusPolicy(Qt::ClickFocus);
   setMinimumSize(120, 90);
+  setAcceptDrops(true);
+}
+
+namespace {
+QString DroppedTexture(const QMimeData* md) {
+  if (md->hasFormat(TexturePanel::MimeType())) return QString::fromUtf8(md->data(TexturePanel::MimeType()));
+  for (const QUrl& u : md->urls())
+    if (u.isLocalFile() && TexturePanel::IsImageFile(u.toLocalFile())) return u.toLocalFile();
+  return {};
+}
+}  // namespace
+
+void Viewport::dragEnterEvent(QDragEnterEvent* e) {
+  if (!DroppedTexture(e->mimeData()).isEmpty()) e->acceptProposedAction();
+}
+
+void Viewport::dragMoveEvent(QDragMoveEvent* e) {
+  // si accetta solo sopra un oggetto
+  if (!PickAt(e->position().toPoint()).empty()) e->acceptProposedAction();
+  else e->ignore();
+}
+
+void Viewport::dropEvent(QDropEvent* e) {
+  const QString f = DroppedTexture(e->mimeData());
+  const auto ids = PickAt(e->position().toPoint());
+  if (f.isEmpty() || ids.empty()) return;
+  e->acceptProposedAction();
+  emit TextureDropped(f, ids);
 }
 
 void Viewport::ZoomBox(const ON_BoundingBox& b) {
@@ -185,11 +219,39 @@ void Viewport::ShowViewMenu(const QPoint& at) {
 
 void Viewport::initializeGL() {}
 
+
 namespace {
 QOpenGLFunctions_1_1* GL(QOpenGLContext* ctx) {
   return QOpenGLVersionFunctionsFactory::get<QOpenGLFunctions_1_1>(ctx);
 }
 }  // namespace
+
+unsigned Viewport::TextureId(const std::string& file) {
+  auto it = m_textures.find(file);
+  if (it != m_textures.end()) return it->second;
+  unsigned id = 0;
+  QImage img(QString::fromStdString(file));
+  if (!img.isNull()) {
+    // OpenGL 1.1: lati potenza di due, al massimo 1024
+    auto pot = [](int v) { int p = 1; while (p < v && p < 1024) p <<= 1; return p; };
+    img = img.convertToFormat(QImage::Format_RGBA8888)
+              .scaled(pot(img.width()), pot(img.height()), Qt::IgnoreAspectRatio, Qt::SmoothTransformation)
+              .mirrored();  // la riga 0 di OpenGL e' in basso (v = 0 come in Rhino)
+    auto* gl = GL(context());
+    GLuint t = 0;
+    gl->glGenTextures(1, &t);
+    gl->glBindTexture(GL_TEXTURE_2D, t);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    gl->glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    gl->glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width(), img.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, img.constBits());
+    gl->glBindTexture(GL_TEXTURE_2D, 0);
+    id = t;
+  }
+  m_textures[file] = id;
+  return id;
+}
 
 void Viewport::DrawGrid() {
   auto* gl = GL(context());
@@ -430,8 +492,21 @@ void Viewport::paintGL() {
       if (!obj.shaded) continue;
       const float col[4] = {obj.selected ? 0.95f : 0.82f, obj.selected ? 0.9f : 0.82f, obj.selected ? 0.45f : 0.82f,
                             transparent ? 0.35f : 1.f};
-      gl->glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, col);
       const ON_Mesh& m = *obj.shaded;
+      // texture del materiale (solo in Shaded, come la modalita' Rendered semplificata)
+      const bool tex = mode == DisplayMode::Shaded && !obj.texture.empty() && (int)obj.uv.size() == m.m_V.Count();
+      const unsigned tid = tex ? TextureId(obj.texture) : 0;
+      if (tid) {
+        const float s = obj.selected ? 0.75f : 1.f;
+        const float tc[4] = {obj.diffuse.FractionRed() * s, obj.diffuse.FractionGreen() * s,
+                             obj.diffuse.FractionBlue() * (obj.selected ? 0.5f : 1.f), 1.f};
+        gl->glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, tc);
+        gl->glEnable(GL_TEXTURE_2D);
+        gl->glBindTexture(GL_TEXTURE_2D, tid);
+        gl->glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+      } else {
+        gl->glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, col);
+      }
       const bool hasN = m.HasVertexNormals();
       gl->glBegin(GL_TRIANGLES);
       for (int i = 0; i < m.m_F.Count(); i++) {
@@ -441,10 +516,12 @@ void Viewport::paintGL() {
           for (int k = 0; k < 3; k++) {
             const int vi = tri[t][k];
             if (hasN) gl->glNormal3f(m.m_N[vi].x, m.m_N[vi].y, m.m_N[vi].z);
+            if (tid) gl->glTexCoord2f(obj.uv[vi].x, obj.uv[vi].y);
             gl->glVertex3f(m.m_V[vi].x, m.m_V[vi].y, m.m_V[vi].z);
           }
       }
       gl->glEnd();
+      if (tid) gl->glDisable(GL_TEXTURE_2D);
     }
     gl->glDisable(GL_POLYGON_OFFSET_FILL);
     gl->glDisable(GL_LIGHTING);

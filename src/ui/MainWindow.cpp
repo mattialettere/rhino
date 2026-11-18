@@ -1,5 +1,6 @@
 #include "ui/MainWindow.h"
 #include "ui/AiPanel.h"
+#include "ui/TexturePanel.h"
 #include "ui/Theme.h"
 #include <QActionGroup>
 #include <QStyleHints>
@@ -18,6 +19,7 @@
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFile>
+#include <QDir>
 #include <QIcon>
 #include <QPixmap>
 #include <QGridLayout>
@@ -232,7 +234,24 @@ MainWindow::MainWindow(QWidget* parent)
   aiDock->setWidget(m_ai);
   addDockWidget(Qt::RightDockWidgetArea, aiDock);
   tabifyDockWidget(propsDock, aiDock);
+  // Texture: libreria di immagini da una cartella, da applicare agli oggetti
+  auto* texDock = new QDockWidget("Texture", this);
+  texDock->setObjectName("textureDock");
+  m_textures = new TexturePanel([this](const QString& f) { return ApplyTextureToSelection(f); },
+                                [this] { if (!m_engine.Selection().empty()) Submit("_RemoveTexture"); }, texDock);
+  texDock->setWidget(m_textures);
+  addDockWidget(Qt::RightDockWidgetArea, texDock);
+  tabifyDockWidget(propsDock, texDock);
   propsDock->raise();
+  for (auto* v : m_views)
+    connect(v, &Viewport::TextureDropped, this, [this](QString file, std::vector<ON_UUID> ids) {
+      // trascinata su un oggetto selezionato: tutta la selezione; altrimenti solo quell'oggetto
+      if (!m_engine.IsSelected(ids.front())) {
+        m_engine.ClearSelection();
+        m_engine.Select(ids.front());
+      }
+      ApplyTextureToSelection(file);
+    });
 
   BuildMenus();
   BuildSidebar();
@@ -371,6 +390,23 @@ void MainWindow::BuildMenus() {
                          {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"}});
   addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"}, {"Modifica blocco (BlockEdit)", "_BlockEdit"},
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
+  {
+    auto* render = menuBar()->addMenu("&Render");
+    render->addAction("Pannello Texture", this, [this] {
+      for (auto* d : findChildren<QDockWidget*>())
+        if (d->objectName() == "textureDock") { d->show(); d->raise(); }
+    });
+    render->addAction("Togli texture", this, [this] { Submit("_RemoveTexture"); });
+    render->addSeparator();
+    const std::pair<const char*, const char*> maps[] = {
+        {"Mappatura box", "_ApplyBoxMapping"}, {"Mappatura piana", "_ApplyPlanarMapping"},
+        {"Mappatura cilindrica", "_ApplyCylindricalMapping"}, {"Mappatura sferica", "_ApplySphericalMapping"},
+        {"Mappatura superficie", "_ApplySurfaceMapping"}};
+    for (auto& [label, cmd] : maps) {
+      const QString c = cmd;
+      render->addAction(label, this, [this, c] { Submit(c); });
+    }
+  }
   auto* aiMenu = menuBar()->addMenu("&AI");
   aiMenu->addAction("Assistente AI", this, [this] {
     for (auto* d : findChildren<QDockWidget*>())
@@ -502,6 +538,12 @@ QWidget* MainWindow::BuildToolTabs() {
   addTab("Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"},
                      {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
   return tabs;
+}
+
+bool MainWindow::ApplyTextureToSelection(const QString& file) {
+  if (m_engine.Selection().empty()) return false;
+  Submit("_ApplyTexture File= \"" + QDir::fromNativeSeparators(file) + "\"" + m_textures->CommandOptions());
+  return true;
 }
 
 void MainWindow::BuildSidebar() {

@@ -32,7 +32,7 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 | Punti e nuvole di punti | 🟡 | 🟡 | 🟡 | ⬜ | come curve | |
 | **Blocchi** (definizioni e istanze) | 🟡 | 🟡 | 🟡 | ⬜ | definizione: nome, tipo, numero oggetti; istanza: bytes | Un solo file d'esempio (Rhino 4). Blocchi collegati e annidati non testati |
 | **Livelli** | 🟡 | 🟡 | 🟡 | ⬜ | percorso completo, colore, colore di stampa, spessore di stampa, visibile, bloccato, tipo di linea | Colori per viewport e sezioni non confrontati |
-| **Materiali** | 🟡 | 🟡 | 🟡 | ⬜ | nome, diffuso, speculare, lucentezza, trasparenza, numero texture | I materiali "render content" di Rhino 8 (PBR ecc.) non sono confrontati: ⬜ |
+| **Materiali** | 🟡 | 🟡 | 🟡 | ⬜ | nome, diffuso, speculare, lucentezza, trasparenza, numero texture | I materiali "render content" di Rhino 8 (PBR ecc.) non sono confrontati: ⬜. Texture di Kurva3D (0.8): materiale ON_Material con texture bitmap, immagine incorporata (ON_EmbeddedFile), mappatura (ON_TextureMapping) sul canale 1 degli attributi: salvataggio e rilettura testati tra Kurva3D e openNURBS (test "Texture"); **non ancora aperti in Rhino 8 reale** (da verificare: Rhino crea un materiale personalizzato dal materiale semplice e legge la mappatura associata all'id ON_UniversalRenderEngineId) |
 | **Annotazioni** (testo, quote, leader, punti di testo) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Quote di Rhino 4/5: 🟠 D-006. Creazione con Text, Dim*, Leader, Centermark: testata (salva e rilegge identico), disegno nelle viste semplificato D-028 |
 | Stili di quota | 🟡 | 🟡 | 🟡 | ⬜ | nome, altezza testo, frecce, scala | Solo alcuni campi |
 | Retini e motivi retino | 🟡 | 🟡 | 🟡 | ⬜ | bytes / nome | |
@@ -41,6 +41,7 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 | Piani di sezione (clipping) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Da file Rhino 8 |
 | Luci | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | |
 | Viste con nome, unità, tolleranza | 🟡 | 🟡 | 🟡 | ⬜ | numero viste, unità, tolleranza assoluta | Contenuto delle viste non confrontato |
+| Mappature delle texture | 🟡 | 🟡 | 🟡 | ⬜ | tipo di mappatura, canale dell'oggetto | Create da ApplyTexture e Apply*Mapping (0.8) |
 | Testo utente (attributi), cronologia, file incorporati | ⬜ | ⬜ | ⬜ | ⬜ | non confrontati | Da aggiungere al confronto |
 
 ## Interfaccia e comandi

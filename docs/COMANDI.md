@@ -31,7 +31,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Annotazioni | 14 / 14 |
 | Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **303 / 303** |
+| Rendering (texture) | 5 / 5 |
+| **Totale** | **308 / 308** |
 
 ## Punti
 
@@ -420,5 +421,17 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Import | ✔ |
 | Export | ✔ |
 | IncrementalSave | ✔ |
+
+## Rendering (texture)
+
+| Comando | Stato |
+|---|---|
+| ApplyBoxMapping | ✔ |
+| ApplyPlanarMapping | ✔ |
+| ApplyCylindricalMapping | ✔ |
+| ApplySphericalMapping | ✔ |
+| ApplySurfaceMapping | ✔ |
+
+Comandi in più di Kurva3D (non sono di Rhino 8): **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture) e **RemoveTexture**.
 
 Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (rendering, layout, scripting, Grasshopper restano fuori per ora).

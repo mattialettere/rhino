@@ -1,5 +1,7 @@
 #pragma once
 #include <QColor>
+#include <map>
+#include <string>
 // Viewport stile Rhino 8: Top, Front, Right (paralleli) e Perspective.
 // Rendering OpenGL 1.1 (funziona su qualsiasi scheda/driver Windows).
 #include "ui/Scene.h"
@@ -79,6 +81,8 @@ public:
   void ZoomBox(const ON_BoundingBox& b);
 
 signals:
+  // texture trascinata dal pannello (o un'immagine da Esplora file) sugli oggetti in quel punto
+  void TextureDropped(QString file, std::vector<ON_UUID> ids);
   void PointPicked(ON_3dPoint p);
   void ObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove);
   void MouseWorld(ON_3dPoint p);
@@ -95,8 +99,14 @@ protected:
   void mouseReleaseEvent(QMouseEvent* e) override;
   void mouseDoubleClickEvent(QMouseEvent* e) override;
   void wheelEvent(QWheelEvent* e) override;
+  void dragEnterEvent(QDragEnterEvent* e) override;
+  void dragMoveEvent(QDragMoveEvent* e) override;
+  void dropEvent(QDropEvent* e) override;
 
 private:
+  // texture caricate nel contesto OpenGL di questa vista (percorso -> nome GL)
+  unsigned TextureId(const std::string& file);
+  std::map<std::string, unsigned> m_textures;
   ON_3dPoint PointUnderMouse(const QPoint& pos, bool* snapped = nullptr, bool allowSnap = true, QString* label = nullptr) const;
   bool FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) const;
   void DrawLabels(QPainter& p) const;

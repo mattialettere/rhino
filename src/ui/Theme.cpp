@@ -82,6 +82,10 @@ QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {
   selection-background-color: @accent; selection-color: @accentText; }
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus, QComboBox:focus { border: 1px solid @accent; }
 QComboBox::drop-down { border: none; width: 18px; }
+QComboBox::down-arrow { image: url(:/theme/down.png); }
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button { border: none; background: transparent; width: 16px; }
+QAbstractSpinBox::up-arrow { image: url(:/theme/up.png); }
+QAbstractSpinBox::down-arrow { image: url(:/theme/down.png); }
 QComboBox QAbstractItemView { background: @panel; border: 1px solid @border; selection-background-color: @accent; }
 QTabWidget::pane { border: none; background: @window; }
 QTabBar::tab { background: transparent; color: @muted; padding: 6px 12px; margin-right: 2px; border: none;

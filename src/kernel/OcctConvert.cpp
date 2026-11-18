@@ -1,3 +1,5 @@
+#include <Geom_Surface.hxx>
+#include <Precision.hxx>
 #include "kernel/OcctConvert.h"
 
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -428,6 +430,26 @@ ON_Mesh* MeshShape(const TopoDS_Shape& shape, double lin, double ang, bool weld)
       mesh->m_V.Append(ON_3fPoint(static_cast<float>(p.X()), static_cast<float>(p.Y()), static_cast<float>(p.Z())));
     }
     if (!weld) {
+      // coordinate di texture: parametri della superficie normalizzati sul dominio
+      // (mappatura "superficie" di Rhino); per superfici illimitate, sui limiti della faccia
+      if (mesh->m_T.Count() != base) mesh->m_T.SetCount(base);
+      {
+        double u0 = 0, u1 = 1, v0 = 0, v1 = 1;
+        Handle(Geom_Surface) gs = BRep_Tool::Surface(face);
+        if (!gs.IsNull()) gs->Bounds(u0, u1, v0, v1);
+        if (gs.IsNull() || Precision::IsInfinite(u0) || Precision::IsInfinite(u1) || Precision::IsInfinite(v0) ||
+            Precision::IsInfinite(v1))
+          BRepTools::UVBounds(face, u0, u1, v0, v1);
+        const double du = std::fabs(u1 - u0) > 1e-12 ? u1 - u0 : 1.0, dv = std::fabs(v1 - v0) > 1e-12 ? v1 - v0 : 1.0;
+        for (int i = 1; i <= tri->NbNodes(); i++) {
+          ON_2fPoint t(0.f, 0.f);
+          if (tri->HasUVNodes()) {
+            const gp_Pnt2d uv = tri->UVNode(i);
+            t.Set(static_cast<float>((uv.X() - u0) / du), static_cast<float>((uv.Y() - v0) / dv));
+          }
+          mesh->m_T.Append(t);
+        }
+      }
       // normali esatte dalla superficie nei nodi (orientate come la faccia)
       if (mesh->m_N.Count() != base) mesh->m_N.SetCount(base);
       BRepGProp_Face gf(face);

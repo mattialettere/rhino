@@ -1,6 +1,8 @@
 #include "ui/Scene.h"
 #ifdef CAD_WITH_OCCT
 #include "core/SubDLimit.h"
+#include "commands/Materials.h"
+#include <QStandardPaths>
 #include "kernel/OcctConvert.h"
 #endif
 #include <cmath>
@@ -423,6 +425,7 @@ void Scene::Rebuild() {
     else sig += "|" + std::to_string(g->DataCRC(0));
 
     AddGeometry(g, d, sig, newCache, 0);
+    if (d.shaded) ApplyTexture(*a, d);
     if (m_engine.pointsOn.count(id)) {
       GripSet gs;
       if (GetGrips(g, gs, m_engine.editPointsOn.count(id) > 0)) { d.grips = std::move(gs.grips); d.cage = std::move(gs.cage); }
@@ -433,6 +436,37 @@ void Scene::Rebuild() {
   m_subdEdges.swap(m_newSubdEdges);
   m_newSubdEdges.clear();
   RefreshSelection();
+}
+
+// Coordinate di texture della mesh ombreggiata secondo la mappatura dell'oggetto.
+void Scene::ApplyTexture(const ON_3dmObjectAttributes& a, DisplayObject& d) {
+  ObjectTexture t;
+  if (!GetObjectTexture(m_engine.Model(), a, t)) return;
+  static const std::string cache =
+      QStandardPaths::writableLocation(QStandardPaths::CacheLocation).toStdString() + "/textures";
+  d.texture = ResolveTextureFile(m_engine.Model(), t.file, cache);
+  if (d.texture.empty()) return;
+  d.diffuse = t.diffuse;
+  const ON_Mesh& m = *d.shaded;
+  const int n = m.m_V.Count();
+  const bool hasN = m.m_N.Count() == n;
+  ON_TextureMapping map = t.mapping;
+  const bool surface = !t.hasMapping || map.m_type == ON_TextureMapping::TYPE::srfp_mapping;
+  if (surface && m.m_T.Count() != n) {
+    // niente parametri di superficie (mesh, SubD): box sull'ingombro
+    ON_BoundingBox bb = d.bbox;
+    const ON_3dVector dv = bb.m_max - bb.m_min;
+    map.SetBoxMapping(ON_Plane(bb.m_min, ON_3dVector::XAxis, ON_3dVector::YAxis), ON_Interval(0, std::max(dv.x, 1e-6)),
+                      ON_Interval(0, std::max(dv.y, 1e-6)), ON_Interval(0, std::max(dv.z, 1e-6)), true);
+  }
+  d.uv.resize(n);
+  for (int i = 0; i < n; i++) {
+    ON_3dPoint T(0, 0, 0);
+    if (surface && m.m_T.Count() == n) T = ON_3dPoint(m.m_T[i].x, m.m_T[i].y, 0);
+    else map.Evaluate(ON_3dPoint(m.m_V[i]), hasN ? ON_3dVector(m.m_N[i]) : ON_3dVector::ZAxis, &T);
+    T = t.uvw * T;
+    d.uv[i] = ON_2fPoint(static_cast<float>(T.x), static_cast<float>(T.y));
+  }
 }
 
 void Scene::RefreshSelection() {
