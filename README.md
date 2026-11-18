@@ -137,6 +137,10 @@ Menu **Vista**: piano di costruzione della vista attiva (`CPlane`), viste e pian
 
 Le schede sotto le viste (**Modello**, **Pagina 1**, ...) mostrano le tavole come in Rhino 8; il **+** crea una tavola (formato A4-A0, orientamento, 1 o 4 dettagli). Nella tavola si disegna in millimetri sul foglio (cornici, testi); `Detail Add` aggiunge un dettaglio, `Detail Scale 1:50` lo mette in scala. **File > Stampa...** usa la stampante di sistema, **File > Esporta PDF...** scrive un PDF vettoriale (le viste ombreggiate sono immagini). Da riga di comando: `Print Destination=PDF File="tavole.pdf" View=All`.
 
+## Rendering
+
+Modalita' di visualizzazione **Renderizzato** (colori dei materiali, luci del modello, ombre sul piano di terra) e **Raytraced** (immagine che si affina da sola, calcolata in un thread mentre si lavora), dal menu del titolo della vista o con `SetDisplayMode`. **Render > Rendering** apre la finestra di rendering con il salvataggio in PNG/JPG; da script: `Render Width=1920 Height=1080 Samples=256 File="render.png"`. Luci: `PointLight`, `DirectionalLight`, `SpotLight`, `RectangularLight`; `Sun On Azimuth=135 Altitude=40`, `Skylight`, `GroundPlane`. `SetMaterial Color=200,40,40 Gloss=0.8` assegna un materiale semplice (vetro: `Transparency=0.95 IOR=1.5`).
+
 ## Texture
 
 Pannello **Texture** (a destra, o menu **Render > Pannello Texture**): mostra le

@@ -400,10 +400,20 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
 std::string Scene::textureCacheDir;
 
 void Scene::Rebuild() {
+  m_version++;
   m_objects.clear();
   m_clips.clear();
   std::map<std::string, std::shared_ptr<ON_Mesh>> newCache;
   ONX_Model& model = m_engine.Model();
+  {  // grandezza dei simboli delle luci: dal modello
+    ON_BoundingBox b;
+    for (const auto& id : m_engine.ObjectIdsInSpace(ON_nil_uuid)) {
+      const auto* o = m_engine.Object(id);
+      const ON_Geometry* g = o ? o->Geometry(nullptr) : nullptr;
+      if (g && !ON_Light::Cast(g)) { ON_BoundingBox t; if (g->GetTightBoundingBox(t)) b.Union(t); }
+    }
+    m_lightScale = b.IsValid() ? b.Diagonal().Length() : 100.0;
+  }
   for (const auto& id : fixedSpace ? m_engine.ObjectIdsInSpace(space) : m_engine.AllObjectIds(false)) {
     const auto* o = m_engine.Object(id);
     const ON_Geometry* g = o->Geometry(nullptr);
@@ -426,6 +436,42 @@ void Scene::Rebuild() {
     if (const auto* sd = ON_SubD::Cast(g)) sig += "|" + std::string(static_cast<const char*>(sd->GeometryHash().ToUTF8String(false)));
     else sig += "|" + std::to_string(g->DataCRC(0));
 
+    if (const auto* L = ON_Light::Cast(g)) {
+      // luci: simbolo nella posizione (stella), direzione o cono
+      const ON_3dPoint p = L->Location();
+      const double s = std::max(1.0, 0.02 * std::max(1e-6, m_lightScale));
+      for (const ON_3dVector& ax : {ON_3dVector::XAxis, ON_3dVector::YAxis, ON_3dVector::ZAxis})
+        d.wires.push_back({p - ax * s, p + ax * s});
+      if (L->IsDirectionalLight() || L->IsSpotLight()) {
+        ON_3dVector dir = L->Direction();
+        const double len = L->IsSpotLight() ? dir.Length() : 8 * s;
+        if (dir.Unitize()) {
+          const ON_3dPoint tip = p + dir * len;
+          d.wires.push_back({p, tip});
+          if (L->IsSpotLight()) {
+            ON_3dVector a, b;
+            a.PerpendicularTo(dir);
+            a.Unitize();
+            b = ON_CrossProduct(dir, a);
+            const double r = len * std::tan(L->SpotAngleRadians());
+            std::vector<ON_3dPoint> circ;
+            for (int i = 0; i <= 32; i++) {
+              const double t = 2 * ON_PI * i / 32;
+              circ.push_back(tip + a * (r * std::cos(t)) + b * (r * std::sin(t)));
+            }
+            d.wires.push_back(circ);
+            for (int i = 0; i < 4; i++) d.wires.push_back({p, circ[i * 8]});
+          }
+        }
+      }
+      if (L->IsRectangularLight()) {
+        const ON_3dVector u = L->Length(), v = L->Width();
+        d.wires.push_back({p, p + u, p + u + v, p + v, p});
+      }
+      d.snapPoints.push_back({p, SnapKind::Point});
+      m_objects.push_back(std::move(d));
+      continue;
+    }
     if (const auto* dv = ON_DetailView::Cast(g)) {
       // dettaglio di una tavola: il bordo (il contenuto lo disegna la tavola)
       std::vector<ON_3dPoint> w;
@@ -461,7 +507,14 @@ void Scene::Rebuild() {
       continue;
     }
     AddGeometry(g, d, sig, newCache, 0);
-    if (d.shaded) ApplyTexture(*a, d);
+    if (d.shaded) {
+      ApplyTexture(*a, d);
+      int mi = a->MaterialSource() == ON::material_from_object ? a->m_material_index : (layer ? layer->RenderMaterialIndex() : -1);
+      if (const auto* mat = mi >= 0 ? ON_Material::Cast(model.ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, mi).ModelComponent()) : nullptr) {
+        d.material = mat->IsPhysicallyBased() ? ON_Color(mat->PhysicallyBased()->BaseColor()) : mat->Diffuse();
+        d.hasMaterial = true;
+      }
+    }
     if (m_engine.pointsOn.count(id)) {
       GripSet gs;
       if (GetGrips(g, gs, m_engine.editPointsOn.count(id) > 0)) { d.grips = std::move(gs.grips); d.cage = std::move(gs.cage); }

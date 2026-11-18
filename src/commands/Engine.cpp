@@ -85,6 +85,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterExchangeCommands(*this);
   RegisterViewCommands(*this);
   RegisterLayoutCommands(*this);
+  RegisterRenderCommands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
@@ -302,8 +303,11 @@ ON_UUID Engine::AddObject(ON_Object* geometry, const ON_3dmObjectAttributes* att
 }
 
 const ON_ModelGeometryComponent* Engine::Object(const ON_UUID& id) const {
-  return ON_ModelGeometryComponent::Cast(
+  const ON_ModelGeometryComponent* g = ON_ModelGeometryComponent::Cast(
       m_doc.Model().ComponentFromId(ON_ModelComponent::Type::ModelGeometry, id).ModelComponent());
+  if (g) return g;
+  // le luci sono componenti a parte nel modello di openNURBS
+  return ON_ModelGeometryComponent::Cast(m_doc.Model().ComponentFromId(ON_ModelComponent::Type::RenderLight, id).ModelComponent());
 }
 
 ON_Geometry* Engine::EditableGeometry(const ON_UUID& id) {
@@ -322,7 +326,7 @@ ON_UUID Engine::ReplaceObject(const ON_UUID& id, ON_Object* geometry) {
   auto* a = new ON_3dmObjectAttributes(*o->Attributes(&ON_3dmObjectAttributes::DefaultAttributes));
   const bool wasSelected = IsSelected(id);
   ONX_Model& m = Model();
-  m.RemoveModelComponent(ON_ModelComponent::Type::ModelGeometry, id);
+  m.RemoveModelComponent(o->ComponentType(), id);
   a->m_uuid = id;  // stesso id: selezione, gruppi e riferimenti restano validi
   ON_ModelComponentReference ref = m.AddManagedModelGeometryComponent(geometry, a, true);
   const auto* mgc = ON_ModelGeometryComponent::Cast(ref.ModelComponent());
@@ -334,7 +338,8 @@ ON_UUID Engine::ReplaceObject(const ON_UUID& id, ON_Object* geometry) {
 
 bool Engine::DeleteObject(const ON_UUID& id) {
   Deselect(id);
-  return !Model().RemoveModelComponent(ON_ModelComponent::Type::ModelGeometry, id).IsEmpty();
+  if (!Model().RemoveModelComponent(ON_ModelComponent::Type::ModelGeometry, id).IsEmpty()) return true;
+  return !Model().RemoveModelComponent(ON_ModelComponent::Type::RenderLight, id).IsEmpty();
 }
 
 std::vector<ON_UUID> Engine::AllObjectIds(bool includeHidden) const {
@@ -344,17 +349,20 @@ std::vector<ON_UUID> Engine::AllObjectIds(bool includeHidden) const {
 std::vector<ON_UUID> Engine::ObjectIdsInSpace(const ON_UUID& layoutId, bool includeHidden) const {
   std::vector<ON_UUID> ids;
   const bool page = !ON_UuidIsNil(layoutId);
-  ONX_ModelComponentIterator it(m_doc.Model(), ON_ModelComponent::Type::ModelGeometry);
-  for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent()) {
-    const auto* mgc = ON_ModelGeometryComponent::Cast(c);
-    if (!mgc) continue;
-    const ON_3dmObjectAttributes* a = mgc->Attributes(nullptr);
-    if (!a) continue;
-    if (a->IsInstanceDefinitionObject()) continue;  // oggetti dentro i blocchi
-    if (!includeHidden && a->Mode() == ON::object_mode::hidden_object) continue;
-    if (page != (a->m_space == ON::page_space)) continue;
-    if (page && a->m_viewport_id != layoutId) continue;
-    ids.push_back(a->m_uuid);
+  // geometria e luci (le luci sono un tipo di componente a parte)
+  for (auto type : {ON_ModelComponent::Type::ModelGeometry, ON_ModelComponent::Type::RenderLight}) {
+    ONX_ModelComponentIterator it(m_doc.Model(), type);
+    for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent()) {
+      const auto* mgc = ON_ModelGeometryComponent::Cast(c);
+      if (!mgc) continue;
+      const ON_3dmObjectAttributes* a = mgc->Attributes(nullptr);
+      if (!a) continue;
+      if (a->IsInstanceDefinitionObject()) continue;  // oggetti dentro i blocchi
+      if (!includeHidden && a->Mode() == ON::object_mode::hidden_object) continue;
+      if (page != (a->m_space == ON::page_space)) continue;
+      if (page && a->m_viewport_id != layoutId) continue;
+      ids.push_back(a->m_uuid);
+    }
   }
   return ids;
 }

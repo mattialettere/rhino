@@ -1,4 +1,8 @@
 #include "ui/Viewport.h"
+#include "render/Render.h"
+#include <atomic>
+#include <mutex>
+#include <thread>
 #include <algorithm>
 #include <memory>
 #include <QMenu>
@@ -205,7 +209,8 @@ void Viewport::ShowViewMenu(const QPoint& at) {
   menu.addSeparator();
   const std::pair<const char*, DisplayMode> modes[] = {
       {"Wireframe", DisplayMode::Wireframe}, {"Ombreggiato (Shaded)", DisplayMode::Shaded},
-      {"Fantasma (Ghosted)", DisplayMode::Ghosted}, {"Raggi X (X-Ray)", DisplayMode::XRay}};
+      {"Fantasma (Ghosted)", DisplayMode::Ghosted}, {"Raggi X (X-Ray)", DisplayMode::XRay},
+      {"Renderizzato (Rendered)", DisplayMode::Rendered}, {"Raytraced", DisplayMode::Raytraced}};
   for (auto& [label, m] : modes) {
     auto* a = menu.addAction(label);
     a->setCheckable(true);
@@ -216,6 +221,203 @@ void Viewport::ShowViewMenu(const QPoint& at) {
   connect(menu.addAction("Zoom estensione"), &QAction::triggered, this, [this] { ZoomExtents(); });
   connect(menu.addAction("Ingrandisci / ripristina"), &QAction::triggered, this, [this] { emit ToggleMaximize(this); });
   menu.exec(mapToGlobal(at));
+}
+
+namespace {
+QOpenGLFunctions_1_1* GL(QOpenGLContext* ctx);
+}
+
+// --- Raytraced -------------------------------------------------------------------------------
+struct Viewport::Raytrace {
+  std::thread th;
+  std::atomic<bool> cancel{false};
+  std::mutex mx;
+  std::vector<unsigned char> img;
+  int w = 0, h = 0, passes = 0;
+  std::string sig;
+  ~Raytrace() {
+    cancel = true;
+    if (th.joinable()) th.join();
+  }
+};
+
+Viewport::~Viewport() { StopRaytrace(); }
+
+void Viewport::StopRaytrace() {
+  if (!m_rt) return;
+  m_rt->cancel = true;
+  if (m_rt->th.joinable()) m_rt->th.join();
+  m_rt.reset();
+}
+
+void Viewport::UpdateRaytrace() {
+  const int W = std::max(8, width()), H = std::max(8, height());
+  const ON_3dmView v = ToView();
+  char buf[512];
+  const ON_3dPoint e = v.m_vp.CameraLocation();
+  const ON_3dVector d = v.m_vp.CameraDirection();
+  double l, r, b, t, n, f;
+  v.m_vp.GetFrustum(&l, &r, &b, &t, &n, &f);
+  std::snprintf(buf, sizeof buf, "%d %d %d|%.9g %.9g %.9g|%.9g %.9g %.9g|%.9g %.9g", m_scene.Version(), W, H, e.x, e.y, e.z, d.x,
+                d.y, d.z, r - l, t - b);
+  if (m_rt && m_rt->sig == buf) return;
+  auto rt = std::make_shared<Raytrace>();
+  rt->sig = buf;
+  rt->w = W;
+  rt->h = H;
+  if (m_rt && m_rt->w == W && m_rt->h == H) {  // l'immagine precedente resta finche' arriva la nuova
+    std::lock_guard<std::mutex> lk(m_rt->mx);
+    rt->img = m_rt->img;
+  }
+  StopRaytrace();
+  auto scene = std::make_shared<RenderScene>();
+  RenderOptions ro;
+  ro.width = W;
+  ro.height = H;
+  ro.threads = std::max(1, (int)std::thread::hardware_concurrency() - 1);  // un core resta all'interfaccia
+  scene->Build(m_scene.GetEngine(), m_scene, ro);
+  RenderCamera cam;
+  cam.Init(v, double(W) / H);
+  Viewport* self = this;
+  Raytrace* R = rt.get();
+  rt->th = std::thread([R, scene, cam, ro, self]() {
+    PathTracer pt(*scene, cam, ro);
+    for (int i = 0; i < 1000 && !R->cancel; i++) {
+      if (!pt.Pass(&R->cancel)) break;
+      std::vector<unsigned char> img;
+      pt.Image(img);
+      {
+        std::lock_guard<std::mutex> lk(R->mx);
+        R->img.swap(img);
+        R->passes = pt.Passes();
+      }
+      QMetaObject::invokeMethod(self, [self] { self->update(); }, Qt::QueuedConnection);
+    }
+  });
+  m_rt = rt;
+}
+
+// --- Renderizzato: luci del documento (o la luce predefinita) -----------------------------------
+namespace {
+struct DocLights {
+  std::vector<const ON_Light*> lights;
+  bool sun = false;
+  ON_3dVector sunDir;
+  double sunIntensity = 1;
+};
+DocLights CollectLights(Engine& e) {
+  DocLights L;
+  for (const auto& id : e.ObjectIdsInSpace(ON_nil_uuid))
+    if (const auto* o = e.Object(id))
+      if (const auto* l = ON_Light::Cast(o->Geometry(nullptr)); l && l->IsEnabled()) L.lights.push_back(l);
+  const auto& rs = e.Model().m_settings.m_RenderSettings;
+  if (rs.Sun().EnableOn()) {
+    const double alt = rs.Sun().Altitude() * ON_PI / 180, az = rs.Sun().Azimuth() * ON_PI / 180, north = rs.Sun().North() * ON_PI / 180;
+    L.sun = true;
+    L.sunDir = -ON_3dVector(std::cos(alt) * std::cos(north - az), std::cos(alt) * std::sin(north - az), std::sin(alt));
+    L.sunIntensity = rs.Sun().Intensity();
+  }
+  return L;
+}
+}  // namespace
+
+void Viewport::SetupRenderedLights() {
+  auto* gl = GL(context());
+  const DocLights L = CollectLights(m_scene.GetEngine());
+  for (int i = 0; i < 8; i++) gl->glDisable(GL_LIGHT0 + i);
+  const float amb[4] = {0.18f, 0.18f, 0.18f, 1.f};
+  gl->glLightModelfv(GL_LIGHT_MODEL_AMBIENT, amb);
+  int n = 0;
+  auto setColor = [&](int i, const ON_Color& c, double k) {
+    const float dif[4] = {float(c.FractionRed() * k), float(c.FractionGreen() * k), float(c.FractionBlue() * k), 1.f};
+    const float zero[4] = {0, 0, 0, 1}, spec[4] = {0.35f, 0.35f, 0.35f, 1.f};
+    gl->glLightfv(GL_LIGHT0 + i, GL_DIFFUSE, dif);
+    gl->glLightfv(GL_LIGHT0 + i, GL_AMBIENT, zero);
+    gl->glLightfv(GL_LIGHT0 + i, GL_SPECULAR, spec);
+    gl->glLightf(GL_LIGHT0 + i, GL_SPOT_CUTOFF, 180.f);
+    gl->glEnable(GL_LIGHT0 + i);
+  };
+  if (L.sun) {
+    const float pos[4] = {float(-L.sunDir.x), float(-L.sunDir.y), float(-L.sunDir.z), 0.f};
+    gl->glLightfv(GL_LIGHT0 + n, GL_POSITION, pos);
+    setColor(n++, ON_Color(255, 246, 225), 0.9 * L.sunIntensity);
+  }
+  for (const ON_Light* l : L.lights) {
+    if (n >= 8) break;
+    const double k = std::min(1.5, 0.8 * l->Intensity());
+    if (l->IsDirectionalLight()) {
+      const ON_3dVector d = l->Direction();
+      const float pos[4] = {float(-d.x), float(-d.y), float(-d.z), 0.f};
+      gl->glLightfv(GL_LIGHT0 + n, GL_POSITION, pos);
+      setColor(n++, l->Diffuse(), k);
+    } else {
+      const ON_3dPoint p = l->Location();
+      const float pos[4] = {float(p.x), float(p.y), float(p.z), 1.f};
+      gl->glLightfv(GL_LIGHT0 + n, GL_POSITION, pos);
+      setColor(n, l->Diffuse(), k);
+      if (l->IsSpotLight()) {
+        const ON_3dVector d = l->Direction();
+        const float dir[3] = {float(d.x), float(d.y), float(d.z)};
+        gl->glLightfv(GL_LIGHT0 + n, GL_SPOT_DIRECTION, dir);
+        gl->glLightf(GL_LIGHT0 + n, GL_SPOT_CUTOFF, float(std::min(90.0, l->SpotAngleDegrees())));
+        gl->glLightf(GL_LIGHT0 + n, GL_SPOT_EXPONENT, 8.f);
+      }
+      n++;
+    }
+  }
+  if (n == 0) {  // luce predefinita di Rhino: dalla camera, in alto a sinistra
+    gl->glMatrixMode(GL_MODELVIEW);
+    gl->glPushMatrix();
+    gl->glLoadIdentity();
+    const float lp[4] = {-0.4f, 0.5f, 1.0f, 0.0f};
+    gl->glLightfv(GL_LIGHT0, GL_POSITION, lp);
+    gl->glPopMatrix();
+    setColor(0, ON_Color(255, 255, 255), 0.85);
+  }
+}
+
+void Viewport::DrawGroundShadows() {
+  Engine& e = m_scene.GetEngine();
+  const auto& gp = e.Model().m_settings.m_RenderSettings.GroundPlane();
+  if (!gp.Enabled()) return;
+  const DocLights L = CollectLights(e);
+  ON_3dVector d(0.4, 0.6, -1);  // stessa luce del rendering predefinito
+  if (L.sun) d = L.sunDir;
+  else
+    for (const ON_Light* l : L.lights)
+      if (l->IsDirectionalLight()) { d = l->Direction(); break; }
+  if (!d.Unitize() || d.z > -0.05) return;
+  const ON_BoundingBox b = m_scene.Bounds();
+  if (!b.IsValid()) return;
+  const double g = gp.AutoAltitude() ? b.m_min.z : gp.Altitude();
+  auto* gl = GL(context());
+  const double kx = d.x / d.z, ky = d.y / d.z;
+  const double M[16] = {1, 0, 0, 0, 0, 1, 0, 0, -kx, -ky, 0, 0, kx * g, ky * g, g, 1};
+  gl->glPushMatrix();
+  gl->glMultMatrixd(M);
+  gl->glDisable(GL_LIGHTING);
+  gl->glEnable(GL_BLEND);
+  gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  gl->glDepthFunc(GL_LESS);  // ombre sovrapposte: un solo strato
+  gl->glEnable(GL_POLYGON_OFFSET_FILL);
+  gl->glPolygonOffset(-1.f, -1.f);
+  gl->glColor4f(0.f, 0.f, 0.f, 0.32f);
+  for (const auto& obj : m_scene.Objects()) {
+    if (!obj.shaded) continue;
+    const ON_Mesh& m = *obj.shaded;
+    gl->glBegin(GL_TRIANGLES);
+    for (int i = 0; i < m.m_F.Count(); i++) {
+      const ON_MeshFace& f = m.m_F[i];
+      const int tri[2][3] = {{f.vi[0], f.vi[1], f.vi[2]}, {f.vi[0], f.vi[2], f.vi[3]}};
+      for (int t = 0; t < (f.IsQuad() ? 2 : 1); t++)
+        for (int k = 0; k < 3; k++) gl->glVertex3f(m.m_V[tri[t][k]].x, m.m_V[tri[t][k]].y, m.m_V[tri[t][k]].z);
+    }
+    gl->glEnd();
+  }
+  gl->glDisable(GL_POLYGON_OFFSET_FILL);
+  gl->glDepthFunc(GL_LEQUAL);
+  gl->glDisable(GL_BLEND);
+  gl->glPopMatrix();
 }
 
 void Viewport::initializeGL() {}
@@ -249,6 +451,8 @@ ON_3dmView Viewport::ToView() const {
   v.m_display_mode_id = mode == DisplayMode::Shaded ? ON_StandardDisplayModeId::Shaded
                         : mode == DisplayMode::Ghosted ? ON_StandardDisplayModeId::Ghosted
                         : mode == DisplayMode::XRay ? ON_StandardDisplayModeId::XrayShade
+                        : mode == DisplayMode::Rendered ? ON_StandardDisplayModeId::Rendered
+                        : mode == DisplayMode::Raytraced ? ON_StandardDisplayModeId::Raytraced
                                                     : ON_StandardDisplayModeId::Wireframe;
   return v;
 }
@@ -511,6 +715,25 @@ void Viewport::paintGL() {
     gl->glEnd();
     gl->glEnable(GL_DEPTH_TEST);
   }
+  // Raytraced: immagine del path tracer (progressiva) al posto della scena ombreggiata
+  bool rtImage = false;
+  if (mode == DisplayMode::Raytraced) {
+    UpdateRaytrace();
+    std::lock_guard<std::mutex> lk(m_rt->mx);
+    if ((int)m_rt->img.size() == m_rt->w * m_rt->h * 3 && m_rt->w == std::max(8, w) && m_rt->h == std::max(8, h)) {
+      gl->glDisable(GL_DEPTH_TEST);
+      gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+      gl->glRasterPos2f(-1.f, 1.f);
+      gl->glPixelZoom((float)devicePixelRatioF(), -(float)devicePixelRatioF());
+      gl->glDrawPixels(m_rt->w, m_rt->h, GL_RGB, GL_UNSIGNED_BYTE, m_rt->img.data());
+      gl->glPixelZoom(1.f, 1.f);
+      gl->glEnable(GL_DEPTH_TEST);
+      rtImage = true;
+    }
+  } else if (m_rt) {
+    StopRaytrace();
+  }
+  const bool rendered = mode == DisplayMode::Rendered || mode == DisplayMode::Raytraced;
 
   // Matrici: proiezione e vista calcolate qui (le stesse usate per la selezione).
   const double aspect = double(w) / std::max(1, h);
@@ -533,7 +756,7 @@ void Viewport::paintGL() {
 
   gl->glDisable(GL_LIGHTING);
   gl->glDisable(GL_DEPTH_TEST);
-  if (showGrid) DrawGrid();
+  if (showGrid && !rtImage) DrawGrid();
   gl->glEnable(GL_DEPTH_TEST);
   gl->glDepthFunc(GL_LEQUAL);
   // Piani di sezione attivi in questa vista (Rhino: visibile dove l'equazione <= 0;
@@ -548,7 +771,7 @@ void Viewport::paintGL() {
   }
 
   // Superfici ombreggiate (Shaded), trasparenti (Ghosted) o trasparenti con spigoli sempre visibili (X-Ray)
-  const bool shaded = mode != DisplayMode::Wireframe;
+  const bool shaded = mode != DisplayMode::Wireframe && !rtImage;
   const bool transparent = mode == DisplayMode::Ghosted || mode == DisplayMode::XRay;
   if (shaded) {
     if (transparent) {
@@ -561,24 +784,42 @@ void Viewport::paintGL() {
     gl->glEnable(GL_NORMALIZE);
     gl->glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, 1);
     // luce "dalla camera" come la luce predefinita di Rhino
-    gl->glMatrixMode(GL_MODELVIEW);
-    gl->glPushMatrix();
-    gl->glLoadIdentity();
-    const float lp[4] = {0.3f, 0.5f, 1.0f, 0.0f};
-    gl->glLightfv(GL_LIGHT0, GL_POSITION, lp);
-    gl->glPopMatrix();
-    const float amb[4] = {0.25f, 0.25f, 0.25f, 1.f}, dif[4] = {0.8f, 0.8f, 0.8f, 1.f};
-    gl->glLightfv(GL_LIGHT0, GL_AMBIENT, amb);
-    gl->glLightfv(GL_LIGHT0, GL_DIFFUSE, dif);
+    if (rendered) {
+      SetupRenderedLights();
+      const float spec[4] = {0.25f, 0.25f, 0.25f, 1.f};
+      gl->glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, spec);
+      gl->glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 40.f);
+    } else {
+      for (int i = 1; i < 8; i++) gl->glDisable(GL_LIGHT0 + i);
+      const float zero[4] = {0, 0, 0, 1}, gamb[4] = {0.2f, 0.2f, 0.2f, 1.f};
+      gl->glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, zero);
+      gl->glLightModelfv(GL_LIGHT_MODEL_AMBIENT, gamb);
+      gl->glMatrixMode(GL_MODELVIEW);
+      gl->glPushMatrix();
+      gl->glLoadIdentity();
+      const float lp[4] = {0.3f, 0.5f, 1.0f, 0.0f};
+      gl->glLightfv(GL_LIGHT0, GL_POSITION, lp);
+      gl->glPopMatrix();
+      const float amb[4] = {0.25f, 0.25f, 0.25f, 1.f}, dif[4] = {0.8f, 0.8f, 0.8f, 1.f};
+      gl->glLightfv(GL_LIGHT0, GL_AMBIENT, amb);
+      gl->glLightfv(GL_LIGHT0, GL_DIFFUSE, dif);
+      gl->glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 180.f);
+    }
     gl->glEnable(GL_POLYGON_OFFSET_FILL);
     gl->glPolygonOffset(1.f, 1.f);
     for (const auto& obj : m_scene.Objects()) {
       if (!obj.shaded) continue;
-      const float col[4] = {obj.selected ? 0.95f : 0.82f, obj.selected ? 0.9f : 0.82f, obj.selected ? 0.45f : 0.82f,
-                            transparent ? 0.35f : 1.f};
+      float col[4] = {obj.selected ? 0.95f : 0.82f, obj.selected ? 0.9f : 0.82f, obj.selected ? 0.45f : 0.82f,
+                      transparent ? 0.35f : 1.f};
+      if (rendered && !obj.selected) {  // colore del materiale (bianco se non c'e')
+        const ON_Color mc = obj.hasMaterial ? obj.material : ON_Color(235, 235, 235);
+        col[0] = (float)mc.FractionRed();
+        col[1] = (float)mc.FractionGreen();
+        col[2] = (float)mc.FractionBlue();
+      }
       const ON_Mesh& m = *obj.shaded;
       // texture del materiale (solo in Shaded, come la modalita' Rendered semplificata)
-      const bool tex = mode == DisplayMode::Shaded && !obj.texture.empty() && (int)obj.uv.size() == m.m_V.Count();
+      const bool tex = (mode == DisplayMode::Shaded || rendered) && !obj.texture.empty() && (int)obj.uv.size() == m.m_V.Count();
       const unsigned tid = tex ? TextureId(obj.texture) : 0;
       if (tid) {
         const float s = obj.selected ? 0.75f : 1.f;
@@ -610,6 +851,7 @@ void Viewport::paintGL() {
     gl->glDisable(GL_POLYGON_OFFSET_FILL);
     gl->glDisable(GL_LIGHTING);
     if (transparent) { gl->glDepthMask(GL_TRUE); gl->glDisable(GL_BLEND); }
+    if (rendered) DrawGroundShadows();
   }
   DrawAnalysis();
   if (mode == DisplayMode::XRay) gl->glDisable(GL_DEPTH_TEST);
@@ -618,6 +860,9 @@ void Viewport::paintGL() {
   for (int pass = 0; pass < 2; pass++) {  // selezionati per ultimi, sopra
     for (const auto& obj : m_scene.Objects()) {
       if (obj.selected != (pass == 1)) continue;
+      // Renderizzato/Raytraced: solo le curve, i punti e gli oggetti selezionati
+      if (rendered && obj.shaded && !obj.selected) continue;
+      if (rtImage && !obj.selected && obj.shaded) continue;
       {
         const auto& SC = Shared();
         const QColor oc = obj.selected ? SC.colors.selected : obj.locked ? QColor(128, 128, 128) : SC.ObjectColor(obj.color);

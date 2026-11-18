@@ -43,6 +43,7 @@ add_library(cadcore STATIC
   src/commands/CmdViews.cpp
   src/commands/CmdLayout.cpp
   src/print/Page.cpp src/print/Page.h src/print/Pdf.cpp
+  src/render/Render.cpp src/render/Render.h src/render/CmdRender.cpp
   src/ui/Scene.cpp src/ui/Scene.h
   src/commands/CmdExtra2.cpp
   src/commands/Grips.cpp
@@ -152,7 +153,7 @@ if(Qt6_FOUND)
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
     src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
-    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h
+    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h src/ui/RenderWindow.cpp src/ui/RenderWindow.h
     src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})
   if(APPLE)
     # versione minima di macOS: quella delle librerie Homebrew con cui si compila

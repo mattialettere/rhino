@@ -40,6 +40,9 @@ struct DisplayObject {
   std::vector<ON_2fPoint> uv;
   ON_Color diffuse = ON_Color(255, 255, 255);
   ON_Color color = ON_Color::Black;
+  // colore del materiale di rendering (modalita' Renderizzato)
+  ON_Color material = ON_Color(230, 230, 230);
+  bool hasMaterial = false;
   bool selected = false, locked = false;
   bool unclipped = false;              // i piani di sezione non tagliano se stessi
   ON_BoundingBox bbox;
@@ -65,6 +68,8 @@ public:
   void RefreshSelection();
   const std::vector<DisplayObject>& Objects() const { return m_objects; }
   const std::vector<ClipPlane>& Clips() const { return m_clips; }
+  Engine& GetEngine() const { return m_engine; }
+  int Version() const { return m_version; }   // cresce a ogni ricostruzione
   ON_BoundingBox Bounds() const;
   const ON_Geometry* Geometry(const ON_UUID& id) const {
     const auto* o = m_engine.Object(id);
@@ -79,6 +84,8 @@ private:
   Engine& m_engine;
   std::vector<DisplayObject> m_objects;
   std::vector<ClipPlane> m_clips;
+  double m_lightScale = 100;
+  int m_version = 0;
   std::map<std::string, std::shared_ptr<ON_Mesh>> m_meshCache;  // chiave: id + firma
   using EdgeList = std::vector<std::vector<ON_3dPoint>>;
   std::map<std::string, std::shared_ptr<EdgeList>> m_subdEdges, m_newSubdEdges;  // spigoli limite dei SubD

@@ -6,6 +6,7 @@
 // Rendering OpenGL 1.1 (funziona su qualsiasi scheda/driver Windows).
 #include "ui/Scene.h"
 #include <QOpenGLWidget>
+#include <memory>
 #include <QPainter>
 #include <QPoint>
 #include <functional>
@@ -41,6 +42,7 @@ class Viewport : public QOpenGLWidget {
   Q_OBJECT
 public:
   Viewport(Scene& scene, Camera::Kind kind, QWidget* parent = nullptr);
+  ~Viewport() override;
   Camera& Cam() { return m_cam; }
   ON_UUID id = ON_nil_uuid;  // id della vista (piani di sezione, viste salvate nel .3dm)
   QString Title() const;
@@ -48,7 +50,7 @@ public:
   ON_3dmView ToView() const;
   void FromView(const ON_3dmView& v);
   // Modalita' di visualizzazione (sottoinsieme di quelle di Rhino 8)
-  enum class DisplayMode { Wireframe, Shaded, Ghosted, XRay };
+  enum class DisplayMode { Wireframe, Shaded, Ghosted, XRay, Rendered, Raytraced };
   DisplayMode mode = DisplayMode::Wireframe;
   // Impostazioni condivise dalla finestra principale
   struct Settings {
@@ -139,6 +141,14 @@ private:
   ON_3dPoint GripDragPoint(const QPoint& pos) const;
   void DrawGrips(QPainter& p) const;
   void DrawAnalysis();
+  // --- modalita' Raytraced: path tracing progressivo in un thread ---
+  void UpdateRaytrace();
+  void StopRaytrace();
+  struct Raytrace;
+  std::shared_ptr<Raytrace> m_rt;
+  // --- modalita' Renderizzato: luci del modello e ombre sul piano di terra ---
+  void SetupRenderedLights();
+  void DrawGroundShadows();
   unsigned m_zebraTex = 0;
   GripDrag m_gripDrag;
   GumballHit m_gbDrag;

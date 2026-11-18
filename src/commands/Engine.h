@@ -177,7 +177,10 @@ public:
   ON_UUID activeViewportId = ON_nil_uuid;   // vista attiva (piani di sezione)
   // Tavola attiva (Layout): nil = spazio del modello. I nuovi oggetti vanno nello spazio attivo.
   ON_UUID activeLayoutId = ON_nil_uuid;
-  std::function<void()> layoutsChanged;     // l'interfaccia aggiorna le schede delle tavole
+  std::function<void()> layoutsChanged;
+  // Finestra di rendering progressivo (Render senza File=)
+  std::function<bool(const ON_3dmView& view, int width, int height, int samples)> renderWindow;
+  std::function<bool(const std::string& mode)> setDisplayMode;  // nome normalizzato (wireframe, shaded, ...)     // l'interfaccia aggiorna le schede delle tavole
   // Stampa su stampante (dalla finestra): pagine gia' composte
   std::function<bool(const std::vector<struct PageDrawing>&)> printPages;
   std::vector<ON_UUID> viewportIds;         // tutte le viste della finestra
@@ -226,6 +229,7 @@ void RegisterMaterialCommands(Engine& e);
 void RegisterExchangeCommands(Engine& e);
 void RegisterViewCommands(Engine& e);
 void RegisterLayoutCommands(Engine& e);
+void RegisterRenderCommands(Engine& e);
 // PDF della tavola attiva o della vista (opzioni come Print)
 bool ExportPdf(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti

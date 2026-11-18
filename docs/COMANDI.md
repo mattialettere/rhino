@@ -32,9 +32,10 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Analisi | 15 / 15 |
 | File | 9 / 9 |
 | Rendering (texture) | 5 / 5 |
+| Rendering (luci e immagini) | 9 / 9 |
 | Viste e sezioni | 7 / 7 |
 | Tavole e stampa | 5 / 5 |
-| **Totale** | **322 / 322** |
+| **Totale** | **331 / 331** |
 
 ## Punti
 
@@ -436,7 +437,21 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | ApplySphericalMapping | ✔ |
 | ApplySurfaceMapping | ✔ |
 
-Comandi in più di Kurva3D (non sono di Rhino 8): **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture) e **RemoveTexture**.
+## Rendering (luci e immagini)
+
+| Comando | Stato |
+|---|---|
+| Render | ✔ (path tracer di Kurva3D, non Cycles: D-063) |
+| PointLight | ✔ |
+| DirectionalLight | ✔ |
+| SpotLight | ✔ |
+| RectangularLight | ✔ |
+| Sun | ✔ (azimut e altezza manuali; niente luogo e ora) |
+| Skylight | ✔ |
+| GroundPlane | ✔ |
+| SetDisplayMode | ✔ (Wireframe, Shaded, Ghosted, XRay, Rendered, Raytraced) |
+
+Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale semplice sugli oggetti selezionati: colore, lucentezza, riflessione, trasparenza, IOR; in Rhino si fa dal pannello Materiali), **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture) e **RemoveTexture**.
 
 ## Viste e sezioni
 

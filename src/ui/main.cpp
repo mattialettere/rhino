@@ -40,11 +40,13 @@ int main(int argc, char** argv) {
   cad::ui::ApplyTheme(cad::ui::SavedThemeMode());
   cad::InitLibrary();
   QString open, script, shot, panel;
+  int wait = 800;
   const QStringList args = app.arguments();
   for (int i = 1; i < args.size(); i++) {
     if (args[i] == "--script" && i + 1 < args.size()) script = args[++i];
     else if (args[i] == "--screenshot" && i + 1 < args.size()) shot = args[++i];
     else if (args[i] == "--panel" && i + 1 < args.size()) panel = args[++i];  // es. textureDock
+    else if (args[i] == "--wait" && i + 1 < args.size()) wait = args[++i].toInt();  // ms prima della cattura
     else if (!args[i].startsWith("-psn")) open = args[i];
   }
   int rc;
@@ -77,7 +79,7 @@ int main(int argc, char** argv) {
     for (auto* d : w.findChildren<QDockWidget*>())
       if (!panel.isEmpty() && d->objectName() == panel) { d->show(); d->raise(); }
     if (!shot.isEmpty()) {
-      QTimer::singleShot(800, [&] {
+      QTimer::singleShot(wait, [&] {
         // cattura dello schermo (include i titoli delle viste disegnati sopra OpenGL)
         w.screen()->grabWindow(w.winId()).save(shot);
         app.quit();

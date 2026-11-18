@@ -8,6 +8,8 @@
 #include "commands/Materials.h"
 #include "commands/Exchange.h"
 #include "print/Page.h"
+#include "render/Render.h"
+#include "ui/Scene.h"
 #include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
 #include <cmath>
@@ -2164,6 +2166,74 @@ int main(int argc, char** argv) {
           if (ON_DetailView::Cast(g->Geometry(nullptr))) dets++;
         } }
     CHECK(pageObjs == 7 && dets == 5);
+  }
+  {
+    std::printf("Rendering\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/render";
+    fs::create_directories(dir);
+    Ctx c;
+    CHECK(c.e.Run("_Box 0,0,0 40,30 20\n_Sphere 70,10,10 10\n_SelLast\n_SetMaterial Color=200,40,40 Gloss=0.8 Name=Rosso\n_SelNone"));
+    CHECK(c.e.Run("_PointLight 20,15,60\n_DirectionalLight 0,0,0 -10,-10,20\n_SpotLight 20,15,0 10 20,15,50\n_RectangularLight 0,0,80 10,0,80 10,10,80"));
+    int lights = 0, spots = 0;
+    for (auto* g : c.Objects()) if (auto* l = ON_Light::Cast(g)) { lights++; if (l->IsSpotLight()) spots++; }
+    CHECK(lights == 4 && spots == 1);
+    CHECK(c.e.Run("_Sun On Azimuth=135 Altitude=40\n_GroundPlane On Altitude=Auto ShadowOnly=No\n_Skylight On"));
+    const auto& rs = c.e.Model().m_settings.m_RenderSettings;
+    CHECK(rs.Sun().EnableOn() && Near(rs.Sun().Azimuth(), 135) && Near(rs.Sun().Altitude(), 40));
+    CHECK(rs.GroundPlane().Enabled() && rs.Skylight().Enabled());
+    // materiale assegnato all'oggetto
+    bool red = false;
+    for (const auto& id : c.e.AllObjectIds(true)) {
+      const auto* a = c.e.Object(id)->Attributes(nullptr);
+      if (a->MaterialSource() != ON::material_from_object) continue;
+      const auto* m = ON_Material::Cast(c.e.Model().ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, a->m_material_index).ModelComponent());
+      if (m && ToUtf8(m->Name()) == "Rosso" && m->Diffuse() == ON_Color(200, 40, 40)) red = true;
+    }
+    CHECK(red);
+    // immagine: PNG valido, la sfera rossa e' rossa, le ombre piu' scure del piano
+    const std::string png = dir + "/render.png";
+    CHECK(c.e.Run("_Render Width=160 Height=120 Samples=8 View=Top File=\"" + png + "\""));
+    {
+      std::ifstream f(png, std::ios::binary);
+      std::string d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+      CHECK(d.size() > 100 && d.compare(1, 3, "PNG") == 0);
+    }
+    // path tracer diretto: pixel sopra la sfera rossa
+    {
+      ui::Scene sc(c.e);
+      sc.fixedSpace = true;
+      sc.Rebuild();
+      RenderOptions ro;
+      ro.width = 64;
+      ro.height = 64;
+      RenderScene rsc;
+      rsc.Build(c.e, sc, ro);
+      CHECK(rsc.TriangleCount() > 100 && rsc.Lights().size() == 5);  // 4 luci + sole
+      ON_3dmView v = StandardView("Top", ON_BoundingBox(ON_3dPoint(60, 0, 0), ON_3dPoint(80, 20, 20)), 1);
+      RenderCamera cam;
+      CHECK(cam.Init(v, 1));
+      // raggio dal centro: colpisce la sfera dall'alto
+      Ray r = cam.Generate(0.5, 0.5);
+      double t, bu, bv;
+      int tri;
+      CHECK(rsc.Intersect(r, 1e30, t, tri, bu, bv) && std::fabs((r.o + r.d * t).z - 20) < 0.5);
+      PathTracer pt(rsc, cam, ro);
+      for (int i = 0; i < 4; i++) CHECK(pt.Pass());
+      std::vector<unsigned char> img;
+      pt.Image(img);
+      const size_t k = (32 * 64 + 32) * 3;
+      CHECK(img.size() == 64 * 64 * 3 && img[k] > img[k + 1] + 40 && img[k] > img[k + 2] + 40);
+    }
+    // impostazioni e luci restano nel .3dm
+    const std::string path = dir + "/luci.3dm";
+    CHECK(c.doc.Save(path));
+    Document3dm back;
+    CHECK(back.Load(path));
+    CHECK(back.Model().m_settings.m_RenderSettings.Sun().EnableOn() &&
+          Near(back.Model().m_settings.m_RenderSettings.Sun().Altitude(), 40));
+    CHECK(!c.e.Run("_SpotLight 0,0,0 5 0,0,0"));
+    CHECK(!c.e.Run("_SetDisplayMode Rendered"));  // senza finestra
   }
   {
     std::printf("AI_lettura_risposta\n");

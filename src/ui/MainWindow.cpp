@@ -3,7 +3,9 @@
 #include "ui/TexturePanel.h"
 #include "ui/Theme.h"
 #include "ui/LayoutView.h"
+#include "ui/RenderWindow.h"
 #include <QActionGroup>
+#include <cstring>
 #include <QPrintDialog>
 #include <QPrinter>
 #include <QStackedWidget>
@@ -100,6 +102,31 @@ MainWindow::MainWindow(QWidget* parent)
   };
   // Tavole: schede sotto le viste; stampa con la finestra di stampa del sistema
   m_engine.layoutsChanged = [this] { RebuildLayoutTabs(); };
+  // Render: finestra con l'immagine progressiva; SetDisplayMode: modalita' della vista attiva
+  m_engine.renderWindow = [this](const ON_3dmView& v, int w, int h, int samples) {
+    auto* win = new RenderWindow(m_engine, m_scene, v, w, h, samples, this);
+    win->show();
+    return true;
+  };
+  m_engine.setDisplayMode = [this](const std::string& name) {
+    const std::pair<const char*, Viewport::DisplayMode> modes[] = {
+        {"wireframe", Viewport::DisplayMode::Wireframe}, {"shaded", Viewport::DisplayMode::Shaded},
+        {"ghosted", Viewport::DisplayMode::Ghosted}, {"xray", Viewport::DisplayMode::XRay},
+        {"rendered", Viewport::DisplayMode::Rendered}, {"raytraced", Viewport::DisplayMode::Raytraced}};
+    for (auto& [n, m] : modes)
+      if (name == n) { Active()->mode = m; Active()->update(); return true; }
+    return false;
+  };
+  RenderScene::imageLoader = [](const std::string& path, int& w, int& h, std::vector<unsigned char>& rgb) {
+    QImage img(QString::fromStdString(path));
+    if (img.isNull()) return false;
+    img = img.convertToFormat(QImage::Format_RGB888);
+    w = img.width();
+    h = img.height();
+    rgb.resize((size_t)w * h * 3);
+    for (int y = 0; y < h; y++) std::memcpy(&rgb[(size_t)y * w * 3], img.constScanLine(y), (size_t)w * 3);
+    return true;
+  };
   m_engine.printPages = [this](const std::vector<PageDrawing>& pages) { return PrintPages(pages); };
   m_engine.viewCapture = [this](const std::string& path, int w, int h, bool grid) {
     return CaptureView(QString::fromStdString(path), w, h, grid);
@@ -552,6 +579,18 @@ void MainWindow::BuildMenus() {
     });
     render->addAction("Togli texture", this, [this] { Submit("_RemoveTexture"); });
     render->addSeparator();
+    const std::pair<const char*, const char*> rcmds[] = {
+        {"Rendering (Render)", "_Render"}, {"Materiale degli oggetti...", "_SetMaterial"},
+        {"Luce puntiforme", "_PointLight"}, {"Luce direzionale", "_DirectionalLight"}, {"Faretto", "_SpotLight"},
+        {"Luce rettangolare", "_RectangularLight"}, {"Sole acceso", "_Sun On"}, {"Sole spento", "_Sun Off"},
+        {"Luce del cielo accesa", "_Skylight On"}, {"Luce del cielo spenta", "_Skylight Off"},
+        {"Piano di terra acceso", "_GroundPlane On"}, {"Piano di terra spento", "_GroundPlane Off"},
+        {"Vista renderizzata", "_SetDisplayMode Rendered"}, {"Vista raytraced", "_SetDisplayMode Raytraced"}};
+    for (auto& [label, cmd] : rcmds) {
+      const QString c = cmd;
+      render->addAction(label, this, [this, c] { Submit(c); });
+    }
+    render->addSeparator();
     const std::pair<const char*, const char*> maps[] = {
         {"Mappatura box", "_ApplyBoxMapping"}, {"Mappatura piana", "_ApplyPlanarMapping"},
         {"Mappatura cilindrica", "_ApplyCylindricalMapping"}, {"Mappatura sferica", "_ApplySphericalMapping"},
@@ -652,7 +691,8 @@ QWidget* MainWindow::BuildToolTabs() {
   disp->setToolButtonStyle(Qt::ToolButtonTextOnly);
   const std::pair<const char*, Viewport::DisplayMode> dm[] = {
       {"Wireframe", Viewport::DisplayMode::Wireframe}, {"Ombreggiato", Viewport::DisplayMode::Shaded},
-      {"Fantasma", Viewport::DisplayMode::Ghosted}, {"Raggi X", Viewport::DisplayMode::XRay}};
+      {"Fantasma", Viewport::DisplayMode::Ghosted}, {"Raggi X", Viewport::DisplayMode::XRay},
+      {"Renderizzato", Viewport::DisplayMode::Rendered}, {"Raytraced", Viewport::DisplayMode::Raytraced}};
   for (auto& [label, m] : dm) disp->addAction(label, this, [this, m = m] { Active()->mode = m; Active()->update(); });
   tabs->addTab(disp, "Visualizzazione");
   addTab("Seleziona", {{"Tutto", "_SelAll"}, {"Niente", "_SelNone"}, {"Inverti", "_Invert"}, {"Ultimo", "_SelLast"},
