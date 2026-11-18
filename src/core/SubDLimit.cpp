@@ -175,10 +175,13 @@ SubDLimitDisplay BuildSubDLimit(const ON_SubD& subd, int levels) {
     if (face.size() >= 3) n.F.push_back(face);
   }
   int orig = 0;
+  std::vector<unsigned> ids;
   ON_SubDEdgeIterator eit(subd);
-  for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge(), orig++)
+  for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge(), orig++) {
+    ids.push_back(e->m_id);
     if (e->m_vertex[0] && e->m_vertex[1])
       n.sharp[Key(vid[e->m_vertex[0]->m_id], vid[e->m_vertex[1]->m_id])] = {e->m_edge_tag == ON_SubDEdgeTag::Crease, orig};
+  }
   if (n.F.empty()) return out;
   for (int i = 0; i < std::max(1, levels); i++) n = Subdivide(n);
   const std::vector<ON_3dPoint> L = LimitPoints(n);
@@ -210,7 +213,21 @@ SubDLimitDisplay BuildSubDLimit(const ON_SubD& subd, int levels) {
       if (cur == start) break;
     }
     out.edges.push_back(std::move(w));
+    out.edgeIds.push_back(ids[id]);
   }
+  return out;
+}
+
+SubDLimitDisplay BuildSubDFlat(const ON_SubD& subd) {
+  SubDLimitDisplay out;
+  out.mesh.reset(subd.GetControlNetMesh(nullptr, ON_SubDGetControlNetMeshPriority::Geometry));
+  if (out.mesh) out.mesh->ComputeVertexNormals();
+  ON_SubDEdgeIterator eit(subd);
+  for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge())
+    if (e->m_vertex[0] && e->m_vertex[1]) {
+      out.edges.push_back({e->m_vertex[0]->ControlNetPoint(), e->m_vertex[1]->ControlNetPoint()});
+      out.edgeIds.push_back(e->m_id);
+    }
   return out;
 }
 

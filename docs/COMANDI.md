@@ -16,22 +16,22 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 |---|---|
 | Punti | 6 / 9 |
 | Curve: linee e polilinee | 6 / 11 |
-| Curve: forme | 16 / 19 |
+| Curve: forme | 17 / 19 |
 | Curve: forme libere | 8 / 18 |
 | Curve da oggetti | 11 / 14 |
 | Superfici | 18 / 29 |
 | Solidi | 22 / 24 |
-| SubD | 6 / 23 |
+| SubD | 9 / 23 |
 | Mesh | 10 / 19 |
 | Trasformazioni | 17 / 30 |
-| Modifica | 24 / 34 |
+| Modifica | 26 / 34 |
 | Selezione | 18 / 19 |
 | Blocchi | 3 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 11 / 14 |
-| Analisi | 10 / 15 |
+| Analisi | 11 / 15 |
 | File | 7 / 7 |
-| **Totale** | **204 / 303** |
+| **Totale** | **211 / 303** |
 
 ## Punti
 
@@ -85,7 +85,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Hyperbola | ✔ |
 | Spiral | ✔ |
 | Helix | ✔ |
-| ConicCurve | ⬜ |
+| ConicCurve | ✔ |
 
 ## Curve: forme libere
 
@@ -210,15 +210,15 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SubDExtrude | 🧱 |
 | Bevel | 🧱 |
 | Bridge | 🧱 |
-| Crease | ⬜ |
-| Uncrease | ⬜ |
+| Crease | ✔ |
+| Uncrease | ✔ |
 | InsertEdge | 🧱 |
 | Stitch | 🧱 |
 | Append | 🧱 |
 | Fill | 🧱 |
 | Reflect | ⬜ |
 | MultiPipe | 🧱 |
-| SubDDisplayToggle | ⬜ |
+| SubDDisplayToggle | ✔ |
 
 ## Mesh
 
@@ -305,7 +305,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Seam | 🧱 |
 | ChangeDegree | ✔ |
 | InsertKnot | ✔ |
-| RemoveKnot | ⬜ |
+| RemoveKnot | ✔ |
 | InsertControlPoint | 🧱 |
 | PointsOn | ✔ |
 | PointsOff | ✔ |
@@ -313,7 +313,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | MakePeriodic | 🧱 |
 | Match | 🧱 |
 | Fit | 🧱 |
-| ConvertToBezier | ⬜ |
+| ConvertToBezier | ✔ |
 | Isolate | ✔ |
 | Unisolate | ✔ |
 | Purge | ✔ |
@@ -407,7 +407,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Draft | 🧱 |
 | ShowEdges | 🧱 |
 | Check | ✔ |
-| SelBadObjects | ⬜ |
+| SelBadObjects | ✔ |
 
 ## File
 

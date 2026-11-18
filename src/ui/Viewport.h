@@ -57,6 +57,7 @@ public:
   static Settings& Shared();
   void SetView(Camera::Kind k);
   void ZoomExtents();
+  void ZoomBox(const ON_BoundingBox& b);
 
 signals:
   void PointPicked(ON_3dPoint p);

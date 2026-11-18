@@ -14,6 +14,7 @@
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRep_Tool.hxx>
 #include <GeomFill_BSplineCurves.hxx>
+#include <Geom_BSplineCurve.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <gp_Ax2.hxx>
@@ -389,6 +390,40 @@ bool CmdMergeAllFaces(Engine& e, TokenStream&) {
   e.Out() << "  Facce: " << before << " -> " << after << "\n";
   return true;
 }
+
+// RemoveKnot: toglie dalla curva i nodi piu' vicini ai punti cliccati.
+bool CmdRemoveKnot(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("RemoveKnot", "seleziona la curva, poi Invio");
+  if (sel.empty()) return false;
+  const auto* c = ON_Curve::Cast(Geo(e, sel.front()));
+  ON_NurbsCurve nc;
+  if (!c || !c->GetNurbForm(nc)) return e.Fail("serve una curva");
+  Handle(Geom_BSplineCurve) h = occt::ToOcct(nc);
+  int removed = 0;
+  do {
+    auto p = e.ReadPick(ts, "nodo da togliere (Invio per finire)");
+    if (!p) return false;
+    int best = -1;
+    double bd = 1e300;
+    for (int k = 2; k < h->NbKnots(); k++) {  // solo nodi interni
+      const gp_Pnt q = h->Value(h->Knot(k));
+      const double d = p->DistanceTo(ON_3dPoint(q.X(), q.Y(), q.Z()));
+      if (d < bd) { bd = d; best = k; }
+    }
+    if (best < 0) break;
+    try {
+      if (h->RemoveKnot(best, h->Multiplicity(best) - 1, 1e30)) removed++;
+    } catch (...) {
+    }
+  } while (e.MoreInput(ts));
+  e.SkipEnter(ts);
+  if (!removed) return e.Fail("nessun nodo tolto");
+  ON_NurbsCurve* out = occt::FromOcct(h);
+  if (!out) return e.Fail("conversione non riuscita");
+  e.ReplaceObject(sel.front(), out);
+  e.Out() << "  Tolti " << removed << " nodi\n";
+  return true;
+}
 #endif
 
 }  // namespace
@@ -411,6 +446,7 @@ void RegisterSurfaceMoreCommands(Engine& e) {
   reg("Patch", "Superfici", "Superficie che passa per curve e punti", CmdPatch);
   reg("Pyramid", "Solidi", "Piramide (NumSides=, centro, vertice, altezza)", CmdPyramid);
   reg("Wedge", "Solidi", "Cuneo (due angoli, altezza)", CmdWedge);
+  reg("RemoveKnot", "Modifica", "Toglie nodi dalla curva", CmdRemoveKnot);
   reg("MergeAllFaces", "Solidi", "Unisce le facce complanari o sulla stessa superficie", CmdMergeAllFaces);
 #endif
 }

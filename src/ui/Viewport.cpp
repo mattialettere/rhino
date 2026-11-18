@@ -136,6 +136,11 @@ Viewport::Viewport(Scene& scene, Camera::Kind kind, QWidget* parent) : QOpenGLWi
   setMinimumSize(120, 90);
 }
 
+void Viewport::ZoomBox(const ON_BoundingBox& b) {
+  m_cam.ZoomExtents(b, width(), height());
+  update();
+}
+
 void Viewport::ZoomExtents() {
   m_cam.ZoomExtents(m_scene.Bounds(), width(), height());
   update();

@@ -145,6 +145,8 @@ public:
   std::string currentPath;   // percorso del file aperto/salvato
   // Oggetti con i punti di controllo visibili (PointsOn / PointsOff)
   std::set<ON_UUID, UuidLess> pointsOn;
+  // SubDDisplayToggle: SubD mostrati come gabbia piatta invece che lisci
+  bool subdFlat = false;
   ON_3dPoint lastPoint = ON_3dPoint::Origin;
 
 private:

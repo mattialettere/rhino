@@ -1238,6 +1238,112 @@ bool CmdExtractIsocurve(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// --- SubD: pieghe e visualizzazione -----------------------------------------------------
+// Spigoli SubD vicini ai punti cliccati (sulla superficie limite).
+std::vector<unsigned> PickSubDEdges(Engine& e, TokenStream& ts, const ON_SubD& s) {
+  SubDLimitDisplay lim = e.subdFlat ? BuildSubDFlat(s) : BuildSubDLimit(s, 2);
+  std::vector<unsigned> ids;
+  do {
+    auto p = e.ReadPick(ts, "spigolo (Invio per finire)");
+    if (!p) return {};
+    double best = 1e300;
+    unsigned id = 0;
+    for (size_t k = 0; k < lim.edges.size(); k++) {
+      const auto& w = lim.edges[k];
+      for (size_t i = 0; i + 1 < w.size(); i++) {
+        ON_Line l(w[i], w[i + 1]);
+        double t;
+        l.ClosestPointTo(*p, &t);
+        const double d = l.PointAt(std::clamp(t, 0.0, 1.0)).DistanceTo(*p);
+        if (d < best) { best = d; id = lim.edgeIds[k]; }
+      }
+    }
+    if (best < 1e300 && std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
+  } while (e.MoreInput(ts));
+  e.SkipEnter(ts);
+  return ids;
+}
+
+bool SetSubDCreases(Engine& e, TokenStream& ts, const char* cmd, ON_SubDEdgeTag tag) {
+  auto sel = e.RequireSelection(cmd, "seleziona il SubD, poi Invio");
+  if (sel.empty()) return false;
+  const auto* s = ON_SubD::Cast(Geo(e, sel.front()));
+  if (!s) return e.Fail("serve un SubD");
+  auto ids = PickSubDEdges(e, ts, *s);
+  if (ids.empty()) return e.NeedsInput() ? false : e.Fail("nessuno spigolo");
+  auto* ns = new ON_SubD(*s);
+  std::vector<ON_COMPONENT_INDEX> ci;
+  for (unsigned id : ids) ci.push_back(ON_COMPONENT_INDEX(ON_COMPONENT_INDEX::subd_edge, (int)id));
+  const unsigned changed = ns->SetEdgeTags(ci.data(), ci.size(), tag);
+  ns->UpdateAllTagsAndSectorCoefficients(false);
+  ns->ClearEvaluationCache();
+  e.ReplaceObject(sel.front(), ns);
+  e.Out() << "  Spigoli modificati: " << changed << "\n";
+  return true;
+}
+
+bool CmdCrease(Engine& e, TokenStream& ts) { return SetSubDCreases(e, ts, "Crease", ON_SubDEdgeTag::Crease); }
+bool CmdUncrease(Engine& e, TokenStream& ts) { return SetSubDCreases(e, ts, "Uncrease", ON_SubDEdgeTag::Smooth); }
+
+// SubDDisplayToggle: SubD lisci o gabbia piatta (tasto Tab in Rhino).
+bool CmdSubDDisplayToggle(Engine& e, TokenStream&) {
+  e.subdFlat = !e.subdFlat;
+  e.Out() << (e.subdFlat ? "  SubD: visualizzazione piatta\n" : "  SubD: visualizzazione liscia\n");
+  return true;
+}
+
+// SelBadObjects: seleziona gli oggetti non validi.
+bool CmdSelBadObjects(Engine& e, TokenStream&) {
+  int n = 0;
+  for (const auto& id : e.AllObjectIds(false))
+    if (const ON_Geometry* g = Geo(e, id); g && !g->IsValid()) { e.Select(id); n++; }
+  e.Out() << (n ? "  Oggetti non validi selezionati: " : "  Nessun oggetto non valido") << (n ? std::to_string(n) : "") << "\n";
+  return true;
+}
+
+// ConicCurve: inizio, fine, vertice delle tangenti, rho (0 < rho < 1; 0.5 = parabola).
+bool CmdConicCurve(Engine& e, TokenStream& ts) {
+  auto a = e.ReadPoint(ts, "inizio della conica");
+  if (!a) return false;
+  auto b = e.ReadPoint(ts, "fine della conica");
+  if (!b) return false;
+  auto v = e.ReadPoint(ts, "vertice (incrocio delle tangenti)");
+  if (!v) return false;
+  auto rho = e.ReadNumber(ts, "rho");
+  if (!rho) return false;
+  if (*rho <= 0 || *rho >= 1) return e.Fail("rho deve essere tra 0 e 1");
+  ON_NurbsCurve* c = Conic(*a, *v, *rho / (1 - *rho), *b);
+  if (!c) return e.Fail("conica non valida");
+  return Created(e, e.AddObject(c), *rho < 0.5 ? "conica (ellisse)" : (*rho > 0.5 ? "conica (iperbole)" : "conica (parabola)"));
+}
+
+// ConvertToBezier: curve convertite in tratti di Bezier (policurva).
+bool CmdConvertToBezier(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("ConvertToBezier", "seleziona le curve, poi Invio");
+  if (sel.empty()) return false;
+  int n = 0;
+  for (const auto& id : sel) {
+    const auto* c = ON_Curve::Cast(Geo(e, id));
+    ON_NurbsCurve nc;
+    if (!c || !c->GetNurbForm(nc)) continue;
+    auto* pc = new ON_PolyCurve();
+    for (int i = 0; i <= nc.CVCount() - nc.Order(); i++) {
+      ON_BezierCurve bz;
+      if (!nc.ConvertSpanToBezier(i, bz)) continue;
+      auto* span = new ON_NurbsCurve();
+      bz.GetNurbForm(*span);
+      span->SetDomain(nc.m_knot[i + nc.Order() - 2], nc.m_knot[i + nc.Order() - 1]);
+      pc->Append(span);
+    }
+    if (pc->Count() == 0 || !pc->IsValid()) { delete pc; continue; }
+    e.ReplaceObject(id, pc);
+    n++;
+  }
+  if (!n) return e.Fail("nessuna curva convertita");
+  e.Out() << "  Convertite " << n << " curve in tratti di Bezier\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterExtra2Commands(Engine& e) {
@@ -1282,6 +1388,12 @@ void RegisterExtra2Commands(Engine& e) {
   reg("SelPrev", "Selezione", "Riseleziona la selezione precedente", CmdSelPrev, false);
   reg("ExtractWireframe", "Curve", "Estrae spigoli e isocurve come curve", CmdExtractWireframe);
   reg("ExtractIsocurve", "Curve", "Estrae l'isocurva per un punto (Direction=U, V, Both)", CmdExtractIsocurve);
+  reg("Crease", "SubD", "Spigoli SubD vivi", CmdCrease);
+  reg("Uncrease", "SubD", "Spigoli SubD lisci", CmdUncrease);
+  reg("SubDDisplayToggle", "SubD", "SubD lisci o a gabbia piatta", CmdSubDDisplayToggle, false);
+  reg("SelBadObjects", "Selezione", "Seleziona gli oggetti non validi", CmdSelBadObjects, false);
+  reg("ConicCurve", "Curve", "Conica (inizio, fine, vertice, rho)", CmdConicCurve);
+  reg("ConvertToBezier", "Modifica", "Converte le curve in tratti di Bezier", CmdConvertToBezier);
   reg("PointsOn", "Modifica", "Mostra i punti di controllo (F10)", CmdPointsOn, false);
   reg("PointsOff", "Modifica", "Nasconde i punti di controllo (F11)", CmdPointsOff, false);
   reg("GripMove", "Interno", "Sposta un punto di controllo (trascinamento nella vista)", CmdGripMove);

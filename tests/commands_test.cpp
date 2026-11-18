@@ -1008,6 +1008,35 @@ int main(int argc, char** argv) {
     Case("SelPrev", "_Point 0,0\n_Point 1,1\n_SelAll\n_SelNone\n_SelPrev", [](Ctx& c) {
       CHECK(c.e.Selection().size() == 2);
     });
+    Case("Crease", "_SubDBox 0,0,0 10,10 10\n_SelAll _Crease 5,0,10 _Enter", [](Ctx& c) {
+      const auto* s = ON_SubD::Cast(c.Last());
+      int creases = 0;
+      ON_SubDEdgeIterator it(*s);
+      for (const ON_SubDEdge* e = it.FirstEdge(); s && e; e = it.NextEdge()) if (e->m_edge_tag == ON_SubDEdgeTag::Crease) creases++;
+      CHECK(creases == 1);
+      // lo spigolo vivo passa per la superficie limite piu' in alto (verso la gabbia)
+      SubDLimitDisplay lim = BuildSubDLimit(*s, 3);
+      CHECK(lim.mesh && lim.mesh->BoundingBox().m_max.z > 9.0);
+    });
+    Case("Uncrease", "_SubDBox 0,0,0 10,10 10\n_SelAll _Crease 5,0,10 _Enter\n_SelAll _Uncrease 5,0,10 _Enter", [](Ctx& c) {
+      const auto* s = ON_SubD::Cast(c.Last());
+      int creases = 0;
+      ON_SubDEdgeIterator it(*s);
+      for (const ON_SubDEdge* e = it.FirstEdge(); s && e; e = it.NextEdge()) if (e->m_edge_tag == ON_SubDEdgeTag::Crease) creases++;
+      CHECK(creases == 0);
+    });
+    Case("SubDDisplayToggle", "_SubDDisplayToggle", [](Ctx& c) { CHECK(c.e.subdFlat); });
+    Case("SelBadObjects", "_Line 0,0 1,1\n_SelBadObjects", [](Ctx& c) { CHECK(c.e.Selection().empty()); });
+    Case("ConicCurve", "_ConicCurve 0,0 10,0 5,5 0.5", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      // rho 0.5: parabola, il punto medio sta a meta' tra la corda e il vertice
+      CHECK(cv && NearPt(cv->PointAt(cv->Domain().Mid()), ON_3dPoint(5, 2.5, 0), 1e-9));
+    });
+    Case("ConvertToBezier", "_Curve 0,0 5,5 10,0 15,5 20,0 _Enter\n_SelAll _ConvertToBezier", [](Ctx& c) {
+      const auto* pc = ON_PolyCurve::Cast(c.Last());
+      CHECK(pc && pc->Count() == 2);
+      CHECK(pc && NearPt(pc->PointAtEnd(), ON_3dPoint(20, 0, 0), 1e-9));
+    });
     Case("Purge", "-_Layer _New A\n-_Layer _New B\n_CurrentLayer B\n_Point 0,0\n_Purge", [](Ctx& c) {
       CHECK(c.log.str().find("Eliminati") != std::string::npos);
       int layers = 0;
@@ -1102,6 +1131,10 @@ int main(int argc, char** argv) {
       int n = 0;
       for (auto* g : c.Objects()) if (auto* cv = ON_Curve::Cast(g)) { L += Len(cv); n++; }
       CHECK(n == 2 && Near(L, 6.0, 1e-3));
+    });
+    Case("RemoveKnot", "_Curve 0,0 5,5 10,0 15,5 20,0 25,5 _Enter\n_SelAll _RemoveKnot 12,2 _Enter", [](Ctx& c) {
+      const auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && n->CVCount() == 5 && NearPt(n->PointAtEnd(), ON_3dPoint(25, 5, 0), 1e-9));
     });
     Case("Wedge", "_Wedge 0,0,0 10,4 3\n_SelAll _Volume", [&](Ctx& c) {
       CHECK(Near(num(c, "Volume = "), 10.0 * 4.0 * 3.0 / 2.0, 1e-6));

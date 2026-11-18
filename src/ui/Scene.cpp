@@ -251,7 +251,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
       sm = it->second;
       edges = ie->second;
     } else {
-      SubDLimitDisplay lim = BuildSubDLimit(*s, 3);
+      SubDLimitDisplay lim = m_engine.subdFlat ? BuildSubDFlat(*s) : BuildSubDLimit(*s, 3);
       sm = std::shared_ptr<ON_Mesh>(lim.mesh.release());
       edges = std::make_shared<EdgeList>(std::move(lim.edges));
       if (!sm) sm = std::shared_ptr<ON_Mesh>(s->GetControlNetMesh(nullptr, ON_SubDGetControlNetMeshPriority::Geometry));
@@ -397,8 +397,11 @@ void Scene::Rebuild() {
     char key[64];
     ON_UuidToString(id, key);
     // firma: classe + bounding box (si rigenera dopo ogni modifica geometrica)
-    std::string sig = std::string(key) + g->ClassId()->ClassName();
+    std::string sig = std::string(key) + g->ClassId()->ClassName() + (m_engine.subdFlat ? "#flat" : "");
     for (int i = 0; i < 3; i++) sig += "|" + std::to_string(d.bbox.m_min[i]) + "|" + std::to_string(d.bbox.m_max[i]);
+    // contenuto: una modifica che lascia uguale il riquadro (pieghe SubD, punti interni) rigenera la mesh
+    if (const auto* sd = ON_SubD::Cast(g)) sig += "|" + std::string(static_cast<const char*>(sd->GeometryHash().ToUTF8String(false)));
+    else sig += "|" + std::to_string(g->DataCRC(0));
 
     AddGeometry(g, d, sig, newCache, 0);
     if (m_engine.pointsOn.count(id)) {
