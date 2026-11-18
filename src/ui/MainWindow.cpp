@@ -78,6 +78,7 @@ MainWindow::MainWindow(QWidget* parent)
     m_grid->addWidget(m_views[i], i / 2, i % 2);
     connect(m_views[i], &Viewport::PointPicked, this, &MainWindow::OnPointPicked);
     connect(m_views[i], &Viewport::ObjectsClicked, this, &MainWindow::OnObjectsClicked);
+    connect(m_views[i], &Viewport::GumballCommand, this, [this](QString c) { PropertyCommand(c); });
     connect(m_views[i], &Viewport::ToggleMaximize, this, &MainWindow::ToggleMaximize);
     connect(m_views[i], &Viewport::Activated, this, [this](Viewport* v) { m_active = v; });
     connect(m_views[i], &Viewport::MouseWorld, this, [this](ON_3dPoint p) {
@@ -384,6 +385,7 @@ void MainWindow::BuildStatusBar() {
   };
   toggle("Snap griglia", S.gridSnap);
   toggle("Orto", S.ortho);
+  toggle("Gumball", S.gumball);
   toggle("Osnap", S.osnap);
 }
 

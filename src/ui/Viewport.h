@@ -50,6 +50,7 @@ public:
     bool pickOnObjects = false;   // il comando vuole un clic SU un oggetto (Trim, Fillet, Shell...)
     ON_3dPoint lastPoint = ON_3dPoint::Origin;
     bool hasLastPoint = false;
+    bool gumball = true;          // Gumball sugli oggetti selezionati (barra di stato)
   };
   enum OsnapBit : unsigned { End = 1, Near = 2, Point = 4, Mid = 8, Cen = 16, Int = 32, Perp = 64,
                              Tan = 128, Quad = 256, Knot = 512, Vertex = 1024 };
@@ -63,6 +64,8 @@ signals:
   void MouseWorld(ON_3dPoint p);
   void ToggleMaximize(Viewport* v);
   void Activated(Viewport* v);
+  // Trascinamento del Gumball concluso: comando da eseguire (Move, Rotate3D, Scale1D)
+  void GumballCommand(QString command);
 
 protected:
   void initializeGL() override;
@@ -83,6 +86,17 @@ private:
   ON_3dPoint PointOnObjects(const QPoint& pos, bool* hit = nullptr) const;
   std::vector<ON_UUID> PickWindow(const QPoint& a, const QPoint& b) const;
   void DrawGrid();
+  // --- Gumball ---
+  struct GumballHit { int mode = 0; int axis = -1; };  // mode: 1 sposta, 2 ruota, 3 scala
+  bool GumballFrame(ON_3dPoint& center, double& size) const;
+  GumballHit GumballPick(const QPoint& pos) const;
+  void DrawGumball(QPainter& p) const;
+  bool GumballValue(const QPoint& pos, double& value) const;  // parametro sull'asse o angolo
+  ON_Xform GumballXform() const;
+  GumballHit m_gbDrag;
+  double m_gbStart = 0, m_gbCurrent = 0;
+  ON_3dPoint m_gbCenter;
+  double m_gbSize = 1;
   Scene& m_scene;
   Camera m_cam;
   QPoint m_pressPos, m_lastPos, m_hover;

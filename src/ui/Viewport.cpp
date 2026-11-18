@@ -338,6 +338,26 @@ void Viewport::paintGL() {
     }
   }
 
+  if (m_gbDrag.mode) {  // anteprima del Gumball: gli oggetti selezionati trasformati
+    const ON_Xform x = GumballXform();
+    double m[16];
+    for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) m[c * 4 + r] = x[r][c];
+    gl->glPushMatrix();
+    gl->glMultMatrixd(m);
+    gl->glColor3ub(80, 80, 80);
+    gl->glLineWidth(1.0f);
+    for (const auto& obj : m_scene.Objects()) {
+      if (!obj.selected) continue;
+      for (const auto* list : {&obj.wires, &obj.isocurves})
+        for (const auto& wire : *list) {
+          gl->glBegin(GL_LINE_STRIP);
+          for (const auto& q : wire) gl->glVertex3d(q.x, q.y, q.z);
+          gl->glEnd();
+        }
+    }
+    gl->glPopMatrix();
+  }
+
   // Elastico dall'ultimo punto al cursore durante un comando
   const Settings& S = Shared();
   gl->glDisable(GL_DEPTH_TEST);
@@ -354,6 +374,7 @@ void Viewport::paintGL() {
   QPainter p(this);
   p.setRenderHint(QPainter::Antialiasing);
   DrawLabels(p);
+  DrawGumball(p);
   p.setPen(QColor(30, 30, 30));
   QFont f = p.font(); f.setBold(true); p.setFont(f);
   QString title = KindName(m_cam.kind);
@@ -459,6 +480,180 @@ void Viewport::DrawLabels(QPainter& p) const {
       }
     }
   }
+}
+
+
+// ---------------------------------------------------------------- Gumball
+// Come il Gumball di Rhino 8: frecce (sposta), archi (ruota) e quadratini
+// (scala in una direzione) nel centro della scatola degli oggetti selezionati.
+// Il trascinamento mostra l'anteprima; al rilascio si esegue il comando
+// equivalente, cosi' l'operazione si annulla con Undo come le altre.
+// (valori letterali: le costanti di openNURBS potrebbero non essere ancora inizializzate)
+static const ON_3dVector kAxes[3] = {ON_3dVector(1, 0, 0), ON_3dVector(0, 1, 0), ON_3dVector(0, 0, 1)};
+
+bool Viewport::GumballFrame(ON_3dPoint& center, double& size) const {
+  const Settings& S = Shared();
+  if (!S.gumball || S.waitingForPoint) return false;
+  ON_BoundingBox bb;
+  for (const auto& o : m_scene.Objects())
+    if (o.selected && o.bbox.IsValid()) bb.Union(o.bbox);
+  if (!bb.IsValid()) return false;
+  center = bb.Center();
+  // dimensione costante sullo schermo: ~90 pixel
+  double upp = m_cam.UnitsPerPixel(height());
+  if (m_cam.kind == Camera::Kind::Perspective) {
+    const double z = (center - m_cam.Eye()) * m_cam.Dir();
+    if (z <= 0) return false;
+    upp = 2.0 * z * std::tan(m_cam.fovY / 2.0) / std::max(1, height());
+  }
+  size = 90.0 * upp;
+  return true;
+}
+
+static double SegDist(double px, double py, double ax, double ay, double bx, double by) {
+  const double dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+  double t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  t = std::clamp(t, 0.0, 1.0);
+  return std::hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// Arco di rotazione attorno all'asse i: quarto di cerchio tra gli altri due assi.
+static std::vector<ON_3dPoint> GumballArc(const ON_3dPoint& c, int i, double r) {
+  const ON_3dVector u = kAxes[(i + 1) % 3], v = kAxes[(i + 2) % 3];
+  std::vector<ON_3dPoint> pts;
+  for (int k = 0; k <= 16; k++) {
+    const double a = 0.5 * ON_PI * k / 16;
+    pts.push_back(c + u * (r * std::cos(a)) + v * (r * std::sin(a)));
+  }
+  return pts;
+}
+
+Viewport::GumballHit Viewport::GumballPick(const QPoint& pos) const {
+  ON_3dPoint c;
+  double L;
+  GumballHit best;
+  if (!GumballFrame(c, L)) return best;
+  const int W = width(), H = height();
+  double cx, cy;
+  if (!m_cam.Project(c, W, H, cx, cy)) return best;
+  double bestD = 7.0;
+  for (int i = 0; i < 3; i++) {
+    double tx, ty, sx, sy;
+    if (!m_cam.Project(c + kAxes[i] * L, W, H, tx, ty)) continue;
+    if (std::hypot(tx - cx, ty - cy) < 12) continue;  // asse visto di punta: non utilizzabile
+    // quadratino di scala a 0.6 della freccia
+    if (m_cam.Project(c + kAxes[i] * (0.6 * L), W, H, sx, sy)) {
+      const double d = std::max(std::fabs(sx - pos.x()), std::fabs(sy - pos.y()));
+      if (d <= 6 && d < bestD) { bestD = d; best = {3, i}; }
+    }
+    const double d = SegDist(pos.x(), pos.y(), cx + (tx - cx) * 0.7, cy + (ty - cy) * 0.7, tx, ty);
+    if (d < bestD) { bestD = d; best = {1, i}; }
+  }
+  if (best.mode) return best;
+  for (int i = 0; i < 3; i++) {
+    const auto arc = GumballArc(c, i, 0.8 * L);
+    for (size_t k = 0; k + 1 < arc.size(); k++) {
+      double ax, ay, bx, by;
+      if (!m_cam.Project(arc[k], W, H, ax, ay) || !m_cam.Project(arc[k + 1], W, H, bx, by)) continue;
+      const double d = SegDist(pos.x(), pos.y(), ax, ay, bx, by);
+      if (d < bestD) { bestD = d; best = {2, i}; }
+    }
+  }
+  return best;
+}
+
+bool Viewport::GumballValue(const QPoint& pos, double& value) const {
+  ON_3dPoint o;
+  ON_3dVector d;
+  m_cam.Ray(pos.x(), pos.y(), width(), height(), o, d);
+  const ON_3dVector a = kAxes[m_gbDrag.axis];
+  if (m_gbDrag.mode == 2) {
+    // angolo nel piano perpendicolare all'asse
+    const double den = d * a;
+    if (std::fabs(den) < 1e-6) return false;
+    const double t = ((m_gbCenter - o) * a) / den;
+    const ON_3dVector v = (o + d * t) - m_gbCenter;
+    const ON_3dVector u1 = kAxes[(m_gbDrag.axis + 1) % 3], u2 = kAxes[(m_gbDrag.axis + 2) % 3];
+    value = std::atan2(v * u2, v * u1);
+    return true;
+  }
+  // punto dell'asse piu' vicino al raggio del mouse
+  const ON_3dVector w0 = m_gbCenter - o;
+  const double b = a * d, dd = d * w0, e = a * w0;
+  const double den = 1.0 - b * b;
+  if (std::fabs(den) < 1e-9) return false;
+  value = (b * dd - e) / den;
+  return true;
+}
+
+ON_Xform Viewport::GumballXform() const {
+  const ON_3dVector a = kAxes[std::max(0, m_gbDrag.axis)];
+  if (m_gbDrag.mode == 1) return ON_Xform::TranslationTransformation(a * (m_gbCurrent - m_gbStart));
+  if (m_gbDrag.mode == 2) {
+    ON_Xform r;
+    r.Rotation(m_gbCurrent - m_gbStart, a, m_gbCenter);
+    return r;
+  }
+  if (m_gbDrag.mode == 3 && std::fabs(m_gbStart) > 1e-12) {
+    const double f = m_gbCurrent / m_gbStart;
+    double s[3] = {1, 1, 1};
+    s[m_gbDrag.axis] = f;
+    return ON_Xform::ScaleTransformation(m_gbCenter, s[0], s[1], s[2]);
+  }
+  return ON_Xform::IdentityTransformation;
+}
+
+void Viewport::DrawGumball(QPainter& p) const {
+  ON_3dPoint c;
+  double L;
+  if (!GumballFrame(c, L)) return;
+  const int W = width(), H = height();
+  double cx, cy;
+  if (!m_cam.Project(c, W, H, cx, cy)) return;
+  const QColor col[3] = {QColor(220, 40, 40), QColor(40, 170, 40), QColor(40, 70, 220)};
+  const GumballHit hov = m_gbDrag.mode ? m_gbDrag : GumballPick(m_hover);
+  p.save();
+  for (int i = 0; i < 3; i++) {
+    const bool hot = hov.axis == i;
+    // archi di rotazione
+    const auto arc = GumballArc(c, i, 0.8 * L);
+    QPolygonF poly;
+    for (const auto& q : arc) { double x, y; if (m_cam.Project(q, W, H, x, y)) poly << QPointF(x, y); }
+    p.setPen(QPen(col[i], (hot && hov.mode == 2) ? 4 : 2));
+    p.setBrush(Qt::NoBrush);
+    p.drawPolyline(poly);
+    double tx, ty;
+    if (!m_cam.Project(c + kAxes[i] * L, W, H, tx, ty) || std::hypot(tx - cx, ty - cy) < 12) continue;
+    // freccia
+    p.setPen(QPen(col[i], (hot && hov.mode == 1) ? 4 : 2));
+    p.drawLine(QPointF(cx, cy), QPointF(tx, ty));
+    QPointF dir(tx - cx, ty - cy);
+    const double len = std::hypot(dir.x(), dir.y());
+    dir /= len;
+    const QPointF nrm(-dir.y(), dir.x());
+    const QPointF tip(tx, ty), base = tip - dir * 12;
+    p.setBrush(col[i]);
+    p.drawPolygon(QPolygonF({tip + dir * 4, base + nrm * 5, base - nrm * 5}));
+    // quadratino di scala
+    double sx, sy;
+    if (m_cam.Project(c + kAxes[i] * (0.6 * L), W, H, sx, sy)) {
+      p.setPen(Qt::NoPen);
+      const double r = (hot && hov.mode == 3) ? 6 : 4;
+      p.drawRect(QRectF(sx - r, sy - r, 2 * r, 2 * r));
+    }
+  }
+  p.setPen(Qt::NoPen);
+  p.setBrush(QColor(255, 255, 255));
+  p.drawEllipse(QPointF(cx, cy), 4, 4);
+  if (m_gbDrag.mode) {  // valore durante il trascinamento, come Rhino
+    QString t;
+    if (m_gbDrag.mode == 1) t = QString::number(m_gbCurrent - m_gbStart, 'f', 3);
+    else if (m_gbDrag.mode == 2) t = QString::number((m_gbCurrent - m_gbStart) * 180.0 / ON_PI, 'f', 2) + "°";
+    else if (std::fabs(m_gbStart) > 1e-12) t = "× " + QString::number(m_gbCurrent / m_gbStart, 'f', 3);
+    p.setPen(QColor(0, 0, 0));
+    p.drawText(QPointF(m_hover.x() + 14, m_hover.y() - 8), t);
+  }
+  p.restore();
 }
 
 // Osnap persistenti, come la barra Osnap di Rhino 8. Raggio di cattura 10 pixel.
@@ -707,6 +902,16 @@ void Viewport::mousePressEvent(QMouseEvent* e) {
   }
   m_pressPos = m_lastPos = e->pos();
   m_dragButton = e->button();
+  if (e->button() == Qt::LeftButton) {
+    const GumballHit h = GumballPick(e->pos());
+    double size;
+    if (h.mode && GumballFrame(m_gbCenter, size)) {
+      m_gbDrag = h;
+      m_gbSize = size;
+      if (!GumballValue(e->pos(), m_gbStart)) m_gbDrag = {};
+      m_gbCurrent = m_gbStart;
+    }
+  }
 }
 
 void Viewport::mouseMoveEvent(QMouseEvent* e) {
@@ -728,6 +933,21 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
     update();
     return;
   }
+  if (m_gbDrag.mode) {
+    double v;
+    if (GumballValue(e->pos(), v)) m_gbCurrent = v;
+    // con lo snap alla griglia lo spostamento procede a passi della griglia
+    if (m_gbDrag.mode == 1 && Shared().gridSnap && Shared().gridSpacing > 0) {
+      const double g = Shared().gridSpacing;
+      m_gbCurrent = m_gbStart + std::round((m_gbCurrent - m_gbStart) / g) * g;
+    }
+    if (m_gbDrag.mode == 2 && (e->modifiers() & Qt::ShiftModifier)) {  // Shift: passi di 15 gradi
+      const double st = ON_PI / 12;
+      m_gbCurrent = m_gbStart + std::round((m_gbCurrent - m_gbStart) / st) * st;
+    }
+    update();
+    return;
+  }
   if (m_dragButton == Qt::LeftButton && !Shared().waitingForPoint &&
       (e->pos() - m_pressPos).manhattanLength() > 4)
     m_windowSelecting = true;
@@ -739,6 +959,24 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
 
 void Viewport::mouseReleaseEvent(QMouseEvent* e) {
   const bool wasDrag = (e->pos() - m_pressPos).manhattanLength() > 4;
+  if (m_gbDrag.mode) {
+    const GumballHit h = m_gbDrag;
+    m_gbDrag = {};
+    m_dragButton = Qt::NoButton;
+    const double dv = m_gbCurrent - m_gbStart;
+    auto P = [](const ON_3dPoint& q) { return QString("%1,%2,%3").arg(q.x, 0, 'g', 12).arg(q.y, 0, 'g', 12).arg(q.z, 0, 'g', 12); };
+    const ON_3dVector a = kAxes[h.axis];
+    if (wasDrag) {
+      if (h.mode == 1 && std::fabs(dv) > 1e-12)
+        emit GumballCommand("-_Move " + P(ON_3dPoint::Origin) + " " + P(ON_3dPoint::Origin + a * dv));
+      else if (h.mode == 2 && std::fabs(dv) > 1e-12)
+        emit GumballCommand("-_Rotate3D " + P(m_gbCenter) + " " + P(m_gbCenter + a) + " " + QString::number(dv * 180.0 / ON_PI, 'g', 12));
+      else if (h.mode == 3 && std::fabs(m_gbStart) > 1e-12 && std::fabs(m_gbCurrent / m_gbStart) > 1e-9)
+        emit GumballCommand("-_Scale1D " + P(m_gbCenter) + " " + QString::number(m_gbCurrent / m_gbStart, 'g', 12) + " " + P(m_gbCenter + a));
+    }
+    update();
+    return;
+  }
   if (m_dragButton == Qt::LeftButton) {
     const bool add = e->modifiers() & Qt::ShiftModifier, remove = e->modifiers() & Qt::ControlModifier;
     if (m_windowSelecting) {
