@@ -233,16 +233,16 @@ void MainWindow::BuildMenus() {
                      {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Linee singole", "_Lines"},
                      {"Rettangolo arrotondato", "_RoundedRectangle"}, {"Parabola", "_Parabola"}, {"Iperbole", "_Hyperbola"},
                      {"Bisettrice", "_Bisector"}, {"Curva per punti", "_CurveThroughPt"}, {"Leviga", "_Smooth"},
-                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
+                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Tira su superficie (Pull)", "_Pull"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
   addCmds("&Superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi curva", "_ExtrudeCrv"},
-                         {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"},
+                         {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"}, {"Sweep 2 binari", "_Sweep2"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi superficie", "_ExtendSrf"},
                          {"Offset superficie", "_OffsetSrf"}, {"Da 3 o 4 punti", "_SrfPt"},
                          {"Da 2, 3 o 4 curve di bordo", "_EdgeSrf"}, {"Patch", "_Patch"},
                          {"Piano da 3 punti", "_Plane3Pt"}, {"Piano verticale", "_PlaneVertical"},
                          {"Estrudi fino a un punto", "_ExtrudeCrvToPoint"}, {"Estrudi lungo una curva", "_ExtrudeCrvAlongCrv"},
                          {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}});
   addCmds("S&olidi", {{"Parallelepipedo", "_Box"}, {"Sfera", "_Sphere"}, {"Sfera da 3 punti", "_Sphere3Pt"}, {"Box da 3 punti", "_Box3Pt"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
-                      {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Piramide", "_Pyramid"}, {"Cuneo", "_Wedge"},
+                      {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Piramide", "_Pyramid"}, {"Cuneo", "_Wedge"}, {"Lastra (Slab)", "_Slab"},
                       {"Tronco di cono", "_TruncatedCone"}, {"Ellissoide", "_Ellipsoid"}, {"Unione booleana", "_BooleanUnion"},
                       {"Differenza booleana", "_BooleanDifference"}, {"Intersezione booleana", "_BooleanIntersection"},
                       {"Divisione booleana", "_BooleanSplit"}, {"Raccorda spigoli", "_FilletEdge"},
@@ -260,7 +260,7 @@ void MainWindow::BuildMenus() {
                       {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
-                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"},
+                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Scorri lungo curva (Flow)", "_Flow"},
                          {"Allinea", "_Align"}, {"Imposta punti (SetPt)", "_SetPt"}});
   addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
                          {"Angolo", "_Angle"}, {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"},
@@ -320,7 +320,7 @@ QWidget* MainWindow::BuildToolTabs() {
                              {"Proietta", "_Project"}, {"Curve di livello", "_Contour"}, {"Sezione", "_Section"},
                              {"Copia spigoli", "_DupEdge"}});
   addTab("Strumenti superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi", "_ExtrudeCrv"},
-                                 {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"},
+                                 {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"}, {"Sweep 2", "_Sweep2"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi", "_ExtendSrf"},
                                  {"Offset superficie", "_OffsetSrf"}, {"Dividi", "_Split"}, {"Estrai superficie", "_ExtractSrf"},
                                  {"Da punti", "_SrfPt"}, {"Da bordi", "_EdgeSrf"}, {"Patch", "_Patch"}, {"Rimuovi tagli", "_UntrimAll"}});
   addTab("Strumenti solidi", {{"Box", "_Box"}, {"Sfera", "_Sphere"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},

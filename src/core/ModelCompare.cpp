@@ -101,6 +101,13 @@ std::map<std::string, ObjectSnapshot> CollectObjects(const ONX_Model& m) {
       // contengono box in cache larghe (dal poligono di controllo) che in
       // scrittura vengono sostituite da quelle esatte. Vedi docs/DIFFERENZE.md.
       if (!g->GetTightBoundingBox(k.bbox)) k.bbox = g->BoundingBox();
+      // ON_DimOrdinate calcola la box con lo stile predefinito e, su Windows con i
+      // font reali, puo' rifare il testo in cache in modo diverso prima e dopo la
+      // lettura: si confrontano i punti di definizione (i dati salvati nel file).
+      if (const auto* dor = ON_DimOrdinate::Cast(g)) {
+        ON_3dPoint pts[4];
+        if (dor->Get3dPoints(nullptr, &pts[0], &pts[1], &pts[2], &pts[3])) { k.bbox = ON_BoundingBox(); for (auto& q : pts) k.bbox.Set(q, true); }
+      }
       k.hash = GeometryHash(*g);
       k.userData = UserDataList(*g);
     }

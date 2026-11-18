@@ -18,12 +18,12 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Curve: linee e polilinee | 7 / 11 |
 | Curve: forme | 17 / 19 |
 | Curve: forme libere | 10 / 18 |
-| Curve da oggetti | 11 / 14 |
-| Superfici | 18 / 29 |
-| Solidi | 22 / 24 |
+| Curve da oggetti | 12 / 14 |
+| Superfici | 21 / 29 |
+| Solidi | 23 / 24 |
 | SubD | 9 / 23 |
 | Mesh | 12 / 19 |
-| Trasformazioni | 21 / 30 |
+| Trasformazioni | 23 / 30 |
 | Modifica | 26 / 34 |
 | Selezione | 18 / 19 |
 | Blocchi | 3 / 6 |
@@ -31,7 +31,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Annotazioni | 12 / 14 |
 | Analisi | 11 / 15 |
 | File | 7 / 7 |
-| **Totale** | **221 / 303** |
+| **Totale** | **228 / 303** |
 
 ## Punti
 
@@ -115,7 +115,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | Project | ✔ |
-| Pull | 🧱 |
+| Pull | ✔ |
 | DupEdge | ✔ |
 | DupBorder | ✔ |
 | DupFaceBorder | ✔ |
@@ -141,7 +141,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | EdgeSrf | ✔ |
 | Loft | ✔ |
 | Sweep1 | ✔ |
-| Sweep2 | 🧱 |
+| Sweep2 | ✔ |
 | NetworkSrf | 🧱 |
 | Patch | ✔ |
 | Revolve | ✔ |
@@ -149,7 +149,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ExtrudeCrv | ✔ |
 | ExtrudeCrvAlongCrv | ✔ |
 | ExtrudeCrvToPoint | ✔ |
-| ExtrudeCrvTapered | 🧱 |
+| ExtrudeCrvTapered | ✔ |
 | ExtrudeSrf | ✔ |
 | Pipe | ✔ |
 | OffsetSrf | ✔ |
@@ -157,7 +157,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ChamferSrf | 🧱 |
 | BlendSrf | 🧱 |
 | MatchSrf | 🧱 |
-| ExtendSrf | 🧱 |
+| ExtendSrf | ✔ |
 | ShrinkTrimmedSrf | ✔ |
 | UntrimAll | ✔ |
 | Heightfield | ⬜ |
@@ -190,7 +190,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | MergeAllFaces | ✔ |
 | MoveFace | 🧱 |
 | ExtractSrf | ✔ |
-| Slab | 🧱 |
+| Slab | ✔ |
 
 ## SubD
 
@@ -264,14 +264,14 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ArrayLinear | ✔ |
 | ArrayPolar | ✔ |
 | ArrayCrv | ✔ |
-| ArraySrf | 🧱 |
+| ArraySrf | ✔ |
 | Align | ✔ |
 | SetPt | ✔ |
 | Shear | ✔ |
 | Twist | ✔ |
 | Bend | ✔ |
 | Taper | ✔ |
-| Flow | 🧱 |
+| Flow | ✔ |
 | FlowAlongSrf | 🧱 |
 | Splop | 🧱 |
 | CageEdit | 🧱 |

@@ -182,6 +182,7 @@ ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(d
 void RegisterKernelCommands(Engine& e);
 void RegisterCurveEditCommands(Engine& e);
 void RegisterSurfaceMoreCommands(Engine& e);
+void RegisterSurface3Commands(Engine& e);
 #endif
 
 // Utilita' geometriche condivise

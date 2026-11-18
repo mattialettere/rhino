@@ -82,6 +82,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
   RegisterSurfaceMoreCommands(*this);
+  RegisterSurface3Commands(*this);
 #endif
 }
 

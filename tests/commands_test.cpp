@@ -1132,6 +1132,95 @@ int main(int argc, char** argv) {
   }
 
 #ifdef CAD_WITH_OCCT
+  // Superfici, terza parte (ExtrudeCrvTapered, Slab, ExtendSrf, Pull, Sweep2, Flow, ArraySrf)
+  {
+    std::printf("Superfici (3)\n");
+    auto vol = [](Ctx& c) {
+      const std::string log = c.log.str();
+      auto p = log.rfind("Volume = ");
+      return p == std::string::npos ? -1.0 : std::atof(log.c_str() + p + 9);
+    };
+    Case("ExtrudeCrvTapered_chiusa", "_Rectangle 0,0 10,10\n_SelAll _ExtrudeCrvTapered DraftAngle=45 2", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid() && b->IsSolid());
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      CHECK(b && Near(bb.m_max.z, 2, 1e-6));
+      // la cima e' il quadrato ristretto di 2 per lato: 6 x 6 a z=2
+      bool topOk = false;
+      for (int i = 0; b && i < b->m_V.Count(); i++)
+        if (NearPt(b->m_V[i].point, ON_3dPoint(2, 2, 2), 1e-6) || NearPt(b->m_V[i].point, ON_3dPoint(8, 8, 2), 1e-6)) topOk = true;
+      CHECK(topOk);
+    });
+    Case("ExtrudeCrvTapered_volume", "_Rectangle 0,0 10,10\n_SelAll _ExtrudeCrvTapered DraftAngle=45 2\n_SelAll _Volume", [&](Ctx& c) {
+      // tronco di piramide: h/3 (A1 + A2 + sqrt(A1 A2)) = 2/3 (100 + 36 + 60)
+      CHECK(Near(vol(c), 2.0 / 3.0 * 196.0, 1e-3));
+    });
+    Case("ExtrudeCrvTapered_aperta", "_Line 0,0 10,0\n_SelAll _ExtrudeCrvTapered DraftAngle=45 3", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid());
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      // lato sinistro della linea verso +x: sale a y=3
+      CHECK(b && Near(bb.m_max.z, 3, 1e-9) && Near(bb.m_max.y, 3, 1e-9));
+    });
+    Case("Slab", "_Line 0,0 10,0\n_SelAll _Slab 2 5,1 3\n_SelAll _Volume", [&](Ctx& c) {
+      CHECK(Near(vol(c), 60.0, 1e-3));
+      ON_BoundingBox bb = c.BBox();
+      CHECK(Near(bb.m_max.y, 2, 1e-6) && Near(bb.m_min.y, 0, 1e-6));
+    });
+    Case("ExtendSrf", "_Plane 0,0 10,10\n_ExtendSrf 10,5 3", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid() && c.Objects().size() == 1);
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      CHECK(b && Near(bb.m_max.x, 13, 1e-6) && Near(bb.m_max.y, 10, 1e-6));
+    });
+    Case("Pull_cerchio", "_Sphere 0,0,0 10\n_Circle 0,0,20 3\n_SelCrv _Pull 0,0,10", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      CHECK(cv != nullptr);
+      bool ok = cv != nullptr;
+      for (int i = 0; cv && i <= 20; i++) ok = ok && Near(cv->PointAt(cv->Domain().ParameterAt(i / 20.0)).DistanceTo(ON_origin), 10, 1e-3);
+      CHECK(ok);
+    });
+    Case("Pull_punto", "_Plane 0,0 10,10\n_Point 3,4,5\n_SelPt _Pull 5,5,0", [](Ctx& c) {
+      const auto* p = ON_Point::Cast(c.Last());
+      CHECK(p && NearPt(p->point, ON_3dPoint(3, 4, 0), 1e-6));
+    });
+    Case("Sweep2", "_Line 0,0,0 20,0,0\n_Line 0,10,0 20,10,0\n_Arc3Pt 0,0,0 0,10,0 0,5,3\n_SelCrv _Sweep2", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid());
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      CHECK(b && Near(bb.m_max.x, 20, 1e-3) && Near(bb.m_max.z, 3, 1e-3) && Near(bb.m_max.y, 10, 1e-3));
+    });
+    Case("Sweep2_scala", "_Line 0,0,0 20,0,0\n_Line 0,10,0 20,20,0\n_Arc3Pt 0,0,0 0,10,0 0,5,3\n_SelCrv _Sweep2", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      // in fondo la larghezza e' sqrt(20^2+20^2)... l'altezza scala con la larghezza (20 / 10)
+      CHECK(b && bb.m_max.z > 5.0 && bb.m_max.z < 6.5);
+    });
+    Case("Flow", "_Line 0,0 10,0\n_Line 0,20 0,30\n_Point 5,1,2\n_SelPt _Flow 0,0 0,20", [](Ctx& c) {
+      // (5,1,2) a 5 dalla base, 1 a sinistra, 2 in alto -> sulla linea verticale: (-1,25,2)
+      const auto* p = ON_Point::Cast(c.Last());
+      CHECK(p && NearPt(p->point, ON_3dPoint(-1, 25, 2), 1e-3));
+    });
+    Case("Flow_stretch", "_Line 0,0 10,0\n_Line 0,20 0,40\n_Point 5,0,0\n_SelPt _Flow Stretch=Yes 0,0 0,20", [](Ctx& c) {
+      const auto* p = ON_Point::Cast(c.Last());
+      CHECK(p && NearPt(p->point, ON_3dPoint(0, 30, 0), 1e-3));
+    });
+    Case("ArraySrf", "_Plane 0,0 10,10\n_Point 0,0,1\n_SelPt _ArraySrf 0,0,0 5,5 3 2", [](Ctx& c) {
+      CHECK(c.Objects().size() == 2 + 6);
+      bool found = false;
+      for (auto* g : c.Objects())
+        if (const auto* p = ON_Point::Cast(g)) if (NearPt(p->point, ON_3dPoint(10, 10, 1), 1e-6)) found = true;
+      CHECK(found);
+    });
+  }
+#endif
+
+#ifdef CAD_WITH_OCCT
   // Superfici e solidi, seconda parte
   {
     std::printf("Superfici e solidi (2)\n");
