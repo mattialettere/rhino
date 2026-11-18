@@ -803,6 +803,63 @@ int main(int argc, char** argv) {
 #endif
   }
 
+#ifdef CAD_WITH_OCCT
+  // Superfici e solidi, seconda parte
+  {
+    std::printf("Superfici e solidi (2)\n");
+    auto num = [](Ctx& c, const char* label) {
+      const std::string log = c.log.str();
+      auto p = log.rfind(label);
+      return p == std::string::npos ? -1.0 : std::atof(log.c_str() + p + std::strlen(label));
+    };
+    Case("SrfPt", "_SrfPt 0,0 10,0 10,5 0,5\n_SelAll _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 50.0, 1e-6));
+    });
+    Case("SrfPt_3", "_SrfPt 0,0 10,0 0,10 _Enter\n_SelAll _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 50.0, 1e-4));
+    });
+    Case("Plane3Pt", "_Plane3Pt 0,0 10,0 3,4\n_SelAll _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 40.0, 1e-6));
+    });
+    Case("PlaneVertical", "_PlaneVertical 0,0 3,4 2", [](Ctx& c) {
+      CHECK(NearPt(c.BBox().m_max, ON_3dPoint(3, 4, 2), 1e-9));
+    });
+    Case("ExtrudeCrvToPoint", "_Rectangle 0,0 10,10\n_SelAll _ExtrudeCrvToPoint 5,5,10\n_SelNone _SelSrf _Area", [&](Ctx& c) {
+      // 4 triangoli di base 10 e altezza obliqua sqrt(125)
+      CHECK(Near(num(c, "Area = "), 2.0 * 10.0 * std::sqrt(125.0), 1e-3));
+    });
+    Case("ExtrudeCrvAlongCrv", "_Line 20,0,0 20,0,5\n_Circle 0,0 2\n_SelNone _SelLast _ExtrudeCrvAlongCrv 20,0,0.1\n_SelNone _SelSrf _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 2.0 * ON_PI * 2.0 * 5.0, 1e-3));
+      CHECK(NearPt(c.BBox().m_max, ON_3dPoint(20, 2, 5), 1e-6));
+    });
+    Case("UntrimAll", "_Box 0,0,0 10,10 10\n_Cylinder 5,5,-1 2 12\n_SelAll _BooleanDifference\n_SelAll _UntrimAll", [](Ctx& c) {
+      int faces = 0, loops = 0;
+      for (auto* g : c.Objects()) if (auto* b = ON_Brep::Cast(g)) { faces += b->m_F.Count(); loops += b->m_L.Count(); }
+      CHECK(faces == 7 && loops == 7 && c.Objects().size() == 7);
+    });
+    Case("ShrinkTrimmedSrf", "_Box 0,0,0 10,10 10\n_SelAll _Explode\n_SelNone _SelSrf _ShrinkTrimmedSrf", [](Ctx& c) {
+      CHECK(c.Objects().size() == 6);
+    });
+    Case("EdgeSrf_4", "_Line 0,0 10,0\n_Line 10,0 10,10\n_Line 10,10 0,10\n_Line 0,10 0,0\n_SelAll _EdgeSrf\n_SelNone _SelSrf _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 100.0, 1e-3));
+    });
+    Case("EdgeSrf_2", "_Line 0,0 10,0\n_Line 0,10 10,10\n_SelAll _EdgeSrf\n_SelNone _SelSrf _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 100.0, 1e-3));
+    });
+    Case("Patch", "_Circle 0,0 5\n_SelAll _Patch\n_SelNone _SelSrf _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), ON_PI * 25.0, 0.5));
+    });
+    Case("Pyramid", "_Pyramid NumSides=4 0,0,0 5,5 6\n_SelAll _Volume", [&](Ctx& c) {
+      CHECK(ON_Brep::Cast(c.Last()) && ON_Brep::Cast(c.Last())->IsSolid());
+      // base quadrata di diagonale 2*sqrt(50) -> lato 10, area 100
+      CHECK(Near(num(c, "Volume = "), 100.0 * 6.0 / 3.0, 1e-3));
+    });
+    Case("Wedge", "_Wedge 0,0,0 10,4 3\n_SelAll _Volume", [&](Ctx& c) {
+      CHECK(Near(num(c, "Volume = "), 10.0 * 4.0 * 3.0 / 2.0, 1e-6));
+    });
+  }
+#endif
+
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);
 

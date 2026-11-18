@@ -19,8 +19,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Curve: forme | 13 / 19 |
 | Curve: forme libere | 6 / 18 |
 | Curve da oggetti | 8 / 14 |
-| Superfici | 9 / 29 |
-| Solidi | 17 / 24 |
+| Superfici | 18 / 29 |
+| Solidi | 19 / 24 |
 | SubD | 1 / 23 |
 | Mesh | 7 / 19 |
 | Trasformazioni | 14 / 30 |
@@ -31,7 +31,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Annotazioni | 11 / 14 |
 | Analisi | 10 / 15 |
 | File | 4 / 7 |
-| **Totale** | **155 / 303** |
+| **Totale** | **166 / 303** |
 
 ## Punti
 
@@ -134,21 +134,21 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | Plane | ✔ |
-| Plane3Pt | ⬜ |
-| PlaneVertical | ⬜ |
+| Plane3Pt | ✔ |
+| PlaneVertical | ✔ |
 | PlanarSrf | ✔ |
-| SrfPt | ⬜ |
-| EdgeSrf | 🧱 |
+| SrfPt | ✔ |
+| EdgeSrf | ✔ |
 | Loft | ✔ |
 | Sweep1 | ✔ |
 | Sweep2 | 🧱 |
 | NetworkSrf | 🧱 |
-| Patch | 🧱 |
+| Patch | ✔ |
 | Revolve | ✔ |
 | RailRevolve | 🧱 |
 | ExtrudeCrv | ✔ |
-| ExtrudeCrvAlongCrv | 🧱 |
-| ExtrudeCrvToPoint | ⬜ |
+| ExtrudeCrvAlongCrv | ✔ |
+| ExtrudeCrvToPoint | ✔ |
 | ExtrudeCrvTapered | 🧱 |
 | ExtrudeSrf | ✔ |
 | Pipe | ✔ |
@@ -158,8 +158,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | BlendSrf | 🧱 |
 | MatchSrf | 🧱 |
 | ExtendSrf | 🧱 |
-| ShrinkTrimmedSrf | 🧱 |
-| UntrimAll | ⬜ |
+| ShrinkTrimmedSrf | ✔ |
+| UntrimAll | ✔ |
 | Heightfield | ⬜ |
 | DevLoft | 🧱 |
 
@@ -176,9 +176,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | TruncatedCone | ✔ |
 | Torus | ✔ |
 | Ellipsoid | ✔ |
-| Pyramid | ⬜ |
+| Pyramid | ✔ |
 | Tube | ✔ |
-| Wedge | ⬜ |
+| Wedge | ✔ |
 | Cap | ✔ |
 | BooleanUnion | ✔ |
 | BooleanDifference | ✔ |

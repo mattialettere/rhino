@@ -165,6 +165,7 @@ void RegisterExtraCommands(Engine& e);
 #ifdef CAD_WITH_OCCT
 void RegisterKernelCommands(Engine& e);
 void RegisterCurveEditCommands(Engine& e);
+void RegisterSurfaceMoreCommands(Engine& e);
 #endif
 
 // Utilita' geometriche condivise
