@@ -453,7 +453,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | GroundPlane | ✔ |
 | SetDisplayMode | ✔ (Wireframe, Shaded, Ghosted, XRay, Rendered, Raytraced) |
 
-Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale semplice sugli oggetti selezionati: colore, lucentezza, riflessione, trasparenza, IOR; in Rhino si fa dal pannello Materiali), **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture) e **RemoveTexture**.
+Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale semplice sugli oggetti selezionati: colore, lucentezza, riflessione, trasparenza, IOR; in Rhino si fa dal pannello Materiali), **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture), **RemoveTexture** e **Collaborate** (lavoro in piu' persone sullo stesso progetto in rete locale, con chat e compiti per l'AI di ogni computer: D-067).
 
 ## Viste e sezioni
 

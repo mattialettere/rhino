@@ -186,6 +186,16 @@ Hugging Face mostra l'avanzamento e verifica licenza e SHA-256. I modelli
 stanno in `%LOCALAPPDATA%\Kurva3D\models`. llama.cpp e' nella cartella
 `llama` accanto a `kurva3d.exe` (usa la scheda video con Vulkan se c'e').
 
+## Collaborazione in rete locale
+
+Menu **Collabora** (comando `Collaborate`, estensione di Kurva3D che Rhino 8 non ha): piu' persone lavorano sullo stesso progetto da computer diversi della stessa rete.
+
+- **Ospitare**: *Avvia sessione* mostra un codice a 6 cifre e l'indirizzo IP del computer. Il progetto aperto e' quello condiviso.
+- **Entrare**: le sessioni della rete locale compaiono da sole nell'elenco (oppure si scrive l'indirizzo IP, anche `ip:porta`), poi il codice e *Entra*. Il modello aperto viene sostituito da quello dell'ospite.
+- Ogni modifica (comandi, Annulla, livelli, materiali, gruppi, blocchi, storia, grafo dei nodi) arriva agli altri subito, oggetto per oggetto. Le modifiche passano dall'ospite, che le mette in un unico ordine: tutti vedono lo stesso modello e, se due persone modificano lo stesso oggetto nello stesso momento, vale l'ultima arrivata. **Annulla** toglie solo i propri comandi, non il lavoro degli altri.
+- **Chat** tra i partecipanti e **Compito per un'AI**: si scrive una richiesta e si sceglie quale assistente AI la esegue (il proprio o quello di un altro computer). L'AI che riceve il compito lo genera con il suo modello locale, lo applica subito (senza anteprima) e risponde in chat con l'esito; il risultato si sincronizza con tutti. Ogni computer usa il proprio modello scaricato.
+- Porte: UDP 45454 (ricerca) e TCP 45455 (sessione). Al primo avvio di una sessione Windows chiede il permesso nel firewall: va consentito sulle reti private. Serve la stessa versione di Kurva3D su tutti i computer. Solo rete locale: da fuori serve una VPN. I dati viaggiano in chiaro, il codice impedisce solo l'accesso a chi non lo conosce (5 tentativi sbagliati bloccano l'indirizzo per un minuto).
+
 ## Modellare dalla console
 
 `cad-console` accetta i comandi con la stessa sintassi delle macro di Rhino 8.
