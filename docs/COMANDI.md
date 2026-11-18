@@ -28,10 +28,10 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Selezione | 18 / 19 |
 | Blocchi | 3 / 6 |
 | Livelli e proprieta' | 11 / 12 |
-| Annotazioni | 11 / 14 |
+| Annotazioni | 12 / 14 |
 | Analisi | 11 / 15 |
 | File | 7 / 7 |
-| **Totale** | **211 / 303** |
+| **Totale** | **212 / 303** |
 
 ## Punti
 
@@ -383,7 +383,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | DimRadius | ✔ |
 | DimDiameter | ✔ |
 | Centermark | ✔ |
-| DimOrdinate | ⬜ |
+| DimOrdinate | ✔ |
 | Leader | ✔ |
 | Dot | ✔ |
 | Hatch | ✔ |

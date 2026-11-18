@@ -257,6 +257,33 @@ bool CmdCentermark(Engine& e, TokenStream&) {
   return true;
 }
 
+// DimOrdinate: punto da quotare e fine della direttrice; l'origine e' quella
+// del piano di costruzione. La direzione misurata (X o Y) segue la direttrice,
+// come in Rhino: direttrice verticale -> coordinata X.
+bool CmdDimOrdinate(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto p = e.ReadPoint(ts, "punto da quotare");
+  if (!p) return false;
+  auto l = e.ReadPoint(ts, "fine della direttrice");
+  if (!l) return false;
+  e.SkipEnter(ts);
+  const ON_3dVector d = *l - *p;
+  if (d.Length() < e.Tolerance()) return e.Fail("la direttrice e' nulla");
+  const auto dir = std::fabs(d.y) >= std::fabs(d.x) ? ON_DimOrdinate::MeasuredDirection::Xaxis
+                                                    : ON_DimOrdinate::MeasuredDirection::Yaxis;
+  ON_Plane pl = ON_xy_plane;
+  pl.origin.z = p->z;
+  pl.UpdateEquation();
+  const ON_DimStyle& st = CurrentStyle(e);
+  const double kink = 2.0 * st.TextHeight();
+  auto* dim = new ON_DimOrdinate();
+  if (!dim->Create(st.Id(), pl, dir, pl.origin, *p, *l, kink, kink)) { delete dim; return e.Fail("quota non valida"); }
+  ApplyHeight(e, *dim, opts);
+  AddAnnotation(e, dim);
+  ReportDim(e, *dim, dim->Measurement(), dir == ON_DimOrdinate::MeasuredDirection::Xaxis ? "Quota coordinata X" : "Quota coordinata Y");
+  return true;
+}
+
 }  // namespace
 
 void RegisterAnnotationCommands(Engine& e) {
@@ -274,6 +301,7 @@ void RegisterAnnotationCommands(Engine& e) {
   reg("DimAngle", "Quota angolare (vertice, due punti, posizione)", CmdDimAngle);
   reg("Leader", "Direttrice con freccia e testo", CmdLeader);
   reg("Centermark", "Segno del centro di archi e cerchi", CmdCentermark);
+  reg("DimOrdinate", "Quota coordinata (punto, fine della direttrice)", CmdDimOrdinate);
 }
 
 }  // namespace cad

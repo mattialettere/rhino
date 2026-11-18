@@ -257,7 +257,7 @@ void MainWindow::BuildMenus() {
   addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
                       {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
                       {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
-                      {"Segno del centro", "_Centermark"}});
+                      {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
                          {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"},

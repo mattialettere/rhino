@@ -193,6 +193,29 @@ bool BuildAnnotationDisplay(const ONX_Model& model, const ON_Annotation& a, Anno
       const ON_3dPoint at = tp.IsValid() ? tp : dl;
       dimLabel(at, ON_CrossProduct(n, at - c), dimText(*ang));
     }
+  } else if (const auto* od = ON_DimOrdinate::Cast(&a)) {
+    ON_3dPoint bp, dp, lp, k1, k2;
+    if (!od->Get3dPoints(&bp, &dp, &lp, &k1, &k2, 2.0 * h)) return false;
+    // direttrice spezzata dal punto quotato (staccata di ExtOffset) alla fine
+    ON_3dVector v = k1 - dp;
+    const double eo = style.ExtOffset() * scale;
+    const ON_3dPoint start = v.Unitize() && dp.DistanceTo(k1) > eo ? dp + v * eo : dp;
+    out.wires.push_back({start, k1, k2, lp});
+    // testo in fondo alla direttrice, allineato con l'ultimo tratto
+    AnnotationLabel L;
+    L.text = dimText(*od);
+    ON_3dVector dir = lp - k2;
+    if (!dir.Unitize()) dir = lp - dp;
+    if (!dir.Unitize()) dir = a.Plane().xaxis;
+    const bool flip = (dir * a.Plane().xaxis < -1e-9) || (std::fabs(dir * a.Plane().xaxis) <= 1e-9 && dir * a.Plane().yaxis < 0);
+    L.xdir = flip ? -dir : dir;
+    L.ydir = ON_CrossProduct(n, L.xdir);
+    if (L.ydir.Unitize()) {
+      L.height = h;
+      L.halign = flip ? 2 : 0;
+      L.origin = lp + dir * gap - L.ydir * (0.5 * h);
+      out.labels.push_back(L);
+    }
   } else if (const auto* cm = ON_Centermark::Cast(&a)) {
     ON_Line lines[6];
     bool isl[6] = {};

@@ -619,6 +619,19 @@ int main(int argc, char** argv) {
       CHECK(ON_Centermark::Cast(c.Last()) != nullptr);
       CHECK(!display(c, c.Last()).wires.empty());
     });
+    Case("DimOrdinate_X", "_DimOrdinate 7,3 7,10", [&](Ctx& c) {
+      const auto* d = ON_DimOrdinate::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 7.0, 1e-9));
+      CHECK(c.log.str().find("Quota coordinata X = 7") != std::string::npos);
+      if (d) {
+        auto ad = display(c, d);
+        CHECK(!ad.wires.empty() && ad.labels.size() == 1 && !ad.labels.empty() && ad.labels[0].text.rfind("7", 0) == 0);
+      }
+    });
+    Case("DimOrdinate_Y", "_DimOrdinate 7,3 15,3", [&](Ctx& c) {
+      const auto* d = ON_DimOrdinate::Cast(c.Last());
+      CHECK(d && Near(d->Measurement(), 3.0, 1e-9));
+    });
   }
 
   // Altri comandi (CmdExtra)
