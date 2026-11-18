@@ -5,6 +5,7 @@
 #include "ai/Assistant.h"
 #include "commands/Engine.h"
 #include "commands/Grips.h"
+#include "commands/Materials.h"
 #include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
 #include <cmath>
@@ -1799,6 +1800,58 @@ int main(int argc, char** argv) {
     }
     CHECK(blocks == 2);
     CHECK(c.e.AllObjectIds(true).empty());  // la verifica non tocca il documento
+  }
+  {
+    std::printf("Texture\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/texture";
+    fs::create_directories(dir);
+    const std::string img = dir + "/legno chiaro.png";
+    { std::ofstream f(img, std::ios::binary); f << "immagine di prova 0123456789"; }
+    Ctx c;
+    CHECK(c.e.Run("_Box 0,0,0 10,20 5\n_SubDBox 30,0,0 40,10 10\n_SelAll\n_ApplyTexture File= \"" + img + "\" Repeat=2"));
+    const auto ids = c.e.AllObjectIds(true);
+    ObjectTexture t0, t1;
+    CHECK(ids.size() == 2 && GetObjectTexture(c.e.Model(), *c.e.Object(ids[0])->Attributes(nullptr), t0) &&
+          GetObjectTexture(c.e.Model(), *c.e.Object(ids[1])->Attributes(nullptr), t1));
+    CHECK(t0.file == img && t0.uvw[0][0] == 2.0 && t0.hasMapping && t1.hasMapping);
+    // solido NURBS: parametri della superficie; SubD: box
+    CHECK(t0.mapping.m_type == ON_TextureMapping::TYPE::srfp_mapping);
+    CHECK(t1.mapping.m_type == ON_TextureMapping::TYPE::box_mapping);
+    // un solo materiale anche applicando di nuovo la stessa immagine
+    CHECK(c.e.Run("_SelAll\n_ApplyTexture File= \"" + img + "\" Repeat=2 Mapping=Planar"));
+    int nmat = 0;
+    { ONX_ModelComponentIterator it(c.e.Model(), ON_ModelComponent::Type::RenderMaterial);
+      for (auto* m = it.FirstComponent(); m; m = it.NextComponent()) nmat++; }
+    CHECK(nmat == 1);
+    CHECK(GetObjectTexture(c.e.Model(), *c.e.Object(ids[0])->Attributes(nullptr), t0) &&
+          t0.mapping.m_type == ON_TextureMapping::TYPE::plane_mapping);
+    // la mappatura piana porta l'ingombro dell'oggetto in 0..1
+    ON_3dPoint T;
+    t0.mapping.Evaluate(ON_3dPoint(10, 20, 5), ON_3dVector::ZAxis, &T);
+    CHECK(std::fabs(T.x - 1) < 1e-6 && std::fabs(T.y - 1) < 1e-6);
+    CHECK(c.e.Run("_SelAll\n_ApplyCylindricalMapping"));
+    CHECK(GetObjectTexture(c.e.Model(), *c.e.Object(ids[1])->Attributes(nullptr), t1) &&
+          t1.mapping.m_type == ON_TextureMapping::TYPE::cylinder_mapping);
+    // salvataggio: materiale, mappatura e immagine incorporata restano nel .3dm
+    const std::string path = dir + "/texture.3dm";
+    CHECK(c.doc.Save(path));
+    fs::remove(img);
+    Document3dm back;
+    CHECK(back.Load(path));
+    ObjectTexture tb;
+    const auto* ob = back.Model().ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[1]).ModelComponent();
+    const auto* mgc = ON_ModelGeometryComponent::Cast(ob);
+    CHECK(mgc && GetObjectTexture(back.Model(), *mgc->Attributes(nullptr), tb) && tb.file == img &&
+          tb.hasMapping && tb.mapping.m_type == ON_TextureMapping::TYPE::cylinder_mapping);
+    const std::string res = ResolveTextureFile(back.Model(), img, dir + "/cache");
+    std::ifstream rf(res, std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(rf)), std::istreambuf_iterator<char>());
+    CHECK(!res.empty() && bytes == "immagine di prova 0123456789");
+    CHECK(c.e.Run("_SelAll\n_RemoveTexture"));
+    CHECK(!GetObjectTexture(c.e.Model(), *c.e.Object(ids[0])->Attributes(nullptr), t0));
+    Ctx bad;
+    CHECK(!bad.e.Run("_Box 0,0,0 1,1 1\n_SelAll\n_ApplyTexture File=nessuna.png"));
   }
   {
     std::printf("AI_lettura_risposta\n");

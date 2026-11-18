@@ -201,6 +201,7 @@ void RegisterExtra3Commands(Engine& e);
 void RegisterExtra4Commands(Engine& e);
 void RegisterExtra5Commands(Engine& e);
 void RegisterExtra6Commands(Engine& e);
+void RegisterMaterialCommands(Engine& e);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti
 int UpdateCageCaptives(Engine& e, const ON_UUID& cageId);
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.
