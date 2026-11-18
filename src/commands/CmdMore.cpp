@@ -532,6 +532,58 @@ bool CmdInsert(Engine& e, TokenStream& ts) {
   return true;
 }
 
+
+std::string Unquote(std::string n) {
+  if (n.size() >= 2 && n.front() == '"' && n.back() == '"') n = n.substr(1, n.size() - 2);
+  return n;
+}
+
+// ReplaceBlock: le istanze selezionate usano la definizione del blocco indicato.
+bool CmdReplaceBlock(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("ReplaceBlock", "seleziona le istanze da sostituire, poi Invio");
+  if (sel.empty()) return false;
+  auto name = e.ReadString(ts, "nome del blocco sostitutivo");
+  if (!name) return false;
+  const ON_InstanceDefinition* idef = FindBlock(e, Unquote(*name));
+  if (!idef) return e.Fail("blocco \"" + Unquote(*name) + "\" non trovato");
+  int n = 0;
+  for (const auto& id : sel) {
+    const auto* ir = ON_InstanceRef::Cast(Geo(e, id));
+    if (!ir) continue;
+    auto* nr = new ON_InstanceRef(*ir);
+    nr->m_instance_definition_uuid = idef->Id();
+    ON_BoundingBox bb = BlockBox(e, *idef);
+    if (bb.IsValid()) { bb.Transform(nr->m_xform); nr->m_bbox = bb; }
+    e.ReplaceObject(id, nr);
+    n++;
+  }
+  if (!n) return e.Fail("nessuna istanza di blocco selezionata");
+  e.Out() << "  Sostituite " << n << " istanze con \"" << Unquote(*name) << "\"\n";
+  return true;
+}
+
+// RenameBlock: nome attuale, nuovo nome.
+bool CmdRenameBlock(Engine& e, TokenStream& ts) {
+  auto oldName = e.ReadString(ts, "nome del blocco");
+  if (!oldName) return false;
+  auto newName = e.ReadString(ts, "nuovo nome");
+  if (!newName) return false;
+  const std::string from = Unquote(*oldName), to = Unquote(*newName);
+  const ON_InstanceDefinition* idef = FindBlock(e, from);
+  if (!idef) return e.Fail("blocco \"" + from + "\" non trovato");
+  if (to.empty()) return e.Fail("nome vuoto");
+  if (FindBlock(e, to)) return e.Fail("esiste gia' un blocco \"" + to + "\"");
+  // la definizione si sostituisce con una copia rinominata (stesso id: le istanze restano collegate)
+  auto* copy = new ON_InstanceDefinition(*idef);
+  const ON_UUID id = idef->Id();
+  e.Model().RemoveModelComponent(ON_ModelComponent::Type::InstanceDefinition, id);
+  copy->SetName(ON_wString(to.c_str()));
+  copy->SetId(id);
+  if (!e.Model().AddManagedModelComponent(copy, false).ModelComponent()) return e.Fail("rinomina non riuscita");
+  e.Out() << "  Blocco \"" << from << "\" rinominato in \"" << to << "\"\n";
+  return true;
+}
+
 bool CmdExplodeBlock(Engine& e, TokenStream&) {
   auto sel = e.RequireSelection("ExplodeBlock", "seleziona le istanze di blocco, poi Invio");
   if (sel.empty()) return false;
@@ -589,6 +641,8 @@ void RegisterMoreCommands(Engine& e) {
   reg("Block", "Blocchi", "Crea una definizione di blocco dagli oggetti selezionati (Name=)", CmdBlock);
   reg("Insert", "Blocchi", "Inserisce un blocco (nome, punto, scala, rotazione)", CmdInsert);
   reg("ExplodeBlock", "Blocchi", "Trasforma le istanze di blocco in oggetti normali", CmdExplodeBlock);
+  reg("ReplaceBlock", "Blocchi", "Le istanze selezionate usano un altro blocco", CmdReplaceBlock);
+  reg("RenameBlock", "Blocchi", "Rinomina un blocco", CmdRenameBlock);
 }
 
 }  // namespace cad

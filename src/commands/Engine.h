@@ -184,6 +184,7 @@ void RegisterKernelCommands(Engine& e);
 void RegisterCurveEditCommands(Engine& e);
 void RegisterSurfaceMoreCommands(Engine& e);
 void RegisterSurface3Commands(Engine& e);
+void RegisterKernel4Commands(Engine& e);
 #endif
 
 // Utilita' geometriche condivise

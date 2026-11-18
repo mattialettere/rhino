@@ -555,6 +555,18 @@ int main(int argc, char** argv) {
       ON_BoundingBox bb = c.BBox();
       CHECK(Near(bb.m_max.x, 26.0, 1e-6));  // seconda istanza: cerchio raggio 3*2=6 attorno a x=20
     });
+    Case("ReplaceBlock", "_Box 0,0,0 2,2 2\n_SelAll _Block Name=A 0,0,0\n_SelNone\n_Sphere 10,0,0 1\n_SelLast _Block Name=B 10,0,0\n"
+                         "_SelNone\n_Insert A 20,0,0\n_SelLast _ReplaceBlock B", [](Ctx& c) {
+      int toB = 0;
+      const auto* b = ON_InstanceDefinition::Cast(c.doc.Model().ComponentFromName(ON_ModelComponent::Type::InstanceDefinition, ON_nil_uuid, L"B").ModelComponent());
+      for (auto* g : c.Objects()) if (const auto* ir = ON_InstanceRef::Cast(g)) if (b && ir->m_instance_definition_uuid == b->Id()) toB++;
+      CHECK(toB == 2);
+    });
+    Case("RenameBlock", "_Box 0,0,0 2,2 2\n_SelAll _Block Name=Vecchio 0,0,0\n_RenameBlock Vecchio Nuovo\n_Insert Nuovo 10,0,0", [](Ctx& c) {
+      int refs = 0;
+      for (auto* g : c.Objects()) if (ON_InstanceRef::Cast(g)) refs++;
+      CHECK(refs == 2 && c.doc.Model().ActiveComponentCount(ON_ModelComponent::Type::InstanceDefinition) == 1);
+    });
     Case("ExplodeBlock", "_Box 0,0,0 2,2 2\n_SelAll _Block 0,0,0\n_SelAll _ExplodeBlock", [](Ctx& c) {
       CHECK(c.Objects().size() == 1 && ON_Extrusion::Cast(c.Last()));
     });
@@ -1117,6 +1129,46 @@ int main(int argc, char** argv) {
       CHECK(m && (m->TangentAt(m->Domain()[1]) - ON_3dVector(0, 1, 0)).Length() < 1e-9);
       CHECK(m && (m->CurvatureAt(m->Domain()[1]) - ON_3dVector(0.2, 0, 0)).Length() < 1e-6);
     });
+    Case("CircleTangent", "_Line -10,0 10,0\n_Line -10,10 10,10\n_Line -5,-10 -5,20\n_CircleTangent 1,0 1,10 -5,4", [](Ctx& c) {
+      const auto* a = ON_ArcCurve::Cast(c.Last());
+      CHECK(a && a->IsCircle() && Near(a->m_arc.Radius(), 5, 1e-6) && NearPt(a->m_arc.Center(), ON_3dPoint(0, 5, 0), 1e-6));
+    });
+    Case("ArcTangent", "_Line 0,0 10,0\n_Line 0,0 0,10\n_ArcTangent 5,0 0,5 2", [](Ctx& c) {
+      const auto* a = ON_ArcCurve::Cast(c.Last());
+      CHECK(a && Near(a->m_arc.Radius(), 2, 1e-6) && NearPt(a->m_arc.Center(), ON_3dPoint(2, 2, 0), 1e-6));
+      CHECK(a && Near(a->m_arc.AngleDegrees(), 90, 1e-6));
+    });
+    Case("PolylineOnMesh", "_MeshSphere 0,0,0 10\n_PolylineOnMesh 10,0,0 10,0,0 0,10,0 _Enter", [](Ctx& c) {
+      const auto* pl = ON_PolylineCurve::Cast(c.Last());
+      CHECK(pl && pl->PointCount() > 5);
+      bool ok = pl != nullptr;
+      for (int i = 0; pl && i < pl->PointCount(); i++) ok = ok && pl->m_pline[i].DistanceTo(ON_origin) > 9 && pl->m_pline[i].DistanceTo(ON_origin) < 10.001;
+      CHECK(ok);
+    });
+    Case("ExtractMeshPart", "_MeshBox 0,0 1,1 1\n_MeshBox 5,0 6,1 1\n_SelMesh _Join\n_ExtractMeshPart 5.5,0.5,1", [](Ctx& c) {
+      CHECK(c.Objects().size() == 2);
+      for (auto* g : c.Objects()) if (const auto* m = ON_Mesh::Cast(g)) CHECK(m->FaceCount() == 6);
+    });
+    Case("Unweld", "_MeshSphere 0,0,0 10\n_SelAll _Unweld Angle=0", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      // senza saldature: ogni faccia ha i suoi vertici
+      CHECK(m && m->VertexCount() > 0 && m->IsValid());
+      int corners = 0;
+      for (int i = 0; m && i < m->FaceCount(); i++) corners += m->m_F[i].IsQuad() ? 4 : 3;
+      CHECK(m && m->VertexCount() == corners);
+    });
+    Case("UnweldEdge", "_MeshBox 0,0 10,10 10\n_UnweldEdge 5,0,0 10,5,0 5,10,0 0,5,0 _Enter", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->VertexCount() == 12);  // la faccia di fondo ha vertici suoi
+    });
+    Case("ToSubD_mesh", "_MeshBox 0,0 10,10 10\n_SelAll _ToSubD", [](Ctx& c) {
+      const auto* s = ON_SubD::Cast(c.Last());
+      CHECK(s && s->IsValid() && s->FaceCount() == 6 && c.Objects().size() == 1);
+    });
+    Case("ToSubD_superficie", "_SrfPt 0,0 10,0 10,10 0,10\n_SelAll _ToSubD", [](Ctx& c) {
+      const auto* s = ON_SubD::Cast(c.Last());
+      CHECK(s && s->IsValid() && s->FaceCount() == 1);
+    });
     Case("Twist_linea", "_Line 5,0,0 5,0,10\n_SelAll _Twist 0,0,0 0,0,10 90", [](Ctx& c) {
       const auto* cv = ON_Curve::Cast(c.Last());
       // la cima ruota di 90 gradi attorno a z: (5,0,10) -> (0,5,10)
@@ -1312,6 +1364,56 @@ int main(int argc, char** argv) {
       bool ok = nc != nullptr;
       for (int i = 0; nc && i <= 100; i++) ok = ok && std::fabs(nc->PointAt(nc->Domain().ParameterAt(i / 100.0)).DistanceTo(ON_origin) - 10) < 0.002;
       CHECK(ok);
+    });
+    Case("Make2D_front", "_Box 0,0,0 10,4 6\n_SelAll _Make2D View=Front", [](Ctx& c) {
+      // il rettangolo della vista frontale: x 0..10, y = z 0..6, sul piano xy
+      ON_BoundingBox bb;
+      int curves = 0;
+      for (auto* g : c.Objects()) if (const auto* cv = ON_Curve::Cast(g)) { ON_BoundingBox t; cv->GetTightBoundingBox(t); bb.Union(t); curves++; }
+      CHECK(curves >= 1 && NearPt(bb.m_min, ON_3dPoint(0, 0, 0), 1e-6) && NearPt(bb.m_max, ON_3dPoint(10, 6, 0), 1e-6));
+    });
+    Case("Make2D_nascoste", "_Cylinder 0,0,0 5 10\n_SelAll _Make2D View=Top ShowHidden=Yes", [](Ctx& c) {
+      int curves = 0;
+      for (auto* g : c.Objects()) if (ON_Curve::Cast(g)) curves++;
+      CHECK(curves >= 1);
+    });
+    Case("MoveFace", "_Box 0,0,0 10,10 10\n_MoveFace 10,5,5 0,0,0 5,0,0\n_SelAll _Volume", [](Ctx& c) {
+      const std::string log = c.log.str();
+      const auto p = log.rfind("Volume = ");
+      CHECK(p != std::string::npos && Near(std::atof(log.c_str() + p + 9), 1500, 1e-3));
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->m_F.Count() == 6);
+    });
+    Case("MoveFace_dentro", "_Box 0,0,0 10,10 10\n_MoveFace 5,5,10 0,0,0 0,0,-4\n_SelAll _Volume", [](Ctx& c) {
+      const std::string log = c.log.str();
+      const auto p = log.rfind("Volume = ");
+      CHECK(p != std::string::npos && Near(std::atof(log.c_str() + p + 9), 600, 1e-3));
+    });
+    Case("FlowAlongSrf", "_Plane 0,0 10,10\n_Plane 0,20 20,40\n_Point 5,2,1\n_SelPt _FlowAlongSrf 1,1 1,21", [](Ctx& c) {
+      const auto* p = ON_Point::Cast(c.Last());
+      CHECK(p && NearPt(p->point, ON_3dPoint(10, 24, 1), 1e-4));
+    });
+    Case("OrientOnSrf", "_Sphere 0,0,0 10\n_Point 0,0,1\n_SelPt _OrientOnSrf 0,0,0 10,0,0 10,0,0 _Enter", [](Ctx& c) {
+      // il punto alto 1 sopra la base finisce a distanza 1 lungo la normale
+      bool found = false;
+      for (auto* g : c.Objects())
+        if (const auto* p = ON_Point::Cast(g)) if (Near(p->point.DistanceTo(ON_origin), 11, 1e-4) || Near(p->point.DistanceTo(ON_origin), 9, 1e-4)) found = true;
+      CHECK(found);
+    });
+    Case("Join_superfici", "_Plane 0,0 10,10\n_Plane 10,0 20,10\n_SelAll _Join", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(c.Objects().size() == 1 && b && b->m_F.Count() == 2);
+    });
+    Case("Join_solido", "_Box 0,0,0 10,10 10\n_SelAll _Explode\n_SelAll _Join\n_SelAll _Volume", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(c.Objects().size() == 1 && b && b->IsSolid());
+      const std::string log = c.log.str();
+      const auto p = log.rfind("Volume = ");
+      CHECK(p != std::string::npos && Near(std::atof(log.c_str() + p + 9), 1000, 1e-3));
+    });
+    Case("Join_mesh", "_MeshBox 0,0 1,1 1\n_MeshBox 5,0 6,1 1\n_SelMesh _Join", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(c.Objects().size() == 1 && m && m->FaceCount() == 12);
     });
     Case("ArraySrf", "_Plane 0,0 10,10\n_Point 0,0,1\n_SelPt _ArraySrf 0,0,0 5,5 3 2", [](Ctx& c) {
       CHECK(c.Objects().size() == 2 + 6);

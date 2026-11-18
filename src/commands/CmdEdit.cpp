@@ -1,6 +1,16 @@
 // Comandi di modifica (menu Modifica di Rhino 8).
 #include "commands/Engine.h"
 #include <memory>
+#ifdef CAD_WITH_OCCT
+#include "kernel/OcctConvert.h"
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRep_Tool.hxx>
+#include <ShapeFix_Solid.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Iterator.hxx>
+#endif
 
 namespace cad {
 namespace {
@@ -18,10 +28,77 @@ bool CmdDelete(Engine& e, TokenStream&) {
   return true;
 }
 
-// Join: unisce le curve selezionate che si toccano entro la tolleranza.
+// Join di mesh: una sola mesh con tutte le facce (come Rhino, senza saldare i vertici).
+int JoinMeshes(Engine& e, const std::vector<ON_UUID>& sel) {
+  std::vector<ON_UUID> ids;
+  for (const auto& id : sel)
+    if (const auto* o = e.Object(id); o && ON_Mesh::Cast(o->Geometry(nullptr))) ids.push_back(id);
+  if (ids.size() < 2) return 0;
+  auto* m = new ON_Mesh(*ON_Mesh::Cast(e.Object(ids[0])->Geometry(nullptr)));
+  for (size_t i = 1; i < ids.size(); i++) m->Append(*ON_Mesh::Cast(e.Object(ids[i])->Geometry(nullptr)));
+  const ON_3dmObjectAttributes a = AttrsOf(e.Object(ids[0]));
+  for (const auto& id : ids) e.DeleteObject(id);
+  e.AddObject(m, &a);
+  e.Out() << "  " << ids.size() << " mesh unite in una\n";
+  return (int)ids.size();
+}
+
+#ifdef CAD_WITH_OCCT
+// Join di superfici e polisuperfici: cucitura dei bordi coincidenti entro la
+// tolleranza; un guscio chiuso diventa un solido.
+int JoinSurfaces(Engine& e, const std::vector<ON_UUID>& sel) {
+  std::vector<ON_UUID> ids;
+  BRepBuilderAPI_Sewing sew(e.Tolerance());
+  int faces = 0;
+  for (const auto& id : sel) {
+    const auto* o = e.Object(id);
+    const ON_Geometry* g = o ? o->Geometry(nullptr) : nullptr;
+    if (!g || !(ON_Brep::Cast(g) || ON_Extrusion::Cast(g) || ON_Surface::Cast(g))) continue;
+    TopoDS_Shape s = occt::GeometryToShape(*g, e.Tolerance());
+    if (s.IsNull()) continue;
+    for (TopExp_Explorer ex(s, TopAbs_FACE); ex.More(); ex.Next()) { sew.Add(ex.Current()); faces++; }
+    ids.push_back(id);
+  }
+  if (ids.size() < 2) return 0;
+  try { sew.Perform(); } catch (...) { return 0; }
+  TopoDS_Shape r = sew.SewedShape();
+  std::vector<TopoDS_Shape> parts;
+  if (r.ShapeType() == TopAbs_COMPOUND) for (TopoDS_Iterator it(r); it.More(); it.Next()) parts.push_back(it.Value());
+  else parts.push_back(r);
+  if (parts.size() >= ids.size()) return 0;  // niente si e' unito
+  const ON_3dmObjectAttributes a = AttrsOf(e.Object(ids[0]));
+  std::vector<ON_Brep*> out;
+  for (auto& p : parts) {
+    TopoDS_Shape q = p;
+    if (p.ShapeType() == TopAbs_SHELL && p.Closed()) {
+      BRepBuilderAPI_MakeSolid ms(TopoDS::Shell(p));
+      if (ms.IsDone()) { ShapeFix_Solid fix(ms.Solid()); fix.Perform(); q = fix.Solid(); }
+    }
+    if (ON_Brep* b = occt::ShapeToBrep(q, e.Tolerance())) out.push_back(b);
+  }
+  if (out.empty()) return 0;
+  for (const auto& id : ids) e.DeleteObject(id);
+  for (auto* b : out) e.AddObject(b, &a);
+  e.Out() << "  " << ids.size() << " superfici unite in " << out.size() << " polisuperfici\n";
+  return (int)ids.size();
+}
+#endif
+
+// Join: unisce le curve selezionate che si toccano entro la tolleranza; le mesh
+// in una mesh; le superfici e polisuperfici con bordi coincidenti in polisuperfici.
 bool CmdJoin(Engine& e, TokenStream&) {
   auto sel = e.RequireSelection("Join");
   if (sel.empty()) return false;
+  int joinedOther = JoinMeshes(e, sel);
+#ifdef CAD_WITH_OCCT
+  joinedOther += JoinSurfaces(e, sel);
+#endif
+  {
+    // le curve rimaste nella selezione
+    std::vector<ON_UUID> rest;
+    for (const auto& id : sel) if (e.Object(id)) rest.push_back(id);
+    sel = rest;
+  }
   ON_SimpleArray<const ON_Curve*> in;
   std::vector<ON_UUID> inIds;
   for (const auto& id : sel) {
@@ -31,13 +108,13 @@ bool CmdJoin(Engine& e, TokenStream&) {
       inIds.push_back(id);
     }
   }
-  if (in.Count() < 2) return e.Fail("seleziona almeno 2 curve");
+  if (in.Count() < 2) return joinedOther > 0 || e.Fail("seleziona almeno 2 curve, superfici o mesh");
   ON_SimpleArray<ON_Curve*> out;
   ON_SimpleArray<int> key;
   ON_JoinCurves(in, out, e.Tolerance(), false, &key);
   if (out.Count() >= in.Count()) {
     for (int i = 0; i < out.Count(); i++) delete out[i];
-    return e.Fail("nessuna curva unita");
+    return joinedOther > 0 || e.Fail("nessuna curva unita");
   }
   // Ogni risultato prende gli attributi della prima curva che lo compone.
   std::vector<ON_3dmObjectAttributes> attrs(out.Count());
@@ -186,7 +263,7 @@ bool CmdDupBorder(Engine& e, TokenStream&) {
 
 void RegisterEditCommands(Engine& e) {
   e.Register({"Delete", "Modifica", "Elimina gli oggetti selezionati", CmdDelete});
-  e.Register({"Join", "Modifica", "Unisce curve contigue", CmdJoin});
+  e.Register({"Join", "Modifica", "Unisce curve, superfici o mesh contigue", CmdJoin});
   e.Register({"Explode", "Modifica", "Esplode policurve, polilinee, polisuperfici", CmdExplode});
   e.Register({"Flip", "Modifica", "Inverte direzione di curve e normali", CmdFlip});
   e.Register({"Hide", "Visibilita'", "Nasconde gli oggetti selezionati", CmdHide});

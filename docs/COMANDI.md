@@ -15,23 +15,23 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Categoria | Fatti / totali |
 |---|---|
 | Punti | 6 / 9 |
-| Curve: linee e polilinee | 10 / 11 |
-| Curve: forme | 17 / 19 |
+| Curve: linee e polilinee | 11 / 11 |
+| Curve: forme | 19 / 19 |
 | Curve: forme libere | 12 / 18 |
-| Curve da oggetti | 12 / 14 |
+| Curve da oggetti | 13 / 14 |
 | Superfici | 23 / 29 |
-| Solidi | 23 / 24 |
-| SubD | 10 / 23 |
-| Mesh | 15 / 19 |
-| Trasformazioni | 23 / 30 |
+| Solidi | 24 / 24 |
+| SubD | 11 / 23 |
+| Mesh | 17 / 19 |
+| Trasformazioni | 25 / 30 |
 | Modifica | 28 / 34 |
 | Selezione | 18 / 19 |
-| Blocchi | 3 / 6 |
+| Blocchi | 4 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 12 / 14 |
 | Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **245 / 303** |
+| **Totale** | **256 / 303** |
 
 ## Punti
 
@@ -56,7 +56,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | LineSrfNormal | ✔ |
 | Polyline | ✔ |
 | PolylineThroughPoints | ✔ |
-| PolylineOnMesh | 🧱 |
+| PolylineOnMesh | ✔ |
 | ConvertToPolyline | ✔ |
 | Tangent | ✔ |
 | Perpendicular | ✔ |
@@ -75,10 +75,10 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | PolygonEdge | ✔ |
 | Circle | ✔ |
 | Circle3Pt | ✔ |
-| CircleTangent | 🧱 |
+| CircleTangent | ✔ |
 | Arc | ✔ |
 | Arc3Pt | ✔ |
-| ArcTangent | 🧱 |
+| ArcTangent | ✔ |
 | Ellipse | ✔ |
 | EllipseDiameter | ✔ |
 | Parabola | ✔ |
@@ -127,7 +127,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ExtractIsocurve | ✔ |
 | ExtractWireframe | ✔ |
 | ProjectToCPlane | ✔ |
-| Make2D | 🧱 |
+| Make2D | ✔ |
 
 ## Superfici
 
@@ -188,7 +188,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ChamferEdge | ✔ |
 | Shell | ✔ |
 | MergeAllFaces | ✔ |
-| MoveFace | 🧱 |
+| MoveFace | ✔ |
 | ExtractSrf | ✔ |
 | Slab | ✔ |
 
@@ -203,7 +203,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SubDTorus | ✔ |
 | SubDPlane | ✔ |
 | SubDFromMesh | ✔ |
-| ToSubD | 🧱 |
+| ToSubD | ✔ |
 | ToNURBS | 🧱 |
 | SubDLoft | 🧱 |
 | SubDSweep | 🧱 |
@@ -238,11 +238,11 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | MeshBooleanUnion | ✔ |
 | MeshBooleanDifference | ✔ |
 | Weld | ✔ |
-| UnweldEdge | 🧱 |
+| UnweldEdge | ✔ |
 | FillMeshHoles | ✔ |
 | UnifyMeshNormals | ✔ |
 | MeshToNURB | ✔ |
-| ExtractMeshPart | ⬜ |
+| ExtractMeshPart | ✔ |
 
 ## Trasformazioni
 
@@ -259,7 +259,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Mirror | ✔ |
 | Orient | ✔ |
 | Orient3Pt | ✔ |
-| OrientOnSrf | 🧱 |
+| OrientOnSrf | ✔ |
 | Array | ✔ |
 | ArrayLinear | ✔ |
 | ArrayPolar | ✔ |
@@ -272,7 +272,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Bend | ✔ |
 | Taper | ✔ |
 | Flow | ✔ |
-| FlowAlongSrf | 🧱 |
+| FlowAlongSrf | ✔ |
 | Splop | 🧱 |
 | CageEdit | 🧱 |
 | Smash | 🧱 |
@@ -351,7 +351,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ExplodeBlock | ✔ |
 | BlockEdit | ⬜ |
 | BlockManager | ⬜ |
-| ReplaceBlock | ⬜ |
+| ReplaceBlock | ✔ |
 
 ## Livelli e proprieta'
 

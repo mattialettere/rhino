@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <memory>
 #include <queue>
@@ -427,6 +428,423 @@ bool CmdMatch(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// --- CircleTangent / ArcTangent -------------------------------------------------------------
+// Sistema non lineare risolto con Newton (jacobiano numerico) nel piano xy
+// della prima scelta.
+bool SolveNewton(std::vector<double>& x, const std::function<std::vector<double>(const std::vector<double>&)>& F) {
+  const size_t n = x.size();
+  for (int it = 0; it < 100; it++) {
+    const std::vector<double> f = F(x);
+    double norm = 0;
+    for (double v : f) norm = std::max(norm, std::fabs(v));
+    if (norm < 1e-12) return true;
+    std::vector<std::vector<double>> J(n, std::vector<double>(n + 1));
+    for (size_t j = 0; j < n; j++) {
+      std::vector<double> xp = x;
+      const double h = 1e-7 * std::max(1.0, std::fabs(x[j]));
+      xp[j] += h;
+      const std::vector<double> fp = F(xp);
+      for (size_t i = 0; i < n; i++) J[i][j] = (fp[i] - f[i]) / h;
+    }
+    for (size_t i = 0; i < n; i++) J[i][n] = -f[i];
+    for (size_t c = 0; c < n; c++) {  // Gauss con pivot
+      size_t piv = c;
+      for (size_t r = c + 1; r < n; r++) if (std::fabs(J[r][c]) > std::fabs(J[piv][c])) piv = r;
+      std::swap(J[c], J[piv]);
+      if (std::fabs(J[c][c]) < 1e-18) return false;
+      for (size_t r = 0; r < n; r++) {
+        if (r == c) continue;
+        const double k = J[r][c] / J[c][c];
+        for (size_t q = c; q <= n; q++) J[r][q] -= k * J[c][q];
+      }
+    }
+    double step = 0;
+    for (size_t i = 0; i < n; i++) { const double d = J[i][n] / J[i][i]; x[i] += d; step = std::max(step, std::fabs(d)); }
+    if (step < 1e-14) break;
+  }
+  const std::vector<double> f = F(x);
+  double norm = 0;
+  for (double v : f) norm = std::max(norm, std::fabs(v));
+  return norm < 1e-8;
+}
+
+struct Pick { const ON_Curve* c; double t; ON_3dPoint p; };
+
+bool ReadCurvePick(Engine& e, TokenStream& ts, const char* prompt, Pick& out) {
+  auto p = e.ReadPick(ts, prompt);
+  if (!p) return false;
+  out.p = *p;
+  out.c = PickCurve(e, *p, out.t);
+  if (!out.c) return e.Fail("curva non trovata");
+  return true;
+}
+
+// Circonferenza tangente a tre curve (vicino ai punti cliccati).
+bool CmdCircleTangent(Engine& e, TokenStream& ts) {
+  Pick k[3];
+  const char* prompts[3] = {"prima curva tangente", "seconda curva tangente", "terza curva tangente"};
+  for (int i = 0; i < 3; i++) if (!ReadCurvePick(e, ts, prompts[i], k[i])) return false;
+  const double z = k[0].p.z;
+  // partenza: il cerchio per i tre punti cliccati
+  ON_Circle c0;
+  if (!c0.Create(k[0].p, k[1].p, k[2].p)) return e.Fail("punti allineati");
+  std::vector<double> x = {c0.Center().x, c0.Center().y, c0.Radius(), k[0].t, k[1].t, k[2].t};
+  auto F = [&](const std::vector<double>& v) {
+    std::vector<double> f;
+    for (int i = 0; i < 3; i++) {
+      const double t = std::clamp(v[3 + i], k[i].c->Domain()[0], k[i].c->Domain()[1]);
+      const ON_3dPoint P = k[i].c->PointAt(t);
+      const ON_3dVector T = k[i].c->TangentAt(t);
+      const double dx = P.x - v[0], dy = P.y - v[1];
+      f.push_back(dx * dx + dy * dy - v[2] * v[2]);
+      f.push_back(dx * T.x + dy * T.y);
+    }
+    return f;
+  };
+  if (!SolveNewton(x, F) || x[2] <= e.Tolerance()) return e.Fail("nessun cerchio tangente trovato vicino ai punti");
+  ON_Circle circ(ON_Plane(ON_3dPoint(x[0], x[1], z), ON_3dVector::ZAxis), std::fabs(x[2]));
+  e.AddObject(new ON_ArcCurve(circ));
+  e.Out() << "  Creato cerchio tangente, raggio " << std::fabs(x[2]) << "\n";
+  return true;
+}
+
+// Arco di raggio dato tangente a due curve.
+bool CmdArcTangent(Engine& e, TokenStream& ts) {
+  Pick k[2];
+  if (!ReadCurvePick(e, ts, "prima curva tangente", k[0]) || !ReadCurvePick(e, ts, "seconda curva tangente", k[1])) return false;
+  auto r = e.ReadNumber(ts, "raggio");
+  if (!r) return false;
+  if (*r <= e.Tolerance()) return e.Fail("raggio non valido");
+  const double R = *r, z = k[0].p.z;
+  // partenza: centro spostato dal punto medio verso l'interno dell'angolo tra le tangenti
+  ON_3dPoint m = 0.5 * (k[0].p + k[1].p);
+  ON_3dVector n0 = ON_CrossProduct(ON_3dVector::ZAxis, k[0].c->TangentAt(k[0].t));
+  if ((m - k[0].p) * n0 < 0) n0 = -n0;
+  ON_3dPoint start = k[0].c->PointAt(k[0].t) + n0 * R;
+  std::vector<double> x = {start.x, start.y, k[0].t, k[1].t};
+  auto F = [&](const std::vector<double>& v) {
+    std::vector<double> f;
+    for (int i = 0; i < 2; i++) {
+      const double t = std::clamp(v[2 + i], k[i].c->Domain()[0], k[i].c->Domain()[1]);
+      const ON_3dPoint P = k[i].c->PointAt(t);
+      const ON_3dVector T = k[i].c->TangentAt(t);
+      const double dx = P.x - v[0], dy = P.y - v[1];
+      f.push_back(dx * dx + dy * dy - R * R);
+      f.push_back(dx * T.x + dy * T.y);
+    }
+    return f;
+  };
+  if (!SolveNewton(x, F)) return e.Fail("nessun arco tangente trovato vicino ai punti");
+  const ON_3dPoint C(x[0], x[1], z);
+  ON_3dPoint A = k[0].c->PointAt(x[2]), B = k[1].c->PointAt(x[3]);
+  A.z = B.z = z;
+  ON_3dVector bis = (A - C) + (B - C);
+  if (!bis.Unitize()) return e.Fail("arco degenere");
+  ON_Arc arc;
+  if (!arc.Create(A, C + bis * R, B)) return e.Fail("arco non valido");
+  e.AddObject(new ON_ArcCurve(arc));
+  e.Out() << "  Creato arco tangente\n";
+  return true;
+}
+
+// --- mesh: punto piu' vicino, PolylineOnMesh, ExtractMeshPart, Unweld, UnweldEdge ----------
+ON_3dPoint ClosestOnTriangle(const ON_3dPoint& p, const ON_3dPoint& a, const ON_3dPoint& b, const ON_3dPoint& c) {
+  // Ericson, Real-Time Collision Detection 5.1.5
+  const ON_3dVector ab = b - a, ac = c - a, ap = p - a;
+  const double d1 = ab * ap, d2 = ac * ap;
+  if (d1 <= 0 && d2 <= 0) return a;
+  const ON_3dVector bp = p - b;
+  const double d3 = ab * bp, d4 = ac * bp;
+  if (d3 >= 0 && d4 <= d3) return b;
+  const double vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return a + ab * (d1 / (d1 - d3));
+  const ON_3dVector cp = p - c;
+  const double d5 = ab * cp, d6 = ac * cp;
+  if (d6 >= 0 && d5 <= d6) return c;
+  const double vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return a + ac * (d2 / (d2 - d6));
+  const double va = d3 * d6 - d5 * d4;
+  if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+  const double den = 1.0 / (va + vb + vc);
+  return a + ab * (vb * den) + ac * (vc * den);
+}
+
+ON_3dPoint ClosestOnMesh(const ON_Mesh& m, const ON_3dPoint& p, int* faceOut = nullptr) {
+  double best = 1e300;
+  ON_3dPoint out = p;
+  for (int i = 0; i < m.FaceCount(); i++) {
+    const ON_MeshFace& f = m.m_F[i];
+    const int tri[2][3] = {{f.vi[0], f.vi[1], f.vi[2]}, {f.vi[0], f.vi[2], f.vi[3]}};
+    for (int t = 0; t < (f.IsQuad() ? 2 : 1); t++) {
+      const ON_3dPoint q = ClosestOnTriangle(p, m.Vertex(tri[t][0]), m.Vertex(tri[t][1]), m.Vertex(tri[t][2]));
+      const double d = q.DistanceTo(p);
+      if (d < best) { best = d; out = q; if (faceOut) *faceOut = i; }
+    }
+  }
+  return out;
+}
+
+const ON_Mesh* PickMesh(Engine& e, const ON_3dPoint& p, ON_UUID* idOut, int* faceOut) {
+  double best = 1e300;
+  const ON_Mesh* out = nullptr;
+  for (const auto& id : e.AllObjectIds(false)) {
+    const auto* m = ON_Mesh::Cast(Geo(e, id));
+    if (!m) continue;
+    int f = -1;
+    const double d = ClosestOnMesh(*m, p, &f).DistanceTo(p);
+    if (d < best) { best = d; out = m; if (idOut) *idOut = id; if (faceOut) *faceOut = f; }
+  }
+  return out;
+}
+
+bool CmdPolylineOnMesh(Engine& e, TokenStream& ts) {
+  auto pm = e.ReadPick(ts, "clicca la mesh");
+  if (!pm) return false;
+  const ON_Mesh* m = PickMesh(e, *pm, nullptr, nullptr);
+  if (!m) return e.Fail("mesh non trovata");
+  std::vector<ON_3dPoint> pts;
+  while (true) {
+    if (pts.size() >= 2 && !e.MoreInput(ts)) break;
+    auto q = e.ReadPoint(ts, pts.size() < 2 ? "punto sulla mesh" : "punto successivo (Invio per finire)");
+    if (!q) { if (pts.size() >= 2) break; return false; }
+    pts.push_back(ClosestOnMesh(*m, *q));
+  }
+  e.SkipEnter(ts);
+  ON_3dPointArray pl;
+  for (size_t i = 0; i + 1 < pts.size(); i++) {
+    const int n = 16;
+    for (int k = 0; k < n; k++) {
+      const ON_3dPoint q = ClosestOnMesh(*m, pts[i] + (pts[i + 1] - pts[i]) * (double(k) / n));
+      if (pl.Count() == 0 || pl[pl.Count() - 1].DistanceTo(q) > e.Tolerance()) pl.Append(q);
+    }
+  }
+  pl.Append(pts.back());
+  e.AddObject(new ON_PolylineCurve(pl));
+  e.Out() << "  Creata polilinea sulla mesh (" << pl.Count() << " punti)\n";
+  return true;
+}
+
+// Facce raggruppate per parti connesse (attraverso i vertici topologici).
+std::vector<int> MeshParts(const ON_Mesh& m, int& count) {
+  const ON_MeshTopology& T = m.Topology();
+  std::vector<int> part(m.FaceCount(), -1);
+  count = 0;
+  for (int s = 0; s < m.FaceCount(); s++) {
+    if (part[s] >= 0) continue;
+    std::vector<int> stack{s};
+    part[s] = count;
+    while (!stack.empty()) {
+      const int f = stack.back();
+      stack.pop_back();
+      const ON_MeshTopologyFace& tf = T.m_topf[f];
+      for (int k = 0; k < (tf.IsQuad() ? 4 : 3); k++) {
+        const ON_MeshTopologyEdge& te = T.m_tope[tf.m_topei[k]];
+        for (int j = 0; j < te.m_topf_count; j++) {
+          const int g = te.m_topfi[j];
+          if (part[g] < 0) { part[g] = count; stack.push_back(g); }
+        }
+      }
+    }
+    count++;
+  }
+  return part;
+}
+
+ON_Mesh* SubMesh(const ON_Mesh& m, const std::vector<int>& part, int which) {
+  auto* out = new ON_Mesh();
+  std::vector<int> remap(m.VertexCount(), -1);
+  for (int f = 0; f < m.FaceCount(); f++) {
+    if (part[f] != which) continue;
+    const ON_MeshFace& mf = m.m_F[f];
+    int vi[4];
+    for (int k = 0; k < 4; k++) {
+      int& r = remap[mf.vi[k]];
+      if (r < 0) { r = out->m_V.Count(); out->m_V.Append(m.m_V[mf.vi[k]]); }
+      vi[k] = r;
+    }
+    if (mf.IsQuad()) out->SetQuad(out->m_F.Count(), vi[0], vi[1], vi[2], vi[3]);
+    else out->SetTriangle(out->m_F.Count(), vi[0], vi[1], vi[2]);
+  }
+  out->ComputeVertexNormals();
+  return out;
+}
+
+bool CmdExtractMeshPart(Engine& e, TokenStream& ts) {
+  auto p = e.ReadPick(ts, "clicca la parte della mesh da estrarre");
+  if (!p) return false;
+  ON_UUID id = ON_nil_uuid;
+  int face = -1;
+  const ON_Mesh* m = PickMesh(e, *p, &id, &face);
+  if (!m || face < 0) return e.Fail("mesh non trovata");
+  int count = 0;
+  const std::vector<int> part = MeshParts(*m, count);
+  if (count < 2) return e.Fail("la mesh ha una sola parte");
+  const int which = part[face];
+  std::vector<int> rest(part.size());
+  for (size_t i = 0; i < part.size(); i++) rest[i] = part[i] == which ? 1 : 0;
+  ON_Mesh* extracted = SubMesh(*m, rest, 1);
+  ON_Mesh* remaining = SubMesh(*m, rest, 0);
+  const ON_3dmObjectAttributes a = *e.Object(id)->Attributes(&ON_3dmObjectAttributes::DefaultAttributes);
+  e.ReplaceObject(id, remaining);
+  e.AddObject(extracted, &a);
+  e.Out() << "  Estratta una parte di " << extracted->FaceCount() << " facce (su " << count << " parti)\n";
+  return true;
+}
+
+// Separa i vertici lungo gli spigoli indicati: attorno a ogni vertice le facce si
+// raggruppano attraverso gli spigoli non separati e ogni gruppo ha un suo vertice.
+ON_Mesh* UnweldMesh(const ON_Mesh& in, const std::function<bool(int topEdge)>& split) {
+  ON_Mesh m(in);
+  m.m_N.Destroy();
+  m.m_FN.Destroy();
+  const ON_MeshTopology& T = m.Topology();
+  auto* out = new ON_Mesh();
+  std::vector<std::array<int, 4>> fv(m.FaceCount());
+  for (int f = 0; f < m.FaceCount(); f++) for (int k = 0; k < 4; k++) fv[f][k] = m.m_F[f].vi[k];
+  for (int v = 0; v < T.m_topv.Count(); v++) {
+    const ON_MeshTopologyVertex& tv = T.m_topv[v];
+    // facce attorno al vertice
+    std::map<int, int> parent;
+    std::function<int(int)> find = [&](int x) { return parent[x] == x ? x : parent[x] = find(parent[x]); };
+    for (int j = 0; j < tv.m_tope_count; j++) {
+      const ON_MeshTopologyEdge& te = T.m_tope[tv.m_topei[j]];
+      for (int q = 0; q < te.m_topf_count; q++) if (!parent.count(te.m_topfi[q])) parent[te.m_topfi[q]] = te.m_topfi[q];
+    }
+    for (int j = 0; j < tv.m_tope_count; j++) {
+      const int ei = tv.m_topei[j];
+      const ON_MeshTopologyEdge& te = T.m_tope[ei];
+      if (te.m_topf_count == 2 && !split(ei)) parent[find(te.m_topfi[0])] = find(te.m_topfi[1]);
+    }
+    const ON_3fPoint pos = m.m_V[tv.m_vi[0]];
+    std::map<int, int> newIndex;
+    for (auto& [f, unused] : parent) {
+      (void)unused;
+      const int g = find(f);
+      if (!newIndex.count(g)) { newIndex[g] = out->m_V.Count(); out->m_V.Append(pos); }
+      for (int k = 0; k < 4; k++)
+        if (T.m_topv_map[m.m_F[f].vi[k]] == v) fv[f][k] = -1 - newIndex[g];  // segnato come nuovo
+    }
+  }
+  for (int f = 0; f < m.FaceCount(); f++) {
+    int vi[4];
+    for (int k = 0; k < 4; k++) vi[k] = fv[f][k] < 0 ? -1 - fv[f][k] : 0;
+    if (m.m_F[f].IsQuad()) out->SetQuad(f, vi[0], vi[1], vi[2], vi[3]);
+    else out->SetTriangle(f, vi[0], vi[1], vi[2]);
+  }
+  out->ComputeVertexNormals();
+  return out;
+}
+
+// Unweld: Angle= (gradi, predefinito 0 = tutti gli spigoli tra facce non complanari).
+bool CmdUnweld(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("Unweld", "seleziona le mesh, poi Invio");
+  if (sel.empty()) return false;
+  opts.merge(e.ReadOptions(ts));
+  const double ang = OptNum(opts, "angle", 0.0) * ON_PI / 180.0;
+  int n = 0;
+  for (const auto& id : sel) {
+    const auto* m = ON_Mesh::Cast(Geo(e, id));
+    if (!m) continue;
+    ON_Mesh tmp(*m);
+    tmp.m_FN.Destroy();
+    tmp.ComputeFaceNormals();
+    const ON_MeshTopology& T = tmp.Topology();
+    ON_Mesh* r = UnweldMesh(*m, [&](int ei) {
+      const ON_MeshTopologyEdge& te = T.m_tope[ei];
+      if (te.m_topf_count != 2) return false;
+      const ON_3dVector a(tmp.m_FN[te.m_topfi[0]]), b(tmp.m_FN[te.m_topfi[1]]);
+      return std::acos(std::clamp(a * b, -1.0, 1.0)) > ang + 1e-9;
+    });
+    e.ReplaceObject(id, r);
+    n++;
+  }
+  return n > 0 || e.Fail("nessuna mesh selezionata");
+}
+
+// UnweldEdge: gli spigoli della mesh piu' vicini ai punti cliccati (Invio per finire).
+bool CmdUnweldEdge(Engine& e, TokenStream& ts) {
+  auto p = e.ReadPick(ts, "clicca uno spigolo della mesh");
+  if (!p) return false;
+  ON_UUID id = ON_nil_uuid;
+  const ON_Mesh* m = PickMesh(e, *p, &id, nullptr);
+  if (!m) return e.Fail("mesh non trovata");
+  std::vector<ON_3dPoint> picks{*p};
+  while (e.MoreInput(ts)) {
+    auto q = e.ReadPick(ts, "spigolo successivo (Invio per finire)");
+    if (!q) break;
+    picks.push_back(*q);
+  }
+  e.SkipEnter(ts);
+  const ON_MeshTopology& T = m->Topology();
+  std::set<int> chosen;
+  for (const auto& q : picks) {
+    double best = 1e300;
+    int bi = -1;
+    for (int ei = 0; ei < T.m_tope.Count(); ei++) {
+      const ON_MeshTopologyEdge& te = T.m_tope[ei];
+      const ON_Line l(ON_3dPoint(m->m_V[T.m_topv[te.m_topvi[0]].m_vi[0]]), ON_3dPoint(m->m_V[T.m_topv[te.m_topvi[1]].m_vi[0]]));
+      double t;
+      l.ClosestPointTo(q, &t);
+      const double d = l.PointAt(std::clamp(t, 0.0, 1.0)).DistanceTo(q);
+      if (d < best) { best = d; bi = ei; }
+    }
+    if (bi >= 0) chosen.insert(bi);
+  }
+  e.ReplaceObject(id, UnweldMesh(*m, [&](int ei) { return chosen.count(ei) > 0; }));
+  e.Out() << "  Separati " << chosen.size() << " spigoli\n";
+  return true;
+}
+
+// --- ToSubD ----------------------------------------------------------------------------------
+// Mesh: la mesh diventa la gabbia. Superficie singola: la rete dei punti di
+// controllo diventa la gabbia (bordi vivi).
+bool CmdToSubD(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("ToSubD", "seleziona mesh o superfici, poi Invio");
+  if (sel.empty()) return false;
+  int n = 0;
+  for (const auto& id : sel) {
+    const ON_Geometry* g = Geo(e, id);
+    std::unique_ptr<ON_Mesh> cage;
+    if (const auto* m = ON_Mesh::Cast(g)) {
+      cage = std::make_unique<ON_Mesh>(*m);
+    } else {
+      std::unique_ptr<ON_Brep> owned;
+      const ON_Brep* b = ON_Brep::Cast(g);
+      if (!b && g && g->HasBrepForm()) { owned.reset(g->BrepForm()); b = owned.get(); }
+      if (!b || b->m_F.Count() != 1) continue;
+      ON_NurbsSurface ns;
+      if (!b->m_F[0].GetNurbForm(ns)) continue;
+      int cnt[2], wrap[2];
+      for (int d = 0; d < 2; d++) {
+        cnt[d] = ns.CVCount(d);
+        wrap[d] = 0;
+        if (ns.IsPeriodic(d)) { cnt[d] -= ns.Degree(d); wrap[d] = 1; }
+        else if (ns.IsClosed(d)) { cnt[d] -= 1; wrap[d] = 1; }
+      }
+      cage = std::make_unique<ON_Mesh>();
+      for (int i = 0; i < cnt[0]; i++)
+        for (int j = 0; j < cnt[1]; j++) {
+          ON_3dPoint q;
+          ns.GetCV(i, j, q);
+          cage->m_V.Append(ON_3fPoint(q));
+        }
+      auto idx = [&](int i, int j) { return (i % cnt[0]) * cnt[1] + (j % cnt[1]); };
+      for (int i = 0; i < cnt[0] - 1 + wrap[0]; i++)
+        for (int j = 0; j < cnt[1] - 1 + wrap[1]; j++)
+          cage->SetQuad(cage->m_F.Count(), idx(i, j), idx(i + 1, j), idx(i + 1, j + 1), idx(i, j + 1));
+    }
+    if (!cage || cage->FaceCount() == 0) continue;
+    ON_SubD* s = ON_SubD::CreateFromMesh(cage.get(), nullptr, nullptr);
+    if (!s || !s->IsValid()) { delete s; continue; }
+    e.ReplaceObject(id, s);
+    n++;
+  }
+  if (!n) return e.Fail("nessun oggetto convertito (mesh o superfici singole)");
+  e.Out() << "  Convertiti in SubD " << n << " oggetti\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterExtra4Commands(Engine& e) {
@@ -440,6 +858,13 @@ void RegisterExtra4Commands(Engine& e) {
   reg("SimplifyCrv", "Curve", "Sostituisce i tratti rettilinei e circolari con linee e archi veri", CmdSimplifyCrv);
   reg("Simplify", "Curve", "Come SimplifyCrv", CmdSimplifyCrv);
   reg("Match", "Curve", "Raccorda l'estremo di una curva a un'altra (Continuity=Position/Tangency/Curvature)", CmdMatch);
+  reg("CircleTangent", "Curve", "Cerchio tangente a tre curve", CmdCircleTangent);
+  reg("ArcTangent", "Curve", "Arco di raggio dato tangente a due curve", CmdArcTangent);
+  reg("PolylineOnMesh", "Curve", "Polilinea che segue la mesh per i punti dati", CmdPolylineOnMesh);
+  reg("ExtractMeshPart", "Mesh", "Estrae la parte connessa della mesh cliccata", CmdExtractMeshPart);
+  reg("Unweld", "Mesh", "Separa i vertici sugli spigoli piu' angolati di Angle=", CmdUnweld);
+  reg("UnweldEdge", "Mesh", "Separa i vertici sugli spigoli cliccati", CmdUnweldEdge);
+  reg("ToSubD", "SubD", "Converte mesh e superfici singole in SubD", CmdToSubD);
   reg("Reduce", "Mesh", "Riduce il numero di facce delle mesh (ReductionPercent=, FaceCount=)", CmdReduce);
 }
 
