@@ -1547,7 +1547,9 @@ int main(int argc, char** argv) {
       CHECK(n && NearPt(n->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-3) && NearPt(n->PointAtEnd(), ON_3dPoint(10, 0, 0), 1e-3));
     });
     Case("ExtendCrvOnSrf", "_Plane 0,0,0 10,10\n_Line 2,2,0 5,5,0\n_ExtendCrvOnSrf 5,5,0 1,8,0\n_SelNone _SelCrv _Length", [&](Ctx& c) {
-      CHECK(Near(num(c, "Lunghezza = "), 8 * std::sqrt(2.0), 1e-3));
+      const double L = num(c, "Lunghezza = ");
+      if (!Near(L, 8 * std::sqrt(2.0), 1e-3)) std::printf("  lunghezza ottenuta %.9f\n", L);
+      CHECK(Near(L, 8 * std::sqrt(2.0), 1e-3));
     });
     Case("OffsetCrvOnSrf", "_Plane 0,0,0 10,10\n_Line 2,2,0 8,2,0\n_OffsetCrvOnSrf Distance=3 5,2,0 1,8,0 5,9,0", [](Ctx& c) {
       const auto* cv = ON_Curve::Cast(c.Last());

@@ -30,6 +30,7 @@
 #include <TColgp_HArray1OfPnt.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Wire.hxx>
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -134,8 +135,8 @@ struct FaceSurf {
     s->D1(u, v, q, du, dv);
     return O(du.Crossed(dv)) * Normal(u, v) >= 0 ? 1.0 : -1.0;
   }
-  bool Inside(double u, double v) const {
-    BRepClass_FaceClassifier cl(f, gp_Pnt2d(u, v), tol);
+  bool Inside(double u, double v, double t = -1) const {
+    BRepClass_FaceClassifier cl(f, gp_Pnt2d(u, v), t > 0 ? t : tol);
     return cl.State() == TopAbs_IN || cl.State() == TopAbs_ON;
   }
 };
@@ -520,10 +521,14 @@ bool CmdExtendCrvOnSrf(Engine& e, TokenStream& ts) {
     double nu = u + dir.X() * stepLen, nv = v + dir.Y() * stepLen;
     if (!fs.Inside(nu, nv)) {  // bordo: bisezione
       double lo = 0, hi = 1;
-      for (int j = 0; j < 40; j++) { const double m = 0.5 * (lo + hi); if (fs.Inside(u + dir.X() * stepLen * m, v + dir.Y() * stepLen * m)) lo = m; else hi = m; }
+      for (int j = 0; j < 40; j++) { const double m = 0.5 * (lo + hi); if (fs.Inside(u + dir.X() * stepLen * m, v + dir.Y() * stepLen * m, 1e-9)) lo = m; else hi = m; }
       nu = u + dir.X() * stepLen * lo;
       nv = v + dir.Y() * stepLen * lo;
-      pts.push_back(O(fs.s->Value(nu, nv)));
+      ON_3dPoint last = O(fs.s->Value(nu, nv));
+      // aggancio esatto al bordo della faccia (indipendente dalla tolleranza del classificatore)
+      BRepExtrema_DistShapeShape dd(BRepBuilderAPI_MakeVertex(G(last)).Vertex(), BRepTools::OuterWire(sf.face));
+      if (dd.IsDone() && dd.NbSolution() > 0 && dd.Value() < 10 * e.Tolerance()) last = O(dd.PointOnShape2(1));
+      pts.push_back(last);
       added++;
       break;
     }
