@@ -1,0 +1,21 @@
+; Superfici: superficie piana con foro (tagliata), piana, loft, rivoluzione, estrusione di curva aperta
+_Rectangle 0,30 30,60
+_Circle 15,45 6
+_SelCrv _PlanarSrf
+_SelNone
+_Plane 0,0 20,15
+-_Layer _New Profili
+-_Layer _Current Profili
+_Circle 40,0,0 8
+_Circle 40,0,20 4
+_Circle 40,0,35 7
+-_Layer _Current Default
+_SelLayer Profili
+_Loft
+_SelNone
+_Line 70,0,0 72,0,20
+_SelLast _Revolve 65,0,0 65,0,1
+_SelNone
+_InterpCrv 90,0 100,8 110,0 120,8 _Enter
+_SelLast _ExtrudeCrv 15
+_SelNone

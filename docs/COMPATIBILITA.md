@@ -1,6 +1,6 @@
 # Matrice di compatibilità con Rhino 8
 
-Ultimo aggiornamento: 17/11/2026 · openNURBS v8.35.26251.13001
+Ultimo aggiornamento: 18/11/2026 · openNURBS v8.35.26251.13001
 
 ## Legenda
 
@@ -14,6 +14,13 @@ Ultimo aggiornamento: 17/11/2026 · openNURBS v8.35.26251.13001
 **Nessuna categoria è ancora ✅.** Per arrivarci servono file salvati da Rhino 8
 reale (cartella `tests/rhino8_files/`) e il controllo in Rhino 8 dei file che
 produciamo.
+
+**File di prova per Rhino 8 (0.10)**: `tests/rhino8_check/` contiene 14 script, uno
+per categoria (curve, superfici, B-rep, SubD, mesh, blocchi annidati, livelli e tipi
+di linea, materiali e texture, annotazioni, gruppi e testo utente, viste/CPlane/sezioni,
+luci e sole, tavole, cronologia). Ogni test crea il `.3dm` in `build/rhino8_check/`,
+lo rilegge e lo confronta con il modello in memoria (test `rhino8check_*`). Le
+istruzioni per il controllo in Rhino 8 sono in `tests/rhino8_check/LEGGIMI.md`.
 
 ## File .3dm (lettura e scrittura)
 
@@ -32,7 +39,7 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 | Punti e nuvole di punti | 🟡 | 🟡 | 🟡 | ⬜ | come curve | |
 | **Blocchi** (definizioni e istanze) | 🟡 | 🟡 | 🟡 | ⬜ | definizione: nome, tipo, numero oggetti; istanza: bytes | Un solo file d'esempio (Rhino 4). Blocchi collegati e annidati non testati |
 | **Livelli** | 🟡 | 🟡 | 🟡 | ⬜ | percorso completo, colore, colore di stampa, spessore di stampa, visibile, bloccato, tipo di linea | Colori per viewport e sezioni non confrontati |
-| **Materiali** | 🟡 | 🟡 | 🟡 | ⬜ | nome, diffuso, speculare, lucentezza, trasparenza, numero texture | I materiali "render content" di Rhino 8 (PBR ecc.) non sono confrontati: ⬜. Texture di Kurva3D (0.8): materiale ON_Material con texture bitmap, immagine incorporata (ON_EmbeddedFile), mappatura (ON_TextureMapping) sul canale 1 degli attributi: salvataggio e rilettura testati tra Kurva3D e openNURBS (test "Texture"); **non ancora aperti in Rhino 8 reale** (da verificare: Rhino crea un materiale personalizzato dal materiale semplice e legge la mappatura associata all'id ON_UniversalRenderEngineId) |
+| **Materiali** | 🟡 | 🟡 | 🟡 | ⬜ | nome, diffuso, speculare, lucentezza, trasparenza, riflettivita', IOR, emissione, valori PBR, texture, collegamento al render content | Render content di Rhino 8 (0.10): conservati e confrontati (tipo, nome, XML); i materiali modificati in Kurva3D aggiornano il render content collegato (test "Render content", D-068). Nessun file d'esempio con materiali PBR: servono file di Rhino 8 reale. Texture di Kurva3D (0.8): materiale ON_Material con texture bitmap, immagine incorporata (ON_EmbeddedFile), mappatura (ON_TextureMapping) sul canale 1 degli attributi: salvataggio e rilettura testati tra Kurva3D e openNURBS (test "Texture"); **non ancora aperti in Rhino 8 reale** (da verificare: Rhino crea un materiale personalizzato dal materiale semplice e legge la mappatura associata all'id ON_UniversalRenderEngineId) |
 | **Annotazioni** (testo, quote, leader, punti di testo) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Quote di Rhino 4/5: 🟠 D-006. Creazione con Text, Dim*, Leader, Centermark: testata (salva e rilegge identico), disegno nelle viste semplificato D-028 |
 | Stili di quota | 🟡 | 🟡 | 🟡 | ⬜ | nome, altezza testo, frecce, scala | Solo alcuni campi |
 | Retini e motivi retino | 🟡 | 🟡 | 🟡 | ⬜ | bytes / nome | |
@@ -40,11 +47,16 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 | Gruppi | 🟡 | 🟡 | 🟡 | ⬜ | nome | |
 | Piani di sezione (clipping) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Da file Rhino 8. Creati da ClippingPlane (0.10): piano, estensione, viste in cui sono attivi; salvataggio e rilettura testati; **direzione del taglio non ancora confrontata con Rhino 8 reale** (D-061) |
 | Luci | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Create da PointLight, DirectionalLight, SpotLight, RectangularLight (0.12): ON_Light del .3dm. Sole, cielo e piano di terra nelle impostazioni di rendering (ON_3dmRenderSettings): salvataggio e rilettura testati (test "Rendering"); **da aprire in Rhino 8 reale** |
-| Viste con nome, unità, tolleranza | 🟡 | 🟡 | 🟡 | ⬜ | numero viste, unità, tolleranza assoluta | Contenuto delle viste non confrontato. NamedView e NamedCPlane (0.10) scrivono nelle stesse tabelle di Rhino (m_named_views, m_named_cplanes): nome, camera e piano testati in salvataggio e rilettura. Le viste delle finestre si salvano nel file e si rileggono all'apertura (viste con lo stesso nome) |
-| Tavole e dettagli (layout) | 🟡 | 🟡 | 🟡 | ⬜ | numero di tavole, oggetti nello spazio pagina | Create da Layout/Detail (0.11): vista di tipo pagina con dimensioni in mm, ON_DetailView con vista, scala e bordo, oggetti con spazio pagina e id della tavola; salvataggio e rilettura testati (test "Tavole_e_PDF"); **da aprire in Rhino 8 reale** |
+| Viste con nome, unità, tolleranza | 🟡 | 🟡 | 🟡 | ⬜ | nome, posizione e direzione della camera, proiezione; CPlane con nome (origine, normale); unità, tolleranza assoluta |  NamedView e NamedCPlane (0.10) scrivono nelle stesse tabelle di Rhino (m_named_views, m_named_cplanes): nome, camera e piano testati in salvataggio e rilettura. Le viste delle finestre si salvano nel file e si rileggono all'apertura (viste con lo stesso nome) |
+| Tavole e dettagli (layout) | 🟡 | 🟡 | 🟡 | ⬜ | nome e formato delle tavole, oggetti nello spazio pagina | Create da Layout/Detail (0.11): vista di tipo pagina con dimensioni in mm, ON_DetailView con vista, scala e bordo, oggetti con spazio pagina e id della tavola; salvataggio e rilettura testati (test "Tavole_e_PDF"); **da aprire in Rhino 8 reale** |
 | Istantanee (Snapshots) | 🔴 | 🔴 | 🔴 | ⬜ | — | Formato proprio di Kurva3D in una stringa del documento: Rhino non le vede e Kurva3D non legge quelle di Rhino (D-061) |
 | Mappature delle texture | 🟡 | 🟡 | 🟡 | ⬜ | tipo di mappatura, canale dell'oggetto | Create da ApplyTexture e Apply*Mapping (0.8) |
-| Testo utente (attributi), cronologia, file incorporati | ⬜ | ⬜ | ⬜ | ⬜ | non confrontati | Da aggiungere al confronto |
+| Testo utente (oggetti, livelli, documento) | 🟡 | 🟡 | 🟡 | ⬜ | chiavi e valori | SetUserText, SetDocumentUserText (0.10) |
+| Cronologia (record di Rhino) | 🟡 | 🟡 | 🟡 | ⬜ | contenuto serializzato dei record | Conservata cosi' com'e'; Kurva3D non la usa e salva la propria (D-065) |
+| File incorporati | 🟡 | 🟡 | 🟡 | ⬜ | nome e contenuto (SHA-1) | Immagini delle texture (ApplyTexture), percorso assoluto come Rhino |
+| Render content (materiali, ambienti, texture di Rhino 8) | 🟡 | 🟡 | 🟡 | ⬜ | tipo, nome, XML (attributi in ordine) | 3 file d'esempio di Rhino 4, 5, 7 (D-068) |
+| Gruppi, colore e spessore di stampa degli oggetti, spazio pagina | 🟡 | 🟡 | 🟡 | ⬜ | per oggetto | |
+| Sole, piano di terra, cielo | 🟡 | 🟡 | 🟡 | ⬜ | acceso, azimut, altezza, quota | |
 
 ## Interfaccia e comandi
 

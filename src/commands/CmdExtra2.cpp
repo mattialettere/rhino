@@ -843,6 +843,34 @@ bool CmdSetUserText(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// SetDocumentUserText <chiave> <valore>: testo utente del documento (valore vuoto = elimina).
+bool CmdSetDocumentUserText(Engine& e, TokenStream& ts) {
+  auto k = e.ReadString(ts, "chiave");
+  if (!k) return false;
+  auto v = e.ReadString(ts, "valore");
+  if (!v) return false;
+  const std::string key = Unquote(*k), val = Unquote(*v);
+  if (key.empty()) return e.Fail("chiave vuota");
+  e.Model().SetDocumentUserString(ON_wString(key.c_str()), val.empty() ? nullptr : static_cast<const wchar_t*>(ON_wString(val.c_str())));
+  e.Out() << "  Testo utente del documento: " << key << (val.empty() ? " eliminato" : " = " + val) << "\n";
+  return true;
+}
+
+// GetDocumentUserText: elenca il testo utente del documento (senza le chiavi interne di Kurva3D).
+bool CmdGetDocumentUserText(Engine& e, TokenStream&) {
+  ON_ClassArray<ON_UserString> us;
+  e.Model().GetDocumentUserStrings(us);
+  int n = 0;
+  for (int i = 0; i < us.Count(); i++) {
+    const std::string key = ToUtf8(us[i].m_key);
+    if (key.rfind("Kurva3D.", 0) == 0) continue;
+    e.Out() << "  " << key << " = " << ToUtf8(us[i].m_string_value) << "\n";
+    n++;
+  }
+  if (!n) e.Out() << "  Nessun testo utente nel documento\n";
+  return true;
+}
+
 // GetUserText: elenca il testo utente degli oggetti selezionati.
 bool CmdGetUserText(Engine& e, TokenStream&) {
   auto sel = e.RequireSelection("GetUserText");
@@ -1423,6 +1451,8 @@ void RegisterExtra2Commands(Engine& e) {
   reg("MatchProperties", "Proprieta'", "Copia le proprieta' da un oggetto", CmdMatchProperties);
   reg("SetUserText", "Proprieta'", "Imposta il testo utente", CmdSetUserText);
   reg("GetUserText", "Proprieta'", "Mostra il testo utente", CmdGetUserText, false);
+  reg("SetDocumentUserText", "Proprieta'", "Imposta il testo utente del documento", CmdSetDocumentUserText);
+  reg("GetDocumentUserText", "Proprieta'", "Mostra il testo utente del documento", CmdGetDocumentUserText, false);
   reg("Purge", "File", "Elimina livelli e blocchi non usati", CmdPurge);
   reg("Import", "File", "Importa un file .3dm, STEP, IGES, STL, OBJ o DXF", CmdImport);
   reg("Export", "File", "Esporta gli oggetti selezionati (.3dm, STEP, IGES, STL, OBJ, DXF)", CmdExport, false);

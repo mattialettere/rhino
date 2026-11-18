@@ -1,0 +1,20 @@
+; B-rep e estrusioni: box, sfera, cilindro, cono, toro, estrusione chiusa, differenza booleana, raccordo
+_Box 0,0,0 20,15 10
+_Sphere 40,8,8 8
+_Cylinder 65,8,0 7 18
+_Cone 90,8,0 7 15
+_Torus 120,8,5 8 2
+_Rectangle 0,30 25,45
+_SelLast _ExtrudeCrv _Solid=_Yes 12
+_SelNone
+-_Layer _New Booleana
+-_Layer _Current Booleana
+_Box 40,30,0 60,50 15
+_Sphere 60,50,15 8
+-_Layer _Current Default
+_SelLayer Booleana
+_BooleanDifference
+_SelNone
+_Box 80,30,0 100,50 10
+_SelLast _FilletEdge 2
+_SelNone

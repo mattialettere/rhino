@@ -1,0 +1,19 @@
+; Materiali (semplici, assegnati all'oggetto e al livello), texture incorporata con mappatura
+_Box 0,0,0 20,20 20
+_SelLast _SetMaterial Color=200,40,40 Gloss=0.8 Name=Rosso_lucido
+_SelNone
+_Sphere 40,10,10 10
+_SelLast _SetMaterial Color=230,230,240 Reflectivity=0.9 Gloss=1 Name=Cromo
+_SelNone
+_Sphere 70,10,10 10
+_SelLast _SetMaterial Color=200,220,255 Transparency=0.7 IOR=1.5 Name=Vetro
+_SelNone
+_Box 90,0,0 110,20 5
+_SelLast _ApplyTexture File="legno.png" Repeat=2
+_SelNone
+-_Layer _New Metallo
+-_Layer _Material Metallo Cromo
+-_Layer _Current Metallo
+_Cylinder 130,10,0 8 20
+-_Layer _Current Default
+_SelNone

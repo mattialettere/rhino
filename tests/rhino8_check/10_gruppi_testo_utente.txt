@@ -1,0 +1,18 @@
+; Gruppi, nomi oggetto, testo utente sugli oggetti e sul documento, oggetti nascosti e bloccati
+_Box 0,0,0 10,10 10
+_Sphere 20,5,5 5
+_SelAll _Group
+_SelNone
+_Box 40,0,0 50,10 10
+_SelLast _SetObjectName "Pezzo A"
+_SetUserText Codice "K-001"
+_SetUserText Peso 12.5
+_SelNone
+_Cylinder 60,5,0 5 10
+_SelLast _Hide
+_SelNone
+_Cone 80,5,0 5 10
+_SelLast _Lock
+_SelNone
+_SetDocumentUserText Progetto "Prova compatibilita Rhino 8"
+_SetDocumentUserText Revisione 3

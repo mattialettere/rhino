@@ -1,0 +1,8 @@
+; Mesh: box, sfera, cilindro, piano, mesh da polisuperficie
+_MeshBox 0,0 20,15 10
+_MeshSphere 40,8,8 8
+_MeshCylinder 65,8,0 7 18
+_MeshPlane 80,0 100,20
+_Box 110,0,0 125,15 10
+_SelLast _Mesh
+_SelNone

@@ -19,7 +19,8 @@ enum class Category {
   Other,
   // Tabelle
   BlockDefinition, Layer, Material, Linetype, Group, DimStyle, HatchPattern,
-  TextureMapping, Image, NamedView
+  TextureMapping, Image, NamedView,
+  NamedCPlane, Layout, RenderContent, EmbeddedFile, HistoryRecord, DocumentUserText
 };
 const char* CategoryName(Category c);
 Category ClassifyGeometry(const ON_Geometry* g);
@@ -53,6 +54,14 @@ public:
 private:
   std::unique_ptr<ONX_Model> m_model;
 };
+
+// Materiali "render content" di Rhino 8: Rhino legge i materiali dall'editor dei
+// materiali (ON_RenderMaterial), non dalla tabella ON_Material. Se un materiale
+// collegato a un render content e' stato modificato in Kurva3D, riporta nel render
+// content i valori cambiati (solo parametri gia' presenti: colori, lucentezza,
+// trasparenza, riflettivita', IOR, emissione, valori PBR, nome). Restituisce quanti
+// render content sono stati aggiornati. Chiamata da Save prima di scrivere.
+int SyncRenderMaterials(ONX_Model& model);
 
 // Da chiamare una volta all'avvio/chiusura del programma.
 void InitLibrary();

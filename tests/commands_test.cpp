@@ -1947,9 +1947,12 @@ int main(int argc, char** argv) {
     const auto ids = c.e.AllObjectIds(true);
     ObjectTexture t0, t1;
     // openNURBS su Windows salva il percorso con le barre rovesciate
-    auto same = [](std::string a, std::string b) {
-      for (auto* x : {&a, &b}) for (auto& ch : *x) if (ch == '\\') ch = '/';
-      return a == b;
+    auto same = [](std::string a, std::string b) {  // stesso file (il comando salva il percorso assoluto)
+      auto norm = [](const std::string& x) {
+        std::string r = fs::absolute(fs::u8path(x)).lexically_normal().generic_string();
+        return r;
+      };
+      return norm(a) == norm(b);
     };
     CHECK(ids.size() == 2 && GetObjectTexture(c.e.Model(), *c.e.Object(ids[0])->Attributes(nullptr), t0) &&
           GetObjectTexture(c.e.Model(), *c.e.Object(ids[1])->Attributes(nullptr), t1));
@@ -2568,6 +2571,76 @@ int main(int argc, char** argv) {
 #endif
   }
 #endif
+
+  {
+    std::printf("Render content (materiali Rhino 8)\n");
+    // Materiale PBR come lo scrive Rhino 8: render content + voce ON_Material collegata.
+    Ctx a;
+    ON_RenderMaterial rc;
+    CHECK(rc.SetXML(
+        L"<material type-name=\"rcm-pbr-test\" instance-name=\"Oro\" hidden=\"false\" notes=\"\" tags=\"\">"
+        L"<simulation><is-physically-based type=\"bool\">true</is-physically-based>"
+        L"<diffuse type=\"color\">1,0.8,0.2,1</diffuse>"
+        L"<pbr-base-color type=\"color\">1,0.8,0.2,1</pbr-base-color>"
+        L"<pbr-metallic type=\"double\">1</pbr-metallic><pbr-roughness type=\"double\">0.3</pbr-roughness>"
+        L"<pbr-opacity type=\"double\">1</pbr-opacity><pbr-alpha type=\"double\">1</pbr-alpha></simulation></material>"));
+    rc.SetParameter(L"pbr-base-color", ON_XMLVariant(ON_4fColor(ON_Color(255, 204, 51))));
+    rc.SetParameter(L"pbr-roughness", ON_XMLVariant(0.3));
+    rc.SetParameter(L"pbr-metallic", ON_XMLVariant(1.0));
+    rc.SetName(L"Oro");
+    ON_UUID rcid;
+    ON_CreateUuid(rcid);
+    rc.SetId(rcid);
+    ON_ModelComponentReference rref = a.e.Model().AddModelComponent(rc, true);
+    CHECK(ON_RenderMaterial::Cast(rref.ModelComponent()) != nullptr);
+    ON_Material mat = rc.ToOnMaterial();
+    CHECK(mat.IsPhysicallyBased() && Near(mat.PhysicallyBased()->Roughness(), 0.3));
+    mat.SetRdkMaterialInstanceId(rcid);
+    mat.SetName(L"Oro");
+    ON_ModelComponentReference mref = a.e.Model().AddModelComponent(mat, true);
+    CHECK(mref.ModelComponent() != nullptr);
+    // salvato senza modifiche: il render content resta identico
+    const std::string f0 = g_outDir + "/rendercontent_0.3dm", f1 = g_outDir + "/rendercontent_1.3dm";
+    const ON_wString xml0 = rc.XML(true);
+    CHECK(cad::SyncRenderMaterials(a.e.Model()) == 0);
+    CHECK(a.doc.Save(f0));
+    {
+      Document3dm b;
+      CHECK(b.Load(f0));
+      ONX_ModelComponentIterator it(b.Model(), ON_ModelComponent::Type::RenderContent);
+      int n = 0;
+      for (auto* c = it.FirstComponent(); c; c = it.NextComponent())
+        if (const auto* r = ON_RenderMaterial::Cast(c)) {
+          n++;
+          CHECK(r->Id() == rcid && r->Name() == L"Oro");
+          CHECK(Near(r->ToOnMaterial().PhysicallyBased()->Roughness(), 0.3));
+        }
+      CHECK(n == 1);
+      CHECK(cad::CompareModels(a.e.Model(), b.Model()).Equal());
+    }
+    // modificato in Kurva3D: colore base, rugosita' e nome finiscono nel render content
+    auto* em = const_cast<ON_Material*>(ON_Material::Cast(mref.ModelComponent()));
+    em->ToPhysicallyBased();
+    em->PhysicallyBased()->SetBaseColor(ON_4fColor(ON_Color(200, 30, 30)));
+    em->PhysicallyBased()->SetRoughness(0.7);
+    em->SetDiffuse(ON_Color(200, 30, 30));
+    em->SetName(L"Rame");
+    CHECK(a.doc.Save(f1));
+    {
+      Document3dm b;
+      CHECK(b.Load(f1));
+      const auto* r = ON_RenderMaterial::Cast(b.Model().ComponentFromId(ON_ModelComponent::Type::RenderContent, rcid).ModelComponent());
+      CHECK(r != nullptr);
+      if (r) {
+        const ON_Material sim = r->ToOnMaterial();
+        CHECK(sim.IsPhysicallyBased() && Near(sim.PhysicallyBased()->Roughness(), 0.7));
+        CHECK(std::lround(sim.PhysicallyBased()->BaseColor().Red() * 255) == 200);
+        CHECK(Near(r->GetParameter(L"pbr-roughness").AsDouble(), 0.7));  // sezione parametri V8
+        CHECK(r->Name() == L"Rame");
+        CHECK(Near(r->GetParameter(L"pbr-metallic").AsDouble(), 1.0));   // valori non toccati restano
+      }
+    }
+  }
 
   {
     std::printf("Collaborazione (patch)\n");

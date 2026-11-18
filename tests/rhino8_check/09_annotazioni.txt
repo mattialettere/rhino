@@ -1,0 +1,23 @@
+; Annotazioni: testo, quote lineari/allineate/ruotate/raggio/diametro/angolo/ordinata, leader, punto di testo, retino, centro
+_Text 0,60 "Kurva3D prova annotazioni"
+_Dim 0,0 40,0 20,-8
+_DimAligned 0,10 30,30 10,25
+_DimRotated 45 50,0 60,0 50,10
+_Circle 90,10 8
+_SelLast _DimRadius 100,20
+_SelNone
+_Circle 120,10 8
+_SelLast _DimDiameter 130,22
+_SelNone
+_Circle 150,10 6
+_SelLast _Centermark
+_SelNone
+_DimAngle 0,30 20,30 0,50 10,40
+_DimOrdinate 40,40 40,50
+_Leader 60,30 70,40 80,40 _Enter "Nota con freccia"
+_Dot 100,40 "Punto di testo"
+_Rectangle 0,80 30,100
+_Circle 15,90 4
+_SelNone
+_SelCrv _Hatch
+_SelNone

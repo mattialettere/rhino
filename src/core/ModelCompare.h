@@ -19,6 +19,10 @@ struct ObjectSnapshot {
   int colorSource = 0, mode = 0, materialSource = 0;
   unsigned int color = 0;
   bool visible = true;
+  std::string userText;  // testo utente "chiave=valore;" ordinato per chiave
+  std::string groups;    // gruppi dell'oggetto (per nome o id)
+  std::string print;     // colore e spessore di stampa con le loro sorgenti
+  std::string space;     // spazio modello o pagina (con id della tavola)
 };
 
 // Istantanea confrontabile di un modello (oggetti per id, tabelle per nome).
@@ -36,8 +40,11 @@ struct CompareResult {
 };
 
 // Confronta oggetti (per id: classe, bounding box, CRC dei dati geometrici,
-// attributi principali) e tabelle (livelli, materiali, blocchi, tipi di linea,
-// gruppi, stili di quota, motivi di retino).
+// attributi principali, testo utente, gruppi, stampa, spazio) e tabelle (livelli,
+// materiali anche PBR, blocchi, tipi di linea, gruppi, stili di quota, motivi di
+// retino, mappature) piu' i dati del documento: testo utente, render content di
+// Rhino 8 (materiali, ambienti, texture), file incorporati, record di cronologia,
+// viste e CPlane con nome, tavole, sole/cielo/piano di terra.
 ModelSnapshot TakeSnapshot(const ONX_Model& m);
 CompareResult CompareSnapshots(const ModelSnapshot& a, const ModelSnapshot& b,
                                double bboxTolerance = 1e-9);

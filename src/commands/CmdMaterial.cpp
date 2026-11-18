@@ -157,6 +157,12 @@ bool CmdApplyTexture(Engine& e, TokenStream& ts) {
   if (file.size() >= 2 && file.front() == '"' && file.back() == '"') file = file.substr(1, file.size() - 2);
   std::error_code ec;
   if (!std::filesystem::is_regular_file(std::filesystem::u8path(file), ec)) return e.Fail("immagine non trovata: " + file);
+  // percorso assoluto: Rhino cerca l'immagine (o il file incorporato) con il percorso completo
+  if (auto abs = std::filesystem::absolute(std::filesystem::u8path(file), ec); !ec)
+  {
+    const auto u = abs.lexically_normal().u8string();
+    file.assign(u.begin(), u.end());
+  }
   double repeat = 1.0;
   if (opts.count("repeat")) try { repeat = std::stod(opts["repeat"]); } catch (...) {}
   if (!(repeat > 0)) repeat = 1.0;

@@ -242,6 +242,17 @@ foreach(f ${_user_3dm})
     COMMAND 3dm-roundtrip ${f} ${CMAKE_BINARY_DIR}/roundtrip_out/rhino8_${_n}.3dm)
 endforeach()
 
+# File di prova per Rhino 8 (tests/rhino8_check/*.txt): ogni script di comandi crea un
+# .3dm in build/rhino8_check, che viene riletto e confrontato. Gli stessi file vanno
+# aperti in Rhino 8 reale (vedi tests/rhino8_check/LEGGIMI.md).
+file(GLOB _check_scripts "${CMAKE_SOURCE_DIR}/tests/rhino8_check/*.txt")
+foreach(f ${_check_scripts})
+  get_filename_component(_n ${f} NAME_WE)
+  add_test(NAME rhino8check_${_n}
+    COMMAND cad-console --verify -o ${CMAKE_BINARY_DIR}/rhino8_check/${_n}.3dm ${f}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tests/rhino8_check)
+endforeach()
+
 # Differenze note (docs/DIFFERENZE.md): file di versioni antiche il cui
 # andata/ritorno oggi NON e' identico. Sono segnati "WILL_FAIL" cosi' la suite
 # resta verde ma, se un giorno passano, il test fallisce e ce ne accorgiamo.

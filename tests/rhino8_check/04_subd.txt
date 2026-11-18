@@ -1,0 +1,9 @@
+; SubD: box, sfera, toro, piega (crease), SubD da mesh
+_SubDBox 0,0,0 20,20 20
+_SelLast _Crease 10,0,20 _Enter
+_SelNone
+_SubDSphere 45,10,10 10
+_SubDTorus 80,10,5 10 3
+_MeshBox 100,0 120,20 20
+_SelLast _ToSubD
+_SelNone

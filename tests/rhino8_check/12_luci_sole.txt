@@ -1,0 +1,9 @@
+; Luci (puntiforme, direzionale, spot, rettangolare), sole, piano di terra, cielo
+_Box 0,0,0 40,30 20
+_PointLight 20,15,60
+_DirectionalLight 0,0,0 -10,-10,20
+_SpotLight 20,15,0 10 20,15,50
+_RectangularLight 0,0,80 10,0,80 10,10,80
+_Sun On Azimuth=135 Altitude=40
+_GroundPlane On Altitude=Auto ShadowOnly=No
+_Skylight On

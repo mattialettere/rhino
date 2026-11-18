@@ -1,0 +1,39 @@
+; Livelli annidati con colori, tipi di linea, spessori e colori di stampa, stati acceso/spento/bloccato
+_Linetypes _New Tratteggio 5,-2
+_Linetypes _New TrattoPunto 8,-2,0,-2
+_Linetypes _New Punti 0,-1.5
+-_Layer _New Edificio::Muri::Esterni
+-_Layer _New Edificio::Muri::Interni
+-_Layer _New Edificio::Arredi
+-_Layer _New Quote
+-_Layer _New Nascosto
+-_Layer _New Bloccato
+-_Layer _Color Edificio 90,90,90
+-_Layer _Color Esterni 200,30,30
+-_Layer _Color Interni 230,140,40
+-_Layer _Color Arredi 30,120,200
+-_Layer _Color Quote 0,150,0
+-_Layer _Linetype Interni Tratteggio
+-_Layer _Linetype Arredi TrattoPunto
+-_Layer _PrintWidth Esterni 0.5
+-_Layer _PrintWidth Interni 0.25
+-_Layer _PrintColor Esterni 0,0,0
+-_Layer _Current Esterni
+_Rectangle 0,0 50,30
+-_Layer _Current Interni
+_Line 20,0 20,30
+-_Layer _Current Arredi
+_Circle 35,15 5
+-_Layer _Current Nascosto
+_Point 60,0
+-_Layer _Current Bloccato
+_Point 60,10
+-_Layer _Current Default
+_Line 0,40 50,40
+_SelLast _SetObjectLinetype Punti
+_SetObjectPrintWidth 0.7
+_SetObjectPrintColor 255,0,0
+_SetObjectColor 200,0,200
+_SelNone
+-_Layer _Off Nascosto
+-_Layer _Lock Bloccato

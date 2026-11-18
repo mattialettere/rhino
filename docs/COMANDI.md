@@ -375,6 +375,12 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | MatchProperties | ✔ |
 | SetUserText | ✔ |
 | SetObjectColor | ✔ |
+| Linetypes | ✔ (riga di comando: New, Delete, List) |
+| SetObjectLinetype | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
+| SetObjectPrintWidth | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
+| SetObjectPrintColor | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
+| SetDocumentUserText | ✔ |
+| GetDocumentUserText | ✔ |
 
 ## Annotazioni
 

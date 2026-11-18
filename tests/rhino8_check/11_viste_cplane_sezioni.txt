@@ -1,0 +1,9 @@
+; Viste con nome, CPlane con nome, piano di sezione
+_Box -5,-5,0 5,5 10
+_Sphere 20,0,5 5
+_NamedView Save Prova_Kurva3D
+_CPlane Origin 0,0,10
+_NamedCPlane Save Sopra_box
+_CPlane Reset
+_ClippingPlane -8,-8,5 8,8,5
+_SelNone

@@ -1,0 +1,17 @@
+; Blocchi: definizione semplice, blocco annidato (blocco che contiene istanze), istanze scalate e ruotate
+_Box 0,0,0 4,4 4
+_Circle 2,2 3
+_SelAll _Block Name=Vite 2,2,0
+_SelNone
+_Insert Vite 20,0,0
+_Insert Vite 30,0,0 2 45
+_Sphere 50,0,2 2
+_SelLast
+_Insert Vite 46,0,0
+_SelLast
+_SelNone
+_SelAll _Block Name=Gruppo_viti 0,0,0
+_SelNone
+_Insert Gruppo_viti 0,30,0
+_Insert Gruppo_viti 0,60,0 0.5 90
+_SelNone

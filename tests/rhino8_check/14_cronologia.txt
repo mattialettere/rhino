@@ -1,0 +1,7 @@
+; Cronologia di Kurva3D (salvata come testo utente del documento, non come cronologia di Rhino)
+_History Record=Yes
+_Circle 0,0,0 5
+_Circle 0,0,10 3
+_SelAll _Loft
+_SelNone
+_History Record=No

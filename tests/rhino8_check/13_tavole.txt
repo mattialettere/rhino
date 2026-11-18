@@ -1,0 +1,7 @@
+; Tavola A4 con dettaglio in vista frontale scala 1:5 e testo nello spazio pagina
+_Box 0,0,0 400,300 200
+_Layout Tavola_1 Size=A4
+_Detail Add 20,20 190,140 Projection=Front
+_Detail Scale 1:5
+_Text 20,150 "Tavola di prova Kurva3D"
+_Layouts Activate Model
