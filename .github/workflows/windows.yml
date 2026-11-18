@@ -64,6 +64,10 @@ jobs:
           Copy-Item build\Release\*.dll dist\ -ErrorAction SilentlyContinue
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" dist\ -ErrorAction SilentlyContinue
           if (Test-Path dist\rhino-ui.exe) { windeployqt --release --no-translations dist\rhino-ui.exe }
+          # runtime di Visual C++ accanto all'exe: parte anche sui PC senza "VC++ Redistributable"
+          foreach ($d in 'msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll') {
+            if (Test-Path "C:\Windows\System32\$d") { Copy-Item "C:\Windows\System32\$d" dist\ }
+          }
           Copy-Item examples dist\examples -Recurse
           Copy-Item README.md dist\
           Get-ChildItem dist
