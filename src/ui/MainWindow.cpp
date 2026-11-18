@@ -19,6 +19,9 @@
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFile>
+#include <QClipboard>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QDir>
 #include <QIcon>
 #include <QPixmap>
@@ -65,6 +68,9 @@ MainWindow::MainWindow(QWidget* parent)
       for (int x = 0; x < w; x++) gray[(size_t)y * w + x] = row[x] / 255.0;
     }
     return true;
+  };
+  m_engine.viewCapture = [this](const std::string& path, int w, int h, bool grid) {
+    return CaptureView(QString::fromStdString(path), w, h, grid);
   };
   // TextObject: contorni dei caratteri di sistema; l'altezza e' quella delle maiuscole
   m_engine.textOutliner = [](const std::string& text, const std::string& family, double height,
@@ -272,11 +278,19 @@ void MainWindow::Log(const QString& s) {
   m_history->verticalScrollBar()->setValue(m_history->verticalScrollBar()->maximum());
 }
 
+namespace {
+const char* kOpenFilter =
+    "Tutti i formati (*.3dm *.stp *.step *.igs *.iges *.stl *.obj *.dxf);;File 3DM (*.3dm);;STEP (*.stp *.step);;"
+    "IGES (*.igs *.iges);;STL (*.stl);;OBJ (*.obj);;DXF (*.dxf)";
+const char* kExportFilter =
+    "File 3DM, versione 8 (*.3dm);;STEP (*.stp);;IGES (*.igs);;STL binario (*.stl);;OBJ (*.obj);;DXF R12 (*.dxf)";
+}  // namespace
+
 void MainWindow::BuildMenus() {
   auto* file = menuBar()->addMenu("&File");
   file->addAction("Nuovo", QKeySequence::New, this, [this] { Submit("_New"); });
   file->addAction("Apri...", QKeySequence::Open, this, [this] {
-    QString p = QFileDialog::getOpenFileName(this, "Apri", QString(), "File 3DM (*.3dm)");
+    QString p = QFileDialog::getOpenFileName(this, "Apri", QString(), kOpenFilter);
     if (!p.isEmpty()) OpenFile(p);
   });
   file->addAction("Salva", QKeySequence::Save, this, [this] {
@@ -291,6 +305,26 @@ void MainWindow::BuildMenus() {
   file->addAction("Salva con nome...", QKeySequence::SaveAs, this, [this] {
     QString p = QFileDialog::getSaveFileName(this, "Salva con nome", QString(), "File 3DM, versione 8 (*.3dm)");
     if (!p.isEmpty()) Submit("_SaveAs \"" + p + "\"");
+  });
+  file->addSeparator();
+  file->addAction("Importa...", this, [this] {
+    QString p = QFileDialog::getOpenFileName(this, "Importa", QString(), kOpenFilter);
+    if (!p.isEmpty()) { Submit("_Import \"" + p + "\""); ZoomExtentsAll(); }
+  });
+  file->addAction("Esporta selezione...", this, [this] {
+    if (m_engine.Selection().empty()) { Log("Seleziona prima gli oggetti da esportare."); return; }
+    QString sel;
+    QString p = QFileDialog::getSaveFileName(this, "Esporta selezione", QString(), kExportFilter, &sel);
+    if (p.isEmpty()) return;
+    if (QFileInfo(p).suffix().isEmpty()) {  // estensione dal filtro scelto
+      const int a = sel.indexOf("*."), b = sel.indexOf(QRegularExpression("[ )]"), a);
+      if (a >= 0) p += sel.mid(a + 1, b - a - 1);
+    }
+    Submit("_Export \"" + p + "\"");
+  });
+  file->addAction("Salva vista come immagine...", this, [this] {
+    QString p = QFileDialog::getSaveFileName(this, "Salva vista come immagine", QString(), "Immagine PNG (*.png);;Immagine JPEG (*.jpg)");
+    if (!p.isEmpty()) Submit("_ViewCaptureToFile \"" + p + "\"");
   });
   file->addSeparator();
   file->addAction("Esci", QKeySequence::Quit, qApp, &QApplication::quit);
@@ -540,6 +574,27 @@ QWidget* MainWindow::BuildToolTabs() {
   return tabs;
 }
 
+// Immagine della vista attiva (ViewCaptureToFile / ViewCaptureToClipboard).
+bool MainWindow::CaptureView(const QString& path, int width, int height, bool grid) {
+  Viewport* v = Active();
+  const bool old = v->showGrid;
+  v->showGrid = grid;
+  QImage img = v->grabFramebuffer();
+  v->showGrid = old;
+  v->update();
+  if (img.isNull()) return false;
+  if (width > 0 || height > 0) {
+    const QSize s(width > 0 ? width : img.width() * height / std::max(1, img.height()),
+                  height > 0 ? height : img.height() * width / std::max(1, img.width()));
+    img = img.scaled(s, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+  }
+  if (path.isEmpty()) {
+    QGuiApplication::clipboard()->setImage(img);
+    return true;
+  }
+  return img.save(path);
+}
+
 bool MainWindow::ApplyTextureToSelection(const QString& file) {
   if (m_engine.Selection().empty()) return false;
   Submit("_ApplyTexture File= \"" + QDir::fromNativeSeparators(file) + "\"" + m_textures->CommandOptions());
@@ -773,7 +828,8 @@ void MainWindow::ShowBlockManager() {
 
 bool MainWindow::OpenFile(const QString& path) {
   Submit("_Open \"" + path + "\"");
-  if (m_engine.currentPath.empty()) return false;
+  const bool is3dm = QFileInfo(path).suffix().compare("3dm", Qt::CaseInsensitive) == 0;
+  if (is3dm && m_engine.currentPath.empty()) return false;
   ZoomExtentsAll();
   return true;
 }

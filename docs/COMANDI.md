@@ -30,9 +30,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Livelli e proprieta' | 12 / 12 |
 | Annotazioni | 14 / 14 |
 | Analisi | 15 / 15 |
-| File | 7 / 7 |
+| File | 9 / 9 |
 | Rendering (texture) | 5 / 5 |
-| **Totale** | **308 / 308** |
+| **Totale** | **310 / 310** |
 
 ## Punti
 
@@ -418,9 +418,11 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Open | ✔ |
 | Save | ✔ |
 | SaveAs | ✔ |
-| Import | ✔ |
-| Export | ✔ |
+| Import | ✔ (3dm, STEP, IGES, STL, OBJ, DXF) |
+| Export | ✔ (3dm, STEP, IGES, STL, OBJ, DXF) |
 | IncrementalSave | ✔ |
+| ViewCaptureToFile | ✔ |
+| ViewCaptureToClipboard | ✔ |
 
 ## Rendering (texture)
 

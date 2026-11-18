@@ -6,6 +6,7 @@
 #include "commands/Engine.h"
 #include "commands/Grips.h"
 #include "commands/Materials.h"
+#include "commands/Exchange.h"
 #include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
 #include <cmath>
@@ -1800,6 +1801,105 @@ int main(int argc, char** argv) {
     }
     CHECK(blocks == 2);
     CHECK(c.e.AllObjectIds(true).empty());  // la verifica non tocca il documento
+  }
+  {
+    std::printf("Scambio_file\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/scambio";
+    fs::create_directories(dir);
+    auto bboxOf = [](Ctx& c) { return c.BBox(); };
+    auto near = [](const ON_BoundingBox& a, const ON_BoundingBox& b, double t) {
+      return a.m_min.DistanceTo(b.m_min) < t && a.m_max.DistanceTo(b.m_max) < t;
+    };
+    auto count = [](Ctx& c, auto pred) { int n = 0; for (auto* g : c.Objects()) if (pred(g)) n++; return n; };
+    Ctx src;
+    CHECK(src.e.Run("_Box 0,0,0 10,20 5\n_Sphere 30,0,0 4"));
+    const ON_BoundingBox b0 = bboxOf(src);
+    for (const char* ext : {"stp", "igs", "stl", "obj", "dxf"}) {
+      const std::string f = dir + "/solidi." + ext;
+      CHECK(src.e.Run(std::string("_SelAll\n_Export \"") + f + "\""));
+      Ctx back;
+      const bool ok = back.e.Run(std::string("_Import \"") + f + "\"");
+      if (!ok) std::printf("  import %s: %s\n", ext, back.log.str().c_str());
+      CHECK(ok);
+      const ON_BoundingBox b1 = bboxOf(back);
+      const bool exact = std::string(ext) == "stp" || std::string(ext) == "igs";
+      if (!near(b0, b1, exact ? 1e-3 : 0.05)) std::printf("  bbox %s: %g %g %g - %g %g %g\n", ext, b1.m_min.x, b1.m_min.y, b1.m_min.z, b1.m_max.x, b1.m_max.y, b1.m_max.z);
+      CHECK(near(b0, b1, exact ? 1e-3 : 0.05));
+      if (exact) CHECK(count(back, [](const ON_Geometry* g) { return ON_Brep::Cast(g) != nullptr; }) >= 2);
+      else CHECK(count(back, [](const ON_Geometry* g) { return ON_Mesh::Cast(g) != nullptr; }) >= 1);
+    }
+    // STEP: i solidi restano solidi chiusi
+    {
+      Ctx back;
+      CHECK(back.e.Run("_Import \"" + dir + "/solidi.stp\""));
+      int solids = 0;
+      for (auto* g : back.Objects()) if (auto* b = ON_Brep::Cast(g); b && b->IsSolid()) solids++;
+      CHECK(solids == 2);
+    }
+    // STL ASCII e mesh chiusa
+    {
+      CHECK(src.e.Run("_SelAll\n_Export \"" + dir + "/ascii.stl\" Ascii"));
+      std::ifstream f(dir + "/ascii.stl");
+      std::string head;
+      std::getline(f, head);
+      CHECK(head.rfind("solid", 0) == 0);
+      Ctx back;
+      CHECK(back.e.Run("_Import \"" + dir + "/ascii.stl\""));
+      const ON_Mesh* m = ON_Mesh::Cast(back.Last());
+      CHECK(m && m->IsClosed());
+    }
+    // DXF: curve, punti e livelli
+    {
+      Ctx c;
+      CHECK(c.e.Run("-_Layer New Muri\n-_Layer Current Muri\n_Line 0,0,0 10,0,0\n_Circle 20,0,0 5\n_Arc 40,0,0 5,0,0 0,5,0\n"
+                    "_Polyline 0,10,0 10,10,0 10,20,0 _Enter\n_Point 1,2,3\n_InterpCrv 0,30,0 10,35,0 20,30,0 _Enter"));
+      const std::string f = dir + "/curve.dxf";
+      CHECK(c.e.Run("_SelAll\n_Export \"" + f + "\""));
+      Ctx back;
+      CHECK(back.e.Run("_Import \"" + f + "\""));
+      CHECK(count(back, [](const ON_Geometry* g) { return ON_LineCurve::Cast(g) != nullptr; }) == 1);
+      CHECK(count(back, [](const ON_Geometry* g) { return ON_ArcCurve::Cast(g) != nullptr; }) == 2);
+      CHECK(count(back, [](const ON_Geometry* g) { return ON_Point::Cast(g) != nullptr; }) == 1);
+      CHECK(count(back, [](const ON_Geometry* g) { return ON_PolyCurve::Cast(g) != nullptr || ON_PolylineCurve::Cast(g) != nullptr; }) == 2);
+      CHECK(near(c.BBox(), back.BBox(), 1e-6));
+      bool layer = false;
+      for (const auto& id : back.e.AllObjectIds(true)) {
+        const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(back.e.Object(id)->Attributes(nullptr)->m_layer_index).ModelComponent());
+        if (l && ToUtf8(l->Name()) == "Muri") layer = true;
+      }
+      CHECK(layer);
+    }
+    // DXF scritto a mano: LWPOLYLINE con rigonfiamento (semicerchio), SPLINE, 3DFACE, unita' in metri
+    {
+      const std::string f = dir + "/mano.dxf";
+      std::ofstream o(f);
+      o << "0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n"
+           "0\nLWPOLYLINE\n8\nA\n90\n2\n70\n0\n10\n0\n20\n0\n42\n1\n10\n2\n20\n0\n"
+           "0\nSPLINE\n8\nA\n70\n8\n71\n3\n72\n8\n73\n4\n40\n0\n40\n0\n40\n0\n40\n0\n40\n1\n40\n1\n40\n1\n40\n1\n"
+           "10\n0\n20\n5\n30\n0\n10\n1\n20\n6\n30\n0\n10\n2\n20\n4\n30\n0\n10\n3\n20\n5\n30\n0\n"
+           "0\n3DFACE\n8\nB\n10\n0\n20\n0\n30\n1\n11\n1\n21\n0\n31\n1\n12\n1\n22\n1\n32\n1\n13\n0\n23\n1\n33\n1\n"
+           "0\nENDSEC\n0\nEOF\n";
+      o.close();
+      Ctx back;  // documento in millimetri: metri x 1000
+      CHECK(back.e.Run("_Import \"" + f + "\""));
+      const ON_Curve* arc = nullptr;
+      const ON_NurbsCurve* nc = nullptr;
+      const ON_Mesh* m = nullptr;
+      for (auto* g : back.Objects()) {
+        if (auto* a = ON_ArcCurve::Cast(g)) arc = a;
+        if (auto* n = ON_NurbsCurve::Cast(g)) nc = n;
+        if (auto* mm = ON_Mesh::Cast(g)) m = mm;
+      }
+      // semicerchio di raggio 1 m sotto la corda (rigonfiamento positivo: antiorario)
+      CHECK(arc && std::fabs(Len(arc) - ON_PI * 1000) < 1e-3);
+      if (arc) CHECK(std::fabs(arc->PointAt(arc->Domain().Mid()).y + 1000) < 1e-6);
+      CHECK(nc && nc->Order() == 4 && nc->CVCount() == 4 && std::fabs(nc->PointAtEnd().x - 3000) < 1e-6);
+      CHECK(m && m->m_F.Count() == 1 && m->m_F[0].IsQuad());
+    }
+    // formato sconosciuto ed errori
+    Ctx bad;
+    CHECK(!bad.e.Run("_Import \"" + dir + "/manca.stl\""));
   }
   {
     std::printf("Texture\n");

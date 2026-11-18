@@ -120,6 +120,15 @@ interruttori Snap griglia, Orto, Osnap.
 - `kurva3d file.3dm` apre un file; `--script comandi.txt` esegue uno script.
 - **Vista > Tema**: Automatico (segue il chiaro/scuro di Windows), Chiaro o Scuro.
 
+## Scambio di file
+
+**File > Apri** e **File > Importa** leggono .3dm, STEP, IGES, STL, OBJ e DXF;
+**File > Esporta selezione** scrive gli stessi formati (il formato si sceglie
+dall'estensione). Da riga di comando: `_Import "pezzo.stp"`,
+`_SelAll _Export "pezzo.stl"` (aggiungi `Ascii` per l'STL di testo).
+**File > Salva vista come immagine** (comando ViewCaptureToFile, opzioni
+Width=, Height=, DrawGrid=No) salva la vista attiva in PNG o JPG.
+
 ## Texture
 
 Pannello **Texture** (a destra, o menu **Render > Pannello Texture**): mostra le

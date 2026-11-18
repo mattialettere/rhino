@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cstdio>
 #include "commands/Engine.h"
+#include "commands/Exchange.h"
 #include <functional>
 #include <sstream>
 
@@ -137,6 +138,15 @@ bool CmdOpen(Engine& e, TokenStream& ts) {
   auto path = e.ReadString(ts, "nome del file");
   if (!path) return false;
   std::string log;
+  if (IsExchangeFormat(FileExtension(*path))) {
+    // STEP, IGES, STL, OBJ, DXF: nuovo documento senza nome con gli oggetti importati (come Rhino)
+    e.Doc().NewEmpty();
+    e.ClearSelection();
+    e.currentPath.clear();
+    if (!ImportExchange(e, *path, {})) return false;
+    e.ClearSelection();
+    return true;
+  }
   if (!e.Doc().Load(*path, &log)) return e.Fail("impossibile aprire " + *path);
   e.ClearSelection();
   e.currentPath = *path;

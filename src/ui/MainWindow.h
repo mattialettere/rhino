@@ -50,6 +50,7 @@ private:
   void BuildMenus();
   void BuildSidebar();
   bool ApplyTextureToSelection(const QString& file);
+  bool CaptureView(const QString& path, int width, int height, bool grid);
   void SetTheme(ThemeMode m);
   void RefreshThemeIcons();
   QWidget* BuildToolTabs();

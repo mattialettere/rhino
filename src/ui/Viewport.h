@@ -103,6 +103,9 @@ protected:
   void dragMoveEvent(QDragMoveEvent* e) override;
   void dropEvent(QDropEvent* e) override;
 
+public:
+  bool showGrid = true;  // griglia e assi (ViewCaptureToFile DrawGrid=No)
+
 private:
   // texture caricate nel contesto OpenGL di questa vista (percorso -> nome GL)
   unsigned TextureId(const std::string& file);

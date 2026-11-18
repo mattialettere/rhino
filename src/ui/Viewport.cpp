@@ -459,7 +459,7 @@ void Viewport::paintGL() {
 
   gl->glDisable(GL_LIGHTING);
   gl->glDisable(GL_DEPTH_TEST);
-  DrawGrid();
+  if (showGrid) DrawGrid();
   gl->glEnable(GL_DEPTH_TEST);
   gl->glDepthFunc(GL_LEQUAL);
 

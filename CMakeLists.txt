@@ -39,6 +39,7 @@ add_library(cadcore STATIC
   src/commands/CmdAnnotation.cpp src/commands/Annotation.cpp src/commands/Annotation.h
   src/commands/CmdExtra.cpp
   src/commands/CmdMaterial.cpp src/commands/Materials.h
+  src/commands/Exchange.cpp src/commands/Exchange.h
   src/commands/CmdExtra2.cpp
   src/commands/Grips.cpp
   src/commands/CmdExtra3.cpp
@@ -62,6 +63,21 @@ if(OpenCASCADE_FOUND)
   target_link_libraries(cadcore PUBLIC TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo
     TKTopAlgo TKPrim TKBO TKShHealing TKBool TKFillet TKOffset TKMesh TKHLR)
   target_compile_definitions(cadcore PUBLIC CAD_WITH_OCCT)
+  # Scambio dati STEP/IGES: TKDESTEP/TKDEIGES da OpenCASCADE 7.8, TKSTEP/TKIGES prima
+  set(_occt_de "")
+  if(TARGET TKDESTEP AND TARGET TKDEIGES)
+    set(_occt_de TKDESTEP TKDEIGES TKXSBase)
+  elseif(TARGET TKSTEP AND TARGET TKIGES)
+    set(_occt_de TKSTEP TKSTEPBase TKSTEPAttr TKSTEP209 TKIGES TKXSBase)
+  endif()
+  if(_occt_de)
+    message(STATUS "OpenCASCADE DataExchange: STEP e IGES attivi (${_occt_de})")
+    target_sources(cadcore PRIVATE src/kernel/StepIges.cpp)
+    target_link_libraries(cadcore PUBLIC ${_occt_de})
+    target_compile_definitions(cadcore PUBLIC CAD_WITH_OCCT_DE)
+  else()
+    message(WARNING "OpenCASCADE senza DataExchange: STEP e IGES non disponibili")
+  endif()
 else()
   message(WARNING "OpenCASCADE non trovato: i comandi del motore geometrico non saranno disponibili")
 endif()

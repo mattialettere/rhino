@@ -6,6 +6,7 @@
 // trasformazioni (Shear, SetPt, Align), selezione (SelColor, SelSmall),
 // proprieta' (MatchProperties, SetUserText, GetUserText), Purge.
 #include "commands/Engine.h"
+#include "commands/Exchange.h"
 #include "commands/Grips.h"
 #include "core/SubDLimit.h"
 #include <algorithm>
@@ -976,8 +977,9 @@ int MatchLayer(ONX_Model& dst, const ONX_Model& src, int srcIndex) {
 
 // Import: aggiunge al modello gli oggetti di un altro file .3dm (livelli per nome).
 bool CmdImport(Engine& e, TokenStream& ts) {
-  auto path = e.ReadString(ts, "file da importare");
+  auto path = e.ReadString(ts, "file da importare (.3dm, .stp, .igs, .stl, .obj, .dxf)");
   if (!path) return false;
+  if (IsExchangeFormat(FileExtension(Unquote(*path)))) return ImportExchange(e, Unquote(*path), e.ReadOptions(ts));
   Document3dm src;
   if (!src.Load(Unquote(*path))) return e.Fail("impossibile aprire " + Unquote(*path));
   e.ClearSelection();
@@ -1009,8 +1011,9 @@ bool CmdImport(Engine& e, TokenStream& ts) {
 bool CmdExport(Engine& e, TokenStream& ts) {
   auto sel = e.RequireSelection("Export", "seleziona gli oggetti da esportare, poi Invio");
   if (sel.empty()) return false;
-  auto path = e.ReadString(ts, "nome del file");
+  auto path = e.ReadString(ts, "nome del file (.3dm, .stp, .igs, .stl, .obj, .dxf)");
   if (!path) return false;
+  if (IsExchangeFormat(FileExtension(Unquote(*path)))) return ExportExchange(e, sel, Unquote(*path), e.ReadOptions(ts, {"binary", "ascii"}));
   Document3dm out;
   out.NewEmpty();
   out.Model().m_settings.m_ModelUnitsAndTolerances = e.Model().m_settings.m_ModelUnitsAndTolerances;
@@ -1420,8 +1423,8 @@ void RegisterExtra2Commands(Engine& e) {
   reg("SetUserText", "Proprieta'", "Imposta il testo utente", CmdSetUserText);
   reg("GetUserText", "Proprieta'", "Mostra il testo utente", CmdGetUserText, false);
   reg("Purge", "File", "Elimina livelli e blocchi non usati", CmdPurge);
-  reg("Import", "File", "Importa gli oggetti di un file .3dm", CmdImport);
-  reg("Export", "File", "Esporta gli oggetti selezionati in un file .3dm (Rhino 8)", CmdExport, false);
+  reg("Import", "File", "Importa un file .3dm, STEP, IGES, STL, OBJ o DXF", CmdImport);
+  reg("Export", "File", "Esporta gli oggetti selezionati (.3dm, STEP, IGES, STL, OBJ, DXF)", CmdExport, false);
   reg("IncrementalSave", "File", "Salva con numero progressivo", CmdIncrementalSave, false);
   reg("SelPrev", "Selezione", "Riseleziona la selezione precedente", CmdSelPrev, false);
   reg("ExtractWireframe", "Curve", "Estrae spigoli e isocurve come curve", CmdExtractWireframe);

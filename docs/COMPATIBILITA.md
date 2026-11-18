@@ -57,3 +57,15 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 I file prodotti dai comandi vengono salvati in formato Rhino 8, riletti e
 confrontati in ogni test (nessuna differenza); i B-rep prodotti da OpenCASCADE
 passano anche il controllo `IsValid` di openNURBS. Resta da aprirli in Rhino 8.
+
+## Formati di scambio (0.9)
+
+| Formato | Import | Export | Verificato con | Note |
+|---|---|---|---|---|
+| STEP (.stp/.step) | ✔ | ✔ | andata e ritorno in Kurva3D (test "Scambio_file": solidi chiusi, ingombro identico) | ⬜ da provare con file di altri CAD e con Rhino 8 |
+| IGES (.igs/.iges) | ✔ | ✔ | andata e ritorno in Kurva3D | ⬜ come sopra |
+| STL | ✔ | ✔ (binario e ASCII) | andata e ritorno, mesh chiusa | ⬜ |
+| OBJ | ✔ | ✔ | andata e ritorno | ⬜ |
+| DXF R12 | ✔ | ✔ | andata e ritorno, DXF scritto a mano (rigonfiamenti, SPLINE, 3DFACE, unita') | ⬜ da provare con AutoCAD/Rhino 8 |
+| DWG, FBX | ⬜ | ⬜ | | richiedono librerie a pagamento (ODA, Autodesk) |
+

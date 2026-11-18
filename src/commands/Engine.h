@@ -163,6 +163,9 @@ public:
   std::function<bool(const std::string& path, int& w, int& h, std::vector<double>& gray)> imageLoader;
   std::function<bool(const std::string& text, const std::string& font, double height,
                      std::vector<std::vector<std::vector<ON_3dPoint>>>& contours)> textOutliner;
+  // ViewCaptureToFile/ToClipboard: immagine della vista attiva (percorso vuoto = appunti);
+  // larghezza e altezza 0 = come la vista
+  std::function<bool(const std::string& path, int width, int height, bool grid)> viewCapture;
   // CageEdit: geometria originale degli oggetti catturati (per id) e gabbia
   // prima dell'ultima modifica (serve se l'originale non e' in memoria)
   std::map<ON_UUID, std::shared_ptr<ON_Geometry>, UuidLess> cageOriginals;
@@ -202,6 +205,7 @@ void RegisterExtra4Commands(Engine& e);
 void RegisterExtra5Commands(Engine& e);
 void RegisterExtra6Commands(Engine& e);
 void RegisterMaterialCommands(Engine& e);
+void RegisterExchangeCommands(Engine& e);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti
 int UpdateCageCaptives(Engine& e, const ON_UUID& cageId);
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.
