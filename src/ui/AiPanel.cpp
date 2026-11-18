@@ -1,4 +1,5 @@
 #include "ui/AiPanel.h"
+#include <QTimer>
 #include "ui/Theme.h"
 #include "commands/Engine.h"
 #include <QDialog>
@@ -83,13 +84,20 @@ AiPanel::AiPanel(cad::Engine& engine, std::function<void()> afterChange, QWidget
   connect(&m_server, &aiqt::LlamaServer::Status, this, [this](const QString& s) { m_status->setText(s); });
   connect(&m_gen, &aiqt::Generator::Finished, this, [this](bool ok, const QStringList& script, const QString& err) {
     SetBusy(false, {});
+    QTimer::singleShot(0, this, [this] { StartNextTask(); });  // compiti in fila dopo questa richiesta
     m_script->setPlainText(script.join('\n'));
     if (!ok) {
       m_status->setText("Il modello non ha prodotto comandi validi (" + err +
                         "). Puoi correggerli a mano e premere Anteprima, o riformulare la richiesta.");
+      if (m_task) FinishTask("nessun comando valido (" + err + ")");
       return;
     }
     ApplyPreview(script);
+    if (m_task) {
+      const bool changed = m_previewing;
+      Confirm();
+      FinishTask(changed ? QString("fatto (%1 comandi)").arg(script.size()) : QString("nessuna modifica al disegno"));
+    }
   });
   UpdateModelLabel();
 }
@@ -123,21 +131,23 @@ void AiPanel::SetBusy(bool busy, const QString& status) {
   if (!status.isEmpty()) m_status->setText(status);
 }
 
-void AiPanel::EnsureServer(std::function<void()> then) {
+void AiPanel::EnsureServer(std::function<void()> then, std::function<void(QString)> fail) {
   const ai::ModelInfo* m = ai::FindModel(CurrentModelId().toStdString());
   const QString path = m ? aiqt::InstalledModelPath(*m) : QString();
   if (path.isEmpty()) {
     SetBusy(false, "Scarica prima il modello.");
-    ShowModelDialog();
+    if (fail) fail("su questo computer il modello dell'AI non e' ancora scaricato");
+    else ShowModelDialog();
     return;
   }
   if (m_server.Ready() && m_server.ModelPath() == path) { then(); return; }
   auto* conn = new QMetaObject::Connection;
-  *conn = connect(&m_server, &aiqt::LlamaServer::Started, this, [this, conn, then](bool ok, const QString& err) {
+  *conn = connect(&m_server, &aiqt::LlamaServer::Started, this, [this, conn, then, fail](bool ok, const QString& err) {
     disconnect(*conn);
     delete conn;
     if (!ok) {
       SetBusy(false, "Il modello non si avvia: " + err);
+      if (fail) fail("il modello dell'AI non si avvia: " + err);
       return;
     }
     then();
@@ -149,8 +159,10 @@ void AiPanel::Generate() {
   if (m_busy->isVisible()) {  // "Annulla"
     m_gen.Cancel();
     SetBusy(false, "Annullato");
+    if (m_task) FinishTask("annullato da chi lo stava eseguendo");
     return;
   }
+  if (m_task) return;  // un compito di un partecipante e' in corso
   const QString req = m_request->toPlainText().trimmed();
   if (req.isEmpty()) { m_status->setText("Scrivi prima che cosa vuoi creare."); return; }
   if (m_previewing) Discard();
@@ -186,6 +198,7 @@ void AiPanel::Confirm() {
   m_discard->setEnabled(false);
   m_status->setText("Confermato (Annulla toglie tutto in un passo).");
   if (m_after) m_after();
+  if (!m_task) QTimer::singleShot(0, this, [this] { StartNextTask(); });
 }
 
 void AiPanel::Discard() {
@@ -196,6 +209,32 @@ void AiPanel::Discard() {
   m_discard->setEnabled(false);
   m_status->setText("Anteprima scartata.");
   if (m_after) m_after();
+  if (!m_task) QTimer::singleShot(0, this, [this] { StartNextTask(); });
+}
+
+void AiPanel::RunTask(const QString& from, const QString& text, std::function<void(QString)> done) {
+  m_tasks.push_back(Task{from, text, std::move(done)});
+  StartNextTask();
+}
+
+void AiPanel::StartNextTask() {
+  // si aspetta che finisca la richiesta dell'utente e che la sua anteprima sia confermata o scartata
+  if (m_task || m_tasks.empty() || m_busy->isVisible() || m_previewing) return;
+  m_task = std::move(m_tasks.front());
+  m_tasks.pop_front();
+  m_request->setPlainText(m_task->text);
+  SetBusy(true, "Compito da " + m_task->from + "…");
+  const QString req = m_task->text;
+  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req); }, [this](const QString& err) { FinishTask(err); });
+}
+
+void AiPanel::FinishTask(const QString& result) {
+  if (!m_task) return;
+  auto done = std::move(m_task->done);
+  m_status->setText("Compito da " + m_task->from + ": " + result);
+  m_task.reset();
+  if (done) done(result);
+  QTimer::singleShot(0, this, [this] { StartNextTask(); });
 }
 
 void AiPanel::ShowModelDialog() {

@@ -3,7 +3,9 @@
 #pragma once
 #include "aiqt/AiService.h"
 #include <QWidget>
+#include <deque>
 #include <functional>
+#include <optional>
 
 class QLabel;
 class QPlainTextEdit;
@@ -23,8 +25,19 @@ class AiPanel : public QWidget {
   ~AiPanel() override;
   // Finestra per scegliere e scaricare il modello (hardware e consiglio).
   void ShowModelDialog();
+  // Collaborazione: compito arrivato da un partecipante. Si genera e si applica subito (senza
+  // anteprima da confermare); done riceve l'esito in una riga. I compiti si eseguono in fila.
+  void RunTask(const QString& from, const QString& text, std::function<void(QString)> done);
 
  private:
+  struct Task {
+    QString from, text;
+    std::function<void(QString)> done;
+  };
+  void StartNextTask();
+  void FinishTask(const QString& result);
+  std::deque<Task> m_tasks;
+  std::optional<Task> m_task;
   void Generate();
   void ApplyPreview(const QStringList& script);
   void Confirm();
@@ -32,7 +45,7 @@ class AiPanel : public QWidget {
   void SetBusy(bool busy, const QString& status);
   void UpdateModelLabel();
   QString CurrentModelId() const;
-  void EnsureServer(std::function<void()> then);
+  void EnsureServer(std::function<void()> then, std::function<void(QString)> fail = {});
 
   cad::Engine& m_engine;
   std::function<void()> m_after;

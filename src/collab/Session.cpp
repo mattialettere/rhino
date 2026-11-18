@@ -258,8 +258,8 @@ void Session::HandleAsClient(quint8 type, QDataStream& in) {
       m_base = TakeSnapshot(m_engine.Model());
       m_pending.clear();
       emit DocumentReplaced();
-      emit Joined();
       emit Message(tr("Sei entrato nella sessione"));
+      emit Joined();
       break;
     }
     case Reject: {
@@ -374,7 +374,7 @@ void Session::SendAiTask(int target, const QString& text) {
 QString Session::PeerName(int id) const {
   for (const Peer& p : m_peers)
     if (p.id == id) return p.name;
-  return QString::number(id);
+  return id == 0 ? tr("ospite") : QString::number(id);
 }
 
 void Session::Send(QTcpSocket* s, const QByteArray& payload) {

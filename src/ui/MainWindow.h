@@ -22,6 +22,10 @@ class QPushButton;
 class QStackedWidget;
 class QTabBar;
 
+namespace cad::collab {
+class Session;
+}
+
 namespace cad::ui {
 
 class AiPanel;
@@ -39,6 +43,7 @@ public:
   Viewport* View(int i) { return m_views[i]; }
   void ZoomExtentsAll();
   bool HasPending() const { return !m_pending.empty(); }
+  cad::collab::Session* Collab() { return m_collab; }
 
 protected:
   void keyPressEvent(QKeyEvent* e) override;
@@ -104,6 +109,7 @@ private:
   TexturePanel* m_textures = nullptr;
   QToolButton* m_historyBtn = nullptr;
   class NodeEditor* m_nodes = nullptr;
+  class cad::collab::Session* m_collab = nullptr;
   std::vector<std::pair<QAction*, QString>> m_iconActions;  // azioni con icona del tema
 };
 

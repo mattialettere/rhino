@@ -205,6 +205,7 @@ public:
   // ScriptEditor: apre l'editor di script Python (eventualmente con un file)
   std::function<bool(const std::string& file)> showScriptEditor;
   std::function<bool()> showNodeEditor;  // NodeEditor: editor visuale a nodi
+  std::function<bool()> showCollaboration;  // Collaborate: pannello della collaborazione in rete locale
   // Stampa su stampante (dalla finestra): pagine gia' composte
   std::function<bool(const std::vector<struct PageDrawing>&)> printPages;
   std::vector<ON_UUID> viewportIds;         // tutte le viste della finestra
@@ -269,6 +270,7 @@ void RegisterRenderCommands(Engine& e);
 void RegisterPythonCommands(Engine& e);
 void RegisterHistoryCommands(Engine& e);
 void RegisterNodeCommands(Engine& e);
+void RegisterCollabCommands(Engine& e);
 // PDF della tavola attiva o della vista (opzioni come Print)
 bool ExportPdf(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti

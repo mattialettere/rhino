@@ -66,6 +66,7 @@ class Session : public QObject {
   QString Pin() const { return m_pin; }
   quint16 Port() const;
   int MyId() const { return m_myId; }
+  QString MyName() const { return m_myName; }
   QList<Peer> Participants() const { return m_peers; }
   // indirizzi IPv4 di questo computer (da comunicare a chi entra a mano)
   static QStringList LocalAddresses();

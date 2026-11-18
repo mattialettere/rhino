@@ -317,3 +317,16 @@ bool ApplyPatch(ONX_Model& m, const std::string& patch, PatchInfo* info, std::st
 }
 
 }  // namespace cad::collab
+
+#include "commands/Engine.h"
+namespace cad {
+void RegisterCollabCommands(Engine& e) {
+  e.Register({"Collaborate", "Collaborazione",
+              "Lavoro in piu' persone sullo stesso progetto in rete locale (estensione di Kurva3D)",
+              [](Engine& en, TokenStream&) {
+                if (!en.showCollaboration) return en.Fail("la collaborazione e' disponibile solo nella finestra di Kurva3D");
+                return en.showCollaboration();
+              },
+              false});
+}
+}  // namespace cad

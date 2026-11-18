@@ -1,5 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui/AiPanel.h"
+#include "ui/CollabPanel.h"
+#include "collab/Session.h"
 #include "ui/TexturePanel.h"
 #include "ui/ScriptEditor.h"
 #include "ui/NodeEditor.h"
@@ -344,6 +346,33 @@ MainWindow::MainWindow(QWidget* parent)
   aiDock->setWidget(m_ai);
   addDockWidget(Qt::RightDockWidgetArea, aiDock);
   tabifyDockWidget(propsDock, aiDock);
+  // Collaborazione in rete locale: sessione, ricerca degli altri computer, chat e compiti per l'AI
+  m_collab = new collab::Session(m_engine, KURVA3D_VERSION, this);
+  auto* collabDock = new QDockWidget("Collabora", this);
+  collabDock->setObjectName("collabDock");
+  auto* collabPanel = new CollabPanel(*m_collab, [this] {
+    return m_engine.currentPath.empty() ? QString("Senza titolo") : QFileInfo(QString::fromStdString(m_engine.currentPath)).fileName();
+  }, [this](const QString& from, const QString& text, std::function<void(QString)> done) {
+    for (auto* d : findChildren<QDockWidget*>())
+      if (d->objectName() == "aiDock") d->show();
+    m_ai->RunTask(from, text, std::move(done));
+  }, collabDock);
+  collabDock->setWidget(collabPanel);
+  addDockWidget(Qt::RightDockWidgetArea, collabDock);
+  tabifyDockWidget(propsDock, collabDock);
+  connect(m_collab, &collab::Session::ModelChanged, this, [this] { AfterCommand(); });
+  connect(m_collab, &collab::Session::DocumentReplaced, this, [this] {
+    if (!m_pending.empty()) Cancel();
+    m_engine.currentPath.clear();
+    if (m_nodes) m_nodes->LoadFromDocument();
+    AfterCommand();
+    ZoomExtentsAll();
+  });
+  m_engine.showCollaboration = [collabDock] {
+    collabDock->show();
+    collabDock->raise();
+    return true;
+  };
   // Texture: libreria di immagini da una cartella, da applicare agli oggetti
   auto* texDock = new QDockWidget("Texture", this);
   texDock->setObjectName("textureDock");
@@ -640,6 +669,8 @@ void MainWindow::BuildMenus() {
     const QString f = QFileDialog::getOpenFileName(this, "Esegui script Python", QString(), "Script Python (*.py)");
     if (!f.isEmpty()) Run(("_RunPythonScript \"" + f + "\"").toStdString());
   });
+  auto* collabMenu = menuBar()->addMenu("&Collabora");
+  collabMenu->addAction("Pannello Collabora", this, [this] { Submit("_Collaborate"); });
   auto* aiMenu = menuBar()->addMenu("&AI");
   aiMenu->addAction("Assistente AI", this, [this] {
     for (auto* d : findChildren<QDockWidget*>())
@@ -1209,6 +1240,7 @@ void MainWindow::UpdatePrompt() {
 }
 
 void MainWindow::AfterCommand() {
+  if (m_collab) m_collab->LocalChanged();  // in una sessione le modifiche partono subito
   if (m_nodes && m_nodes->isVisible()) m_nodes->DocumentChanged();
   if (m_historyBtn && m_historyBtn->isChecked() != m_engine.recordHistory) {
     const QSignalBlocker block(m_historyBtn);
