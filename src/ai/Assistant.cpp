@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <set>
 #include <sstream>
 
 namespace cad::ai {
@@ -171,6 +172,12 @@ Rules of the command language:
   with _Polyline ... _Close at the right height, then _ExtrudeCrv _Solid=_Yes thickness. Then delete the curve.
 - _Revolve is only for round objects (vases, bottles, wheels); never revolve a flat shape to make a plate.
 - Use _BooleanUnion only on solids that really touch or overlap; if unsure, leave the parts separate.
+- Before writing, plan the parts with real proportions and their height range in Z: the base on the floor
+  (z = 0), what stands on it above, the top part at the top. Every part has its own Z: never put all the
+  parts at 0,0,0. A part that is completely inside another one adds nothing.
+- Typical sizes when the user gives none: table height 750 (top 25-40 thick), dining table top 1200x800 or
+  diameter 900-1200, coffee table height 400, chair seat height 450, desk 1400x700, shelf thickness 20,
+  table leg 40-60 wide, central column diameter 80-120 with a base diameter 400-600.
 
 Example: "un tavolo 120x80 alto 75 cm" (cm -> mm)
 ```kurva
@@ -198,6 +205,17 @@ _Cylinder -520,0,0 25 725 => Leg3
 _Cylinder 0,-330,0 25 725 => Leg4
 _SelNone
 _SelName Top Leg1 Leg2 Leg3 Leg4
+_BooleanUnion
+```
+
+Example: "un tavolo rotondo con una gamba centrale a cilindro e la base larga"
+(top diameter 900 from z=720 to 750, column from z=50 to 725, wide base on the floor)
+```kurva
+_Cylinder 0,0,720 450 30 => Top
+_Cylinder 0,0,50 40 675 => Column
+_TruncatedCone 0,0,0 250 60 60 => Base
+_SelNone
+_SelName Top Column Base
 _BooleanUnion
 ```
 
@@ -332,8 +350,37 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
   std::ostringstream log;
   Engine se(scratch, log);
   const size_t before = se.AllObjectIds(true).size();
+  auto boxOf = [&](const ON_UUID& id) {
+    ON_BoundingBox b;
+    if (const auto* o = se.Object(id)) if (const ON_Geometry* g = o->Geometry(nullptr)) b = g->BoundingBox();
+    return b;
+  };
+  auto nameOf = [&](const ON_UUID& id) {
+    const auto* o = se.Object(id);
+    const ON_3dmObjectAttributes* a = o ? o->Attributes(nullptr) : nullptr;
+    return a && !a->m_name.IsEmpty() ? ToUtf8(a->m_name) : std::string("an object");
+  };
+  const double tol = 0.01;
+  auto inside = [&](const ON_BoundingBox& a, const ON_BoundingBox& b) {  // a dentro b
+    return a.IsValid() && b.IsValid() && a.m_min.x >= b.m_min.x - tol && a.m_min.y >= b.m_min.y - tol &&
+           a.m_min.z >= b.m_min.z - tol && a.m_max.x <= b.m_max.x + tol && a.m_max.y <= b.m_max.y + tol &&
+           a.m_max.z <= b.m_max.z + tol;
+  };
   for (size_t i = 0; i < expanded.size(); i++) {
     const std::string name = CommandName(expanded[i]);
+    // pezzi da unire uno dentro l'altro: l'unione non aggiunge niente (di solito sono tutti a 0,0,0)
+    if (name == "booleanunion") {
+      const auto sel = se.Selection();
+      for (size_t a = 0; a < sel.size(); a++)
+        for (size_t b = 0; b < sel.size(); b++)
+          if (a != b && inside(boxOf(sel[a]), boxOf(sel[b]))) {
+            v.line = origin[i];
+            v.error = nameOf(sel[a]) + " is completely inside " + nameOf(sel[b]) +
+                      ": give every part its own position and Z height (base on the floor, top above), then join";
+            return v;
+          }
+    }
+    const auto idsBefore = se.AllObjectIds(true);
     if (!se.Commands().count(name)) {
       v.line = origin[i];
       v.error = "unknown command " + name + ": use only the commands listed in the reference";
@@ -344,6 +391,20 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
       v.line = origin[i];
       v.error = se.LastError().empty() ? "il comando non e' riuscito" : se.LastError();
       return v;
+    }
+    // un oggetto nuovo identico per posizione e misure a uno gia' esistente
+    const std::set<ON_UUID, UuidLess> old(idsBefore.begin(), idsBefore.end());
+    for (const auto& id : se.AllObjectIds(true)) {
+      if (old.count(id)) continue;
+      const ON_BoundingBox nb = boxOf(id);
+      for (const auto& o : idsBefore)
+        if (inside(nb, boxOf(o)) && inside(boxOf(o), nb) && name != "booleanunion" && name != "booleandifference" &&
+            name != "booleanintersection" && name != "selname") {
+          v.line = origin[i];
+          v.error = "this creates an object in exactly the same place and size as " + nameOf(o) +
+                    ": compute the real position of each part";
+          return v;
+        }
     }
   }
   v.created = (int)se.AllObjectIds(true).size() - (int)before;

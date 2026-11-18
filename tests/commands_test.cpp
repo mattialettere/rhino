@@ -1820,7 +1820,20 @@ int main(int argc, char** argv) {
       CHECK(v.ok && v.created == 1);
       blocks++;
     }
-    CHECK(blocks == 3);
+    CHECK(blocks == 4);
+    // controlli di buon senso: pezzi uno dentro l'altro da unire, pezzi identici nello stesso posto
+    {
+      const auto bad = ai::Validate(c.e, {"_Cylinder 0,0,0 50 100 => Base", "_Cylinder 0,0,0 30 100 => Inner", "_SelNone",
+                                          "_SelName Base Inner", "_BooleanDifference => BaseHollow",
+                                          "_Cylinder 0,0,0 20 100 => Leg", "_SelNone", "_SelName BaseHollow Leg",
+                                          "_BooleanUnion => Table"});
+      CHECK(!bad.ok && bad.line == 8 && bad.error.find("inside") != std::string::npos);
+      const auto dup = ai::Validate(c.e, {"_Box 0,0,0 100,100 50 => Leg1", "_Box 0,0,0 100,100 50 => Leg2"});
+      CHECK(!dup.ok && dup.line == 1 && dup.error.find("same place") != std::string::npos);
+      const auto copies = ai::Validate(c.e, {"_Box 0,0,0 40,40 700 => Leg", "_SelNone", "_SelName Leg",
+                                             "_Copy 0,0,0 500,0,0 _Enter"});
+      CHECK(copies.ok);
+    }
     CHECK(c.e.AllObjectIds(true).empty());  // la verifica non tocca il documento
   }
   {
