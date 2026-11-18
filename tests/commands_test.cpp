@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -116,6 +117,20 @@ static void Case(const char* name, const std::string& script, const std::functio
 }
 
 int main(int argc, char** argv) {
+  // senza buffer: se il processo si interrompe si vede l'ultimo gruppo di controlli
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
+  std::set_terminate([] {
+    try {
+      if (auto ex = std::current_exception()) std::rethrow_exception(ex);
+      std::printf("terminate senza eccezione\n");
+    } catch (const std::exception& x) {
+      std::printf("eccezione non gestita: %s\n", x.what());
+    } catch (...) {
+      std::printf("eccezione non gestita\n");
+    }
+    std::fflush(stdout);
+    std::_Exit(3);
+  });
   g_outDir = argc > 1 ? argv[1] : "commands_out";
   std::filesystem::create_directories(g_outDir);
   InitLibrary();
