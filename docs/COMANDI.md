@@ -15,23 +15,23 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Categoria | Fatti / totali |
 |---|---|
 | Punti | 6 / 9 |
-| Curve: linee e polilinee | 2 / 11 |
-| Curve: forme | 13 / 19 |
-| Curve: forme libere | 6 / 18 |
-| Curve da oggetti | 8 / 14 |
+| Curve: linee e polilinee | 6 / 11 |
+| Curve: forme | 16 / 19 |
+| Curve: forme libere | 8 / 18 |
+| Curve da oggetti | 9 / 14 |
 | Superfici | 18 / 29 |
-| Solidi | 19 / 24 |
-| SubD | 1 / 23 |
-| Mesh | 7 / 19 |
-| Trasformazioni | 14 / 30 |
-| Modifica | 20 / 34 |
-| Selezione | 15 / 19 |
+| Solidi | 21 / 24 |
+| SubD | 6 / 23 |
+| Mesh | 10 / 19 |
+| Trasformazioni | 17 / 30 |
+| Modifica | 22 / 34 |
+| Selezione | 17 / 19 |
 | Blocchi | 3 / 6 |
-| Livelli e proprieta' | 9 / 12 |
+| Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 11 / 14 |
 | Analisi | 10 / 15 |
 | File | 4 / 7 |
-| **Totale** | **166 / 303** |
+| **Totale** | **195 / 303** |
 
 ## Punti
 
@@ -52,16 +52,16 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | Line | ✔ |
-| Lines | ⬜ |
+| Lines | ✔ |
 | LineSrfNormal | 🧱 |
 | Polyline | ✔ |
-| PolylineThroughPoints | ⬜ |
+| PolylineThroughPoints | ✔ |
 | PolylineOnMesh | 🧱 |
 | ConvertToPolyline | 🧱 |
 | Tangent | 🧱 |
 | Perpendicular | 🧱 |
-| Bisector | ⬜ |
-| AngleLine | ⬜ |
+| Bisector | ✔ |
+| AngleLine | ✔ |
 
 ## Curve: forme
 
@@ -69,7 +69,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 |---|---|
 | Rectangle | ✔ |
 | Rectangle3Pt | ✔ |
-| RoundedRectangle | ⬜ |
+| RoundedRectangle | ✔ |
 | Polygon | ✔ |
 | PolygonStar | ✔ |
 | PolygonEdge | ✔ |
@@ -81,8 +81,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ArcTangent | 🧱 |
 | Ellipse | ✔ |
 | EllipseDiameter | ✔ |
-| Parabola | ⬜ |
-| Hyperbola | ⬜ |
+| Parabola | ✔ |
+| Hyperbola | ✔ |
 | Spiral | ✔ |
 | Helix | ✔ |
 | ConicCurve | ⬜ |
@@ -96,7 +96,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | InterpCrvOnSrf | 🧱 |
 | HandleCurve | ⬜ |
 | Sketch | ⬜ |
-| CurveThroughPt | ⬜ |
+| CurveThroughPt | ✔ |
 | Blend | 🧱 |
 | BlendCrv | 🧱 |
 | Fillet | ✔ |
@@ -107,7 +107,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Rebuild | ✔ |
 | RebuildCrvNonUniform | 🧱 |
 | Fair | 🧱 |
-| Smooth | ⬜ |
+| Smooth | ✔ |
 | Simplify | 🧱 |
 
 ## Curve da oggetti
@@ -123,7 +123,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Section | ✔ |
 | Silhouette | 🧱 |
 | Intersect | ✔ |
-| CreateUVCrv | ⬜ |
+| CreateUVCrv | ✔ |
 | ExtractIsocurve | ⬜ |
 | ExtractWireframe | ⬜ |
 | ProjectToCPlane | ✔ |
@@ -168,9 +168,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | Box | ✔ |
-| Box3Pt | ⬜ |
+| Box3Pt | ✔ |
 | Sphere | ✔ |
-| Sphere3Pt | ⬜ |
+| Sphere3Pt | ✔ |
 | Cylinder | ✔ |
 | Cone | ✔ |
 | TruncatedCone | ✔ |
@@ -197,12 +197,12 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | SubDBox | ✔ |
-| SubDSphere | ⬜ |
-| SubDCylinder | ⬜ |
+| SubDSphere | ✔ |
+| SubDCylinder | ✔ |
 | SubDCone | ⬜ |
-| SubDTorus | ⬜ |
-| SubDPlane | ⬜ |
-| SubDFromMesh | ⬜ |
+| SubDTorus | ✔ |
+| SubDPlane | ✔ |
+| SubDFromMesh | ✔ |
 | ToSubD | 🧱 |
 | ToNURBS | 🧱 |
 | SubDLoft | 🧱 |
@@ -231,17 +231,17 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | MeshCone | ✔ |
 | MeshTorus | ✔ |
 | MeshPlane | ✔ |
-| MeshPolyline | ⬜ |
+| MeshPolyline | ✔ |
 | MeshPatch | 🧱 |
 | QuadRemesh | 🧱 |
 | Reduce | 🧱 |
 | MeshBooleanUnion | 🧱 |
 | MeshBooleanDifference | 🧱 |
-| Weld | ⬜ |
+| Weld | ✔ |
 | UnweldEdge | 🧱 |
 | FillMeshHoles | 🧱 |
 | UnifyMeshNormals | 🧱 |
-| MeshToNURB | ⬜ |
+| MeshToNURB | ✔ |
 | ExtractMeshPart | ⬜ |
 
 ## Trasformazioni
@@ -265,9 +265,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ArrayPolar | ✔ |
 | ArrayCrv | 🧱 |
 | ArraySrf | 🧱 |
-| Align | ⬜ |
-| SetPt | ⬜ |
-| Shear | ⬜ |
+| Align | ✔ |
+| SetPt | ✔ |
+| Shear | ✔ |
 | Twist | 🧱 |
 | Bend | 🧱 |
 | Taper | 🧱 |
@@ -304,7 +304,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | CloseCrv | ✔ |
 | Seam | 🧱 |
 | ChangeDegree | ✔ |
-| InsertKnot | ⬜ |
+| InsertKnot | ✔ |
 | RemoveKnot | ⬜ |
 | InsertControlPoint | 🧱 |
 | PointsOn | ⬜ |
@@ -316,7 +316,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ConvertToBezier | ⬜ |
 | Isolate | ✔ |
 | Unisolate | ✔ |
-| Purge | ⬜ |
+| Purge | ✔ |
 
 ## Selezione
 
@@ -333,11 +333,11 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SelMesh | ✔ |
 | SelSubD | ✔ |
 | SelLayer | ✔ |
-| SelColor | ⬜ |
+| SelColor | ✔ |
 | SelClosedCrv | ✔ |
 | SelOpenCrv | ✔ |
 | SelDup | ✔ |
-| SelSmall | ⬜ |
+| SelSmall | ✔ |
 | SelVisible | ✔ |
 | Invert | ✔ |
 | SelectionFilter | ⬜ |
@@ -366,8 +366,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | LayerUnlock | ✔ |
 | Properties | ⬜ |
 | SetObjectName | ✔ |
-| MatchProperties | ⬜ |
-| SetUserText | ⬜ |
+| MatchProperties | ✔ |
+| SetUserText | ✔ |
 | SetObjectColor | ✔ |
 
 ## Annotazioni

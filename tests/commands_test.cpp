@@ -803,6 +803,136 @@ int main(int argc, char** argv) {
 #endif
   }
 
+  // Altri comandi (CmdExtra2)
+  {
+    std::printf("Altri comandi (2)\n");
+    Case("Lines", "_Lines 0,0 10,0 0,5 10,5 _Enter", [](Ctx& c) {
+      CHECK(c.Objects().size() == 2 && ON_LineCurve::Cast(c.Last()));
+    });
+    Case("PolylineThroughPoints", "_Point 0,0\n_Point 10,0\n_Point 10,10\n_SelAll _PolylineThroughPoints", [](Ctx& c) {
+      const auto* p = ON_PolylineCurve::Cast(c.Last());
+      CHECK(p && p->PointCount() == 3 && Near(Len(p), 20.0, 0.01));
+    });
+    Case("CurveThroughPt", "_Point 0,0\n_Point 5,5\n_Point 10,0\n_SelAll _CurveThroughPt", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      CHECK(cv && NearPt(cv->PointAtEnd(), ON_3dPoint(10, 0, 0), 1e-9));
+      double best = 1e9;
+      for (int i = 0; cv && i <= 20000; i++) best = std::min(best, cv->PointAt(cv->Domain().ParameterAt(i / 20000.0)).DistanceTo(ON_3dPoint(5, 5, 0)));
+      CHECK(best < 1e-3);
+    });
+    Case("Bisector", "_Bisector 0,0 10,0 0,10 5", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && NearPt(l->PointAtEnd(), ON_3dPoint(5 / std::sqrt(2.0), 5 / std::sqrt(2.0), 0), 1e-9));
+    });
+    Case("AngleLine", "_AngleLine 0,0 10,0 90 4", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && NearPt(l->PointAtEnd(), ON_3dPoint(0, 4, 0), 1e-9));
+    });
+    Case("RoundedRectangle", "_RoundedRectangle 0,0 10,6 1", [](Ctx& c) {
+      const auto* p = ON_PolyCurve::Cast(c.Last());
+      CHECK(p && p->IsClosed() && p->Count() == 8);
+      CHECK(Near(Len(p), 2 * (8 + 4) + 2 * ON_PI, 0.01));
+    });
+    Case("Parabola", "_Parabola 0,0 0,1 4", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(4, 4, 0), 1e-9) || cv && NearPt(cv->PointAtStart(), ON_3dPoint(-4, 4, 0), 1e-9));
+      // ogni punto soddisfa y = x^2 / 4f
+      bool ok = cv != nullptr;
+      for (int i = 0; cv && i <= 10; i++) { ON_3dPoint p = cv->PointAt(cv->Domain().ParameterAt(i / 10.0)); ok = ok && std::fabs(p.y - p.x * p.x / 4) < 1e-9; }
+      CHECK(ok);
+    });
+    Case("Hyperbola", "_Hyperbola 0,0 2,0 1 3", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      bool ok = cv != nullptr;
+      for (int i = 0; cv && i <= 10; i++) { ON_3dPoint p = cv->PointAt(cv->Domain().ParameterAt(i / 10.0)); ok = ok && std::fabs(p.x * p.x / 4 - p.y * p.y - 1) < 1e-9; }
+      CHECK(ok);
+      CHECK(cv && NearPt(cv->PointAt(cv->Domain().Mid()), ON_3dPoint(2, 0, 0), 1e-9));
+    });
+    Case("Smooth", "_Polyline 0,0 5,10 10,0 _Enter\n_SelAll _Smooth Factor=1", [](Ctx& c) {
+      const auto* n = ON_NurbsCurve::Cast(c.Last());
+      ON_3dPoint p;
+      CHECK(n && n->GetCV(1, p) && NearPt(p, ON_3dPoint(5, 0, 0), 1e-9));
+    });
+    Case("InsertKnot", "_Curve 0,0 5,5 10,0 15,5 _Enter\n_SelAll _InsertKnot 7,2 _Enter", [](Ctx& c) {
+      const auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && n->CVCount() == 5);
+    });
+    Case("CreateUVCrv", "_Plane 0,0 10,10\n_SelAll _CreateUVCrv", [](Ctx& c) {
+      CHECK(c.Objects().size() == 5);
+    });
+    Case("Box3Pt", "_Box3Pt 0,0 10,0 0,5 3", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsSolid() && NearPt(c.BBox().m_max, ON_3dPoint(10, 5, 3), 1e-9));
+    });
+    Case("Sphere3Pt", "_Sphere3Pt 5,0 -5,0 0,5", [](Ctx& c) {
+      CHECK(NearPt(c.BBox().m_max, ON_3dPoint(5, 5, 5), 1e-6));
+    });
+    Case("SubDSphere", "_SubDSphere 0,0,0 10", [](Ctx& c) {
+      const auto* s = ON_SubD::Cast(c.Last());
+      CHECK(s && s->FaceCount() == 32);
+      ON_BoundingBox bb;
+      if (s) bb = s->BoundingBox();
+      CHECK(bb.m_max.x > 9.5);
+    });
+    Case("SubDPlane", "_SubDPlane 0,0 10,10", [](Ctx& c) {
+      CHECK(ON_SubD::Cast(c.Last()) && ON_SubD::Cast(c.Last())->FaceCount() == 1);
+    });
+    Case("SubDCylinder", "_SubDCylinder 0,0,0 5 10", [](Ctx& c) {
+      CHECK(ON_SubD::Cast(c.Last()) && ON_SubD::Cast(c.Last())->FaceCount() == 16);
+    });
+    Case("SubDTorus", "_SubDTorus 0,0,0 10 2", [](Ctx& c) {
+      CHECK(ON_SubD::Cast(c.Last()) && ON_SubD::Cast(c.Last())->FaceCount() == 32);
+    });
+    Case("SubDFromMesh", "_MeshBox 0,0,0 10,10 10\n_SelAll _SubDFromMesh", [](Ctx& c) {
+      CHECK(ON_SubD::Cast(c.Last()) && ON_SubD::Cast(c.Last())->FaceCount() == 6);
+    });
+    Case("Weld", "_MeshBox 0,0,0 10,10 10\n_SelAll _Weld", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->VertexCount() == 8);
+    });
+    Case("MeshPolyline", "_Polygon NumSides=6 0,0 5,0\n_SelAll _MeshPolyline", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->FaceCount() == 6);
+    });
+    Case("MeshToNURB", "_MeshBox 0,0,0 10,10 10\n_SelAll _MeshToNURB", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->m_F.Count() == 6 && b->IsSolid());
+    });
+    Case("Shear", "_Line 0,0 0,10\n_SelAll _Shear 0,0 10,0 45", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && (NearPt(l->PointAtEnd(), ON_3dPoint(-10, 10, 0), 1e-9) || NearPt(l->PointAtEnd(), ON_3dPoint(10, 10, 0), 1e-9)));
+    });
+    Case("SetPt", "_Line 0,0,1 10,0,5\n_SelAll _SetPt 0,0,2", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && Near(l->PointAtStart().z, 2, 1e-12) && Near(l->PointAtEnd().z, 2, 1e-12) && Near(l->PointAtEnd().x, 10, 1e-12));
+    });
+    Case("Align", "_Circle 0,0 1\n_Circle 10,5 2\n_SelAll _Align Mode=Left", [](Ctx& c) {
+      for (auto* g : c.Objects()) { ON_BoundingBox b = g->BoundingBox(); CHECK(Near(b.m_min.x, -1, 1e-6)); }
+    });
+    Case("SelColor", "_Point 0,0\n_Point 1,1\n_SelAll _SetObjectColor 255,0,0\n_Point 2,2\n_SelNone _SelColor 255,0,0", [](Ctx& c) {
+      CHECK(c.e.Selection().size() == 2);
+    });
+    Case("SelSmall", "_Circle 0,0 1\n_Circle 0,0 10\n_SelSmall 5", [](Ctx& c) {
+      CHECK(c.e.Selection().size() == 1);
+    });
+    Case("MatchProperties", "-_Layer _New A\n_CurrentLayer A\n_Point 20,20\n_SelLast _SetObjectColor 0,255,0\n_CurrentLayer Default\n_Line 0,0 10,0\n_SelNone _SelLast _MatchProperties 20,20", [](Ctx& c) {
+      const auto& ids = c.e.AllObjectIds();
+      const auto* a = c.e.Object(ids.back())->Attributes(nullptr);
+      const auto* b = c.e.Object(ids.front())->Attributes(nullptr);
+      CHECK(a && b && a->m_layer_index == b->m_layer_index && a->m_color == b->m_color);
+    });
+    Case("SetUserText", "_Point 0,0\n_SelAll _SetUserText Peso 12\n_GetUserText", [](Ctx& c) {
+      CHECK(c.log.str().find("Peso = 12") != std::string::npos);
+    });
+    Case("Purge", "-_Layer _New A\n-_Layer _New B\n_CurrentLayer B\n_Point 0,0\n_Purge", [](Ctx& c) {
+      CHECK(c.log.str().find("Eliminati") != std::string::npos);
+      int layers = 0;
+      ONX_ModelComponentIterator it(c.e.Model(), ON_ModelComponent::Type::Layer);
+      for (auto* x = it.FirstComponent(); x; x = it.NextComponent()) layers++;
+      CHECK(layers == 1);
+    });
+  }
+
 #ifdef CAD_WITH_OCCT
   // Superfici e solidi, seconda parte
   {

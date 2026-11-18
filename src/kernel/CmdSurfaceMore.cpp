@@ -266,7 +266,7 @@ bool CmdEdgeSrf(Engine& e, TokenStream&) {
       else srf = GeomFill_BSplineCurves(c[0], c[1], c[2], c[3], GeomFill_CoonsStyle).Surface();
     }
   } catch (const Standard_Failure& f) {
-    return e.Fail(std::string("superficie dai bordi non riuscita: ") + (f.GetMessageString() ? f.GetMessageString() : f.DynamicType()->Name()));
+    return e.Fail(std::string("superficie dai bordi non riuscita: ") + (f.GetMessageString() ? f.GetMessageString() : "errore del motore"));
   } catch (...) {
     return e.Fail("superficie dai bordi non riuscita");
   }

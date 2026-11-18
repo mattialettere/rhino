@@ -298,8 +298,10 @@ bool CmdTube(Engine& e, TokenStream& ts) {
 }
 
 // --- Mesh -----------------------------------------------------------------------
+}  // namespace
+
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.
-ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(double, double)>& f, bool closedV = false) {
+ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(double, double)>& f, bool closedV) {
   auto* m = new ON_Mesh();
   const int cu = closedU ? nu : nu + 1, cv = closedV ? nv : nv + 1;
   for (int j = 0; j < cv; j++)
@@ -320,6 +322,8 @@ ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(d
   m->Compact();
   return m;
 }
+
+namespace {
 
 bool AddMesh(Engine& e, ON_Mesh* m, const char* what) {
   if (!m || !m->IsValid()) { delete m; return e.Fail(std::string(what) + " non valida"); }

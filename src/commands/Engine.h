@@ -162,6 +162,9 @@ void RegisterDocumentCommands(Engine& e);
 void RegisterMoreCommands(Engine& e);
 void RegisterAnnotationCommands(Engine& e);
 void RegisterExtraCommands(Engine& e);
+void RegisterExtra2Commands(Engine& e);
+// Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.
+ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(double, double)>& f, bool closedV = false);
 #ifdef CAD_WITH_OCCT
 void RegisterKernelCommands(Engine& e);
 void RegisterCurveEditCommands(Engine& e);
