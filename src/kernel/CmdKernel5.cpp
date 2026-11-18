@@ -142,12 +142,12 @@ struct FaceSurf {
 
 // Campiona una curva di intersezione nel tratto in cui la funzione ok() vale,
 // vicino al punto di riferimento. Restituisce i parametri dei campioni.
-std::vector<double> UsefulRun(const Handle(Geom_Curve)& c, const ON_3dPoint& near, double span,
+std::vector<double> UsefulRun(const Handle(Geom_Curve)& c, const ON_3dPoint& nearPt, double span,
                               const std::function<bool(double)>& ok, int samples, bool& closedOut) {
   double a = c->FirstParameter(), b = c->LastParameter();
   closedOut = false;
   if (Precision::IsInfinite(a) || Precision::IsInfinite(b)) {
-    GeomAPI_ProjectPointOnCurve pr(G(near), c);
+    GeomAPI_ProjectPointOnCurve pr(G(nearPt), c);
     const double t0 = pr.NbPoints() ? pr.LowerDistanceParameter() : 0.0;
     a = t0 - span;
     b = t0 + span;
