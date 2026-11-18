@@ -228,6 +228,9 @@ jobs:
           tar -xzf "$RUNNER_TEMP/py.tgz" -C "$RUNNER_TEMP"
           echo "PBS=$RUNNER_TEMP/python" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/python/bin/python3" --version
+          # il nome d'installazione originale (/install/lib/...) non esiste: si usa il percorso reale
+          install_name_tool -id "$RUNNER_TEMP/python/lib/libpython3.12.dylib" "$RUNNER_TEMP/python/lib/libpython3.12.dylib"
+          codesign --force -s - "$RUNNER_TEMP/python/lib/libpython3.12.dylib"
           otool -D "$RUNNER_TEMP/python/lib/libpython3.12.dylib"
 
       - name: Configura
