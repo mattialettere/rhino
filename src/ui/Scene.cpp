@@ -109,7 +109,84 @@ void AddCurveSnaps(const ON_Curve& c, std::vector<SnapPoint>& snaps) {
   }
 }
 
+// Isocurve come nel wireframe di Rhino (densita' 1): una curva per ogni nodo
+// interno della superficie in ciascuna direzione, tagliata dai bordi della faccia.
+void AddIsocurves(const ON_Brep& b, DisplayObject& d) {
+  for (int fi = 0; fi < b.m_F.Count(); fi++) {
+    const ON_BrepFace& f = b.m_F[fi];
+    const ON_Surface* srf = f.SurfaceOf();
+    if (!srf) continue;
+    // contorni della regione di parametri (cicli di trim campionati)
+    std::vector<std::vector<ON_2dPoint>> loops;
+    for (int li = 0; li < f.m_li.Count(); li++) {
+      const ON_BrepLoop& L = b.m_L[f.m_li[li]];
+      std::vector<ON_2dPoint> poly;
+      for (int k = 0; k < L.m_ti.Count(); k++) {
+        const ON_BrepTrim& t = b.m_T[L.m_ti[k]];
+        const ON_Interval dom = t.Domain();
+        const int n = 24;
+        for (int j = 0; j < n; j++) {
+          const ON_3dPoint q = t.PointAt(dom.ParameterAt(double(j) / n));
+          poly.push_back(ON_2dPoint(q.x, q.y));
+        }
+      }
+      if (poly.size() >= 3) loops.push_back(std::move(poly));
+    }
+    auto inside = [&](double u, double v) {
+      bool in = false;
+      for (const auto& poly : loops)
+        for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+          if (((poly[i].y > v) != (poly[j].y > v)) &&
+              (u < (poly[j].x - poly[i].x) * (v - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+            in = !in;
+      return loops.empty() ? true : in;
+    };
+    for (int dir = 0; dir < 2; dir++) {
+      const int spans = srf->SpanCount(dir);
+      if (spans < 2 || spans > 64) continue;
+      std::vector<double> sv(spans + 1);
+      if (!srf->GetSpanVector(dir, sv.data())) continue;
+      const ON_Interval other = srf->Domain(1 - dir);
+      const int step = std::max(1, spans / 16);  // al massimo ~16 isocurve per direzione
+      for (int k = 1; k < spans; k += step) {
+        const double c = sv[k];
+        const int n = 64;
+        std::vector<ON_3dPoint> run;
+        for (int j = 0; j <= n; j++) {
+          const double t = other.ParameterAt(double(j) / n);
+          const double u = dir == 0 ? c : t, v = dir == 0 ? t : c;
+          if (inside(u, v)) run.push_back(srf->PointAt(u, v));
+          else {
+            if (run.size() >= 2) d.isocurves.push_back(run);
+            run.clear();
+          }
+        }
+        if (run.size() >= 2) d.isocurves.push_back(std::move(run));
+      }
+    }
+  }
+}
+
+// Candidati al contorno apparente: spigoli interni della mesh tra facce non
+// complanari (gli spigoli vivi sono gia' disegnati come bordi delle facce).
+void AddSilhouetteCandidates(const ON_Mesh& m, DisplayObject& d) {
+  ON_Mesh mm(m);
+  if (!mm.HasFaceNormals()) mm.ComputeFaceNormals();
+  const ON_MeshTopology& top = mm.Topology();
+  for (int i = 0; i < top.m_tope.Count(); i++) {
+    const ON_MeshTopologyEdge& e = top.m_tope[i];
+    if (e.m_topf_count != 2) continue;
+    const ON_3dVector n1(mm.m_FN[e.m_topfi[0]]), n2(mm.m_FN[e.m_topfi[1]]);
+    if (n1 * n2 < 0.5) continue;  // spigolo vivo: non e' un contorno apparente
+    const auto& v0 = top.m_topv[e.m_topvi[0]];
+    const auto& v1 = top.m_topv[e.m_topvi[1]];
+    if (!v0.m_v_count || !v1.m_v_count) continue;
+    d.silhouette.push_back({ON_3dPoint(mm.m_V[v0.m_vi[0]]), ON_3dPoint(mm.m_V[v1.m_vi[0]]), n1, n2});
+  }
+}
+
 void AddBrep(const ON_Brep& b, DisplayObject& d) {
+  AddIsocurves(b, d);
   for (int i = 0; i < b.m_E.Count(); i++) {
     std::vector<ON_3dPoint> w;
     TessellateCurve(b.m_E[i], w);
@@ -194,6 +271,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
     auto sm = it != m_meshCache.end() ? it->second : SubDMesh(*s);
     newCache[sig] = sm;
     AddShaded(d, sm);
+    if (sm) AddSilhouetteCandidates(*sm, d);
   } else if (const auto* an = ON_Annotation::Cast(g)) {
     AnnotationDisplay ad;
     BuildAnnotationDisplay(m_engine.Model(), *an, ad);
@@ -247,6 +325,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
       }
       newCache[sig] = bm;
       AddShaded(d, bm);
+      if (bm) AddSilhouetteCandidates(*bm, d);
 #endif
     }
   }

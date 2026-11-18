@@ -227,7 +227,7 @@ void Viewport::paintGL() {
     const double t = nearP * std::tan(m_cam.fovY / 2);
     gl->glFrustum(-t * aspect, t * aspect, -t, t, nearP, farP);
   } else {
-    gl->glOrtho(-m_cam.halfHeight * aspect, m_cam.halfHeight * aspect, -m_cam.halfHeight, m_cam.halfHeight, 1.0, farP);
+    gl->glOrtho(-m_cam.halfHeight * aspect, m_cam.halfHeight * aspect, -m_cam.halfHeight, m_cam.halfHeight, -farP, farP);  // niente taglio davanti alla camera nelle viste piane
   }
   gl->glMatrixMode(GL_MODELVIEW);
   const ON_3dVector r = m_cam.Right(), u = m_cam.Up(), d = m_cam.Dir();
@@ -301,6 +301,26 @@ void Viewport::paintGL() {
       else if (obj.locked) gl->glColor3ub(110, 110, 110);
       else gl->glColor3ub(obj.color.Red(), obj.color.Green(), obj.color.Blue());
       gl->glLineWidth(obj.selected ? 2.0f : 1.0f);
+      if (mode == DisplayMode::Wireframe || mode == DisplayMode::XRay || mode == DisplayMode::Ghosted) {
+        // contorno apparente: spigoli dove una faccia guarda la camera e l'altra no
+        const bool persp = m_cam.kind == Camera::Kind::Perspective;
+        const ON_3dVector vd = m_cam.Dir();
+        const ON_3dPoint eye = m_cam.Eye();
+        gl->glBegin(GL_LINES);
+        for (const auto& se : obj.silhouette) {
+          const ON_3dVector dd = persp ? ON_3dVector(se.a - eye) : vd;
+          if ((se.n1 * dd) * (se.n2 * dd) <= 0) {
+            gl->glVertex3d(se.a.x, se.a.y, se.a.z);
+            gl->glVertex3d(se.b.x, se.b.y, se.b.z);
+          }
+        }
+        gl->glEnd();
+      }
+      for (const auto& wire : obj.isocurves) {
+        gl->glBegin(GL_LINE_STRIP);
+        for (const auto& p : wire) gl->glVertex3d(p.x, p.y, p.z);
+        gl->glEnd();
+      }
       for (const auto& wire : obj.wires) {
         gl->glBegin(GL_LINE_STRIP);
         for (const auto& p : wire) gl->glVertex3d(p.x, p.y, p.z);
@@ -603,12 +623,13 @@ std::vector<ON_UUID> Viewport::PickAt(const QPoint& pos) const {
   for (const auto& obj : m_scene.Objects()) {
     if (obj.locked) continue;
     double dmin = 1e9;
-    for (const auto& wire : obj.wires)
-      for (size_t i = 0; i + 1 < wire.size(); i++) {
-        double ax, ay, bx, by;
-        if (!m_cam.Project(wire[i], width(), height(), ax, ay) || !m_cam.Project(wire[i + 1], width(), height(), bx, by)) continue;
-        dmin = std::min(dmin, segDist(pos.x(), pos.y(), ax, ay, bx, by));
-      }
+    for (const auto* list : {&obj.wires, &obj.isocurves})
+      for (const auto& wire : *list)
+        for (size_t i = 0; i + 1 < wire.size(); i++) {
+          double ax, ay, bx, by;
+          if (!m_cam.Project(wire[i], width(), height(), ax, ay) || !m_cam.Project(wire[i + 1], width(), height(), bx, by)) continue;
+          dmin = std::min(dmin, segDist(pos.x(), pos.y(), ax, ay, bx, by));
+        }
     for (const auto& p : obj.points) {
       double sx, sy;
       if (m_cam.Project(p, width(), height(), sx, sy)) dmin = std::min(dmin, std::hypot(sx - pos.x(), sy - pos.y()));

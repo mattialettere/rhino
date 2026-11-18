@@ -20,9 +20,14 @@ const char* SnapName(SnapKind k);
 struct DisplayObject {
   ON_UUID id = ON_nil_uuid;
   std::vector<std::vector<ON_3dPoint>> wires;
+  std::vector<std::vector<ON_3dPoint>> isocurves;  // isocurve delle superfici (solo disegno e selezione)
   std::vector<ON_3dPoint> points;
   std::vector<AnnotationLabel> labels;   // testi di testi e quote
   std::vector<ON_3dPoint> triangles;     // frecce piene delle quote
+  // Spigoli della mesh di visualizzazione con le normali delle due facce:
+  // nelle viste diventano il contorno apparente (silhouette) delle superfici curve.
+  struct SilEdge { ON_3dPoint a, b; ON_3dVector n1, n2; };
+  std::vector<SilEdge> silhouette;
   std::vector<SnapPoint> snapPoints;   // estremi, punti medi, centri, quadranti, nodi, vertici
   std::shared_ptr<ON_Mesh> shaded;     // nullptr se non ombreggiabile
   ON_Color color = ON_Color::Black;
