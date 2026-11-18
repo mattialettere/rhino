@@ -4,7 +4,15 @@
 #include "commands/Engine.h"
 #include "kernel/OcctConvert.h"
 
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgo_NormalProjection.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepGProp_Face.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
+#include <BRepOffsetAPI_MakeFilling.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
@@ -20,7 +28,10 @@
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BoundedSurface.hxx>
 #include <ShapeAnalysis_FreeBounds.hxx>
+#include <ShapeAnalysis_Surface.hxx>
 #include <ShapeFix_Solid.hxx>
+#include <ShapeFix_Shell.hxx>
+#include <BRepLib.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Iterator.hxx>
@@ -767,6 +778,181 @@ bool CmdArraySrf(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// --- LineSrfNormal ------------------------------------------------------------------
+// Linea normale alla superficie nel punto cliccato, della lunghezza data
+// (negativa = verso l'interno).
+bool CmdLineSrfNormal(Engine& e, TokenStream& ts) {
+  auto p = e.ReadPick(ts, "punto sulla superficie");
+  if (!p) return false;
+  const ON_Geometry* g = NearestSurface(e, *p, {}, nullptr);
+  if (!g) return e.Fail("superficie non trovata");
+  auto len = e.ReadNumber(ts, "lunghezza");
+  if (!len) return false;
+  if (std::fabs(*len) <= e.Tolerance()) return e.Fail("lunghezza nulla");
+  try {
+    const TopoDS_Shape s = occt::GeometryToShape(*g, e.Tolerance());
+    const gp_Pnt P(p->x, p->y, p->z);
+    const TopoDS_Shape v = BRepBuilderAPI_MakeVertex(P).Vertex();
+    // faccia piu' vicina, poi il punto (u,v) su di essa
+    double best = 1e300;
+    TopoDS_Face face;
+    for (TopExp_Explorer ex(s, TopAbs_FACE); ex.More(); ex.Next()) {
+      BRepExtrema_DistShapeShape d(v, ex.Current());
+      if (d.IsDone() && d.Value() < best) { best = d.Value(); face = TopoDS::Face(ex.Current()); }
+    }
+    if (face.IsNull()) return e.Fail("faccia non trovata");
+    BRepExtrema_DistShapeShape d(v, face);
+    if (!d.IsDone() || d.NbSolution() < 1) return e.Fail("punto non trovato");
+    const gp_Pnt foot = d.PointOnShape2(1);
+    ShapeAnalysis_Surface sas(BRep_Tool::Surface(face));
+    const gp_Pnt2d uv = sas.ValueOfUV(foot, e.Tolerance());
+    BRepGProp_Face gf(face);
+    gp_Pnt q;
+    gp_Vec n;
+    gf.Normal(uv.X(), uv.Y(), q, n);
+    if (n.Magnitude() < 1e-15) return e.Fail("normale non definita");
+    n.Normalize();
+    const ON_3dPoint a(q.X(), q.Y(), q.Z());
+    e.AddObject(new ON_LineCurve(a, a + ON_3dVector(n.X(), n.Y(), n.Z()) * *len));
+  } catch (...) {
+    return e.Fail("normale non calcolata");
+  }
+  e.Out() << "  Creata linea normale\n";
+  return true;
+}
+
+// --- NetworkSrf -------------------------------------------------------------------------
+// Superficie da una rete di curve: le curve con entrambi gli estremi sugli
+// estremi di altre curve formano il bordo, le altre sono vincoli interni.
+bool CmdNetworkSrf(Engine& e, TokenStream& ts) {
+  (void)ts;
+  auto sel = e.RequireSelection("NetworkSrf", "seleziona le curve della rete, poi Invio");
+  std::vector<std::unique_ptr<ON_Curve>> cs;
+  for (const auto& id : sel)
+    if (const auto* c = ON_Curve::Cast(Geo(e, id))) cs.emplace_back(c->DuplicateCurve());
+  if (cs.size() < 3) return e.Fail("servono almeno 3 curve");
+  const double tol = std::max(e.Tolerance() * 10, 1e-6);
+  auto touchesEnd = [&](const ON_3dPoint& p, size_t self) {
+    for (size_t j = 0; j < cs.size(); j++)
+      if (j != self && (cs[j]->PointAtStart().DistanceTo(p) < tol || cs[j]->PointAtEnd().DistanceTo(p) < tol)) return true;
+    return false;
+  };
+  std::vector<size_t> border, inner;
+  for (size_t i = 0; i < cs.size(); i++) {
+    if (touchesEnd(cs[i]->PointAtStart(), i) && touchesEnd(cs[i]->PointAtEnd(), i)) border.push_back(i);
+    else inner.push_back(i);
+  }
+  if (border.size() < 2) return e.Fail("il bordo della rete non e' chiuso");
+  // bordo ordinato a catena
+  std::vector<size_t> chain{border[0]};
+  std::vector<bool> used(cs.size(), false);
+  used[border[0]] = true;
+  ON_3dPoint end = cs[border[0]]->PointAtEnd();
+  for (size_t step = 1; step < border.size(); step++) {
+    bool found = false;
+    for (size_t k : border) {
+      if (used[k]) continue;
+      if (cs[k]->PointAtStart().DistanceTo(end) < tol) { found = true; }
+      else if (cs[k]->PointAtEnd().DistanceTo(end) < tol) { cs[k]->Reverse(); found = true; }
+      if (found) { chain.push_back(k); used[k] = true; end = cs[k]->PointAtEnd(); break; }
+    }
+    if (!found) break;
+  }
+  if (end.DistanceTo(cs[chain[0]]->PointAtStart()) > tol) return e.Fail("il bordo della rete non e' chiuso");
+  for (size_t k : border) if (!used[k]) inner.push_back(k);
+  try {
+    BRepOffsetAPI_MakeFilling mf(3, 15, 2, Standard_False, 1e-5, 1e-4, 1e-2, 0.1, 8, 9);
+    for (size_t k : chain) {
+      TopoDS_Shape s = occt::CurveToShape(*cs[k]);
+      if (s.IsNull()) return e.Fail("curva di bordo non valida");
+      mf.Add(TopoDS::Edge(s), GeomAbs_C0, Standard_True);
+    }
+    for (size_t k : inner) {
+      TopoDS_Shape s = occt::CurveToShape(*cs[k]);
+      if (!s.IsNull()) mf.Add(TopoDS::Edge(s), GeomAbs_C0, Standard_False);
+    }
+    mf.Build();
+    if (!mf.IsDone() || !AddShape(e, mf.Shape(), Attrs(e, sel.front()))) return e.Fail("superficie dalla rete non riuscita");
+  } catch (...) {
+    return e.Fail("superficie dalla rete non riuscita");
+  }
+  e.Out() << "  Creata superficie da rete di " << cs.size() << " curve (" << inner.size() << " interne)\n";
+  return true;
+}
+
+// --- MeshBooleanUnion / Difference / Intersection -----------------------------------------
+// Le mesh chiuse diventano solidi a facce piane, si combinano con OpenCASCADE e
+// il risultato torna mesh.
+TopoDS_Shape MeshToSolid(const ON_Mesh& m, double tol) {
+  BRepBuilderAPI_Sewing sew(tol);
+  for (int i = 0; i < m.FaceCount(); i++) {
+    const ON_MeshFace& f = m.m_F[i];
+    const int n = f.IsQuad() ? 4 : 3;
+    BRepBuilderAPI_MakePolygon poly;
+    for (int k = 0; k < n; k++) {
+      const ON_3dPoint p = m.Vertex(f.vi[k]);
+      poly.Add(gp_Pnt(p.x, p.y, p.z));
+    }
+    poly.Close();
+    if (!poly.IsDone()) continue;
+    BRepBuilderAPI_MakeFace mf(poly.Wire(), Standard_True);
+    if (mf.IsDone()) sew.Add(mf.Face());
+  }
+  sew.Perform();
+  const TopoDS_Shape r = sew.SewedShape();
+  for (TopExp_Explorer ex(r, TopAbs_SHELL); ex.More(); ex.Next()) {
+    ShapeFix_Shell fs(TopoDS::Shell(ex.Current()));
+    fs.Perform();
+    BRepBuilderAPI_MakeSolid ms(fs.Shell());
+    if (!ms.IsDone()) break;
+    TopoDS_Solid so = ms.Solid();
+    BRepLib::OrientClosedSolid(so);
+    return so;
+  }
+  return {};
+}
+
+bool MeshBoolean(Engine& e, int op, const char* name) {
+  auto sel = e.RequireSelection(name, op == 1 ? "seleziona prima la mesh da cui sottrarre, poi le altre, poi Invio"
+                                              : "seleziona le mesh, poi Invio");
+  std::vector<ON_UUID> ids;
+  std::vector<TopoDS_Shape> solids;
+  for (const auto& id : sel) {
+    const auto* m = ON_Mesh::Cast(Geo(e, id));
+    if (!m) continue;
+    if (m->FaceCount() > 20000) return e.Fail("mesh troppo grande (oltre 20000 facce): riducila prima con Reduce");
+    TopoDS_Shape s;
+    try { s = MeshToSolid(*m, std::max(e.Tolerance(), 1e-6)); } catch (...) {}
+    if (s.IsNull()) return e.Fail("una delle mesh non e' chiusa");
+    solids.push_back(s);
+    ids.push_back(id);
+  }
+  if (solids.size() < 2) return e.Fail("seleziona almeno 2 mesh chiuse");
+  TopoDS_Shape r = solids[0];
+  try {
+    for (size_t i = 1; i < solids.size(); i++) {
+      if (op == 0) r = BRepAlgoAPI_Fuse(r, solids[i]).Shape();
+      else if (op == 1) r = BRepAlgoAPI_Cut(r, solids[i]).Shape();
+      else r = BRepAlgoAPI_Common(r, solids[i]).Shape();
+    }
+  } catch (...) {
+    return e.Fail("operazione booleana non riuscita");
+  }
+  ON_Mesh* out = occt::MeshShape(r, 1e-3, 0.5);
+  if (!out || out->FaceCount() == 0) { delete out; return e.Fail("risultato vuoto"); }
+  out->CombineIdenticalVertices(true, true);
+  out->ComputeVertexNormals();
+  const ON_3dmObjectAttributes a = Attrs(e, ids.front());
+  for (const auto& id : ids) e.DeleteObject(id);
+  e.AddObject(out, &a);
+  e.Out() << "  " << name << ": mesh di " << out->FaceCount() << " facce\n";
+  return true;
+}
+
+bool CmdMeshBooleanUnion(Engine& e, TokenStream&) { return MeshBoolean(e, 0, "MeshBooleanUnion"); }
+bool CmdMeshBooleanDifference(Engine& e, TokenStream&) { return MeshBoolean(e, 1, "MeshBooleanDifference"); }
+bool CmdMeshBooleanIntersection(Engine& e, TokenStream&) { return MeshBoolean(e, 2, "MeshBooleanIntersection"); }
+
 }  // namespace
 
 void RegisterSurface3Commands(Engine& e) {
@@ -781,6 +967,11 @@ void RegisterSurface3Commands(Engine& e) {
   reg("Pull", "Curve", "Proietta curve e punti su una superficie lungo la normale", CmdPull);
   reg("Sweep2", "Superfici", "Sweep su due binari (primi due selezionati) con uno o piu' profili", CmdSweep2);
   reg("Flow", "Trasforma", "Fa scorrere gli oggetti da una curva di base a una di destinazione (Stretch=)", CmdFlow);
+  reg("LineSrfNormal", "Curve", "Linea normale a una superficie nel punto cliccato", CmdLineSrfNormal);
+  reg("NetworkSrf", "Superfici", "Superficie da una rete di curve (bordo chiuso e curve interne)", CmdNetworkSrf);
+  reg("MeshBooleanUnion", "Mesh", "Unione di mesh chiuse", CmdMeshBooleanUnion);
+  reg("MeshBooleanDifference", "Mesh", "Differenza di mesh chiuse (la prima meno le altre)", CmdMeshBooleanDifference);
+  reg("MeshBooleanIntersection", "Mesh", "Intersezione di mesh chiuse", CmdMeshBooleanIntersection);
   reg("ArraySrf", "Trasforma", "Copie degli oggetti sulla griglia u x v di una superficie", CmdArraySrf);
 }
 

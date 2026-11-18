@@ -42,6 +42,19 @@ struct Ctx {
 
 static std::string g_outDir;
 
+static double MeshVolume(const ON_Mesh& m) {
+  double v = 0;
+  for (int i = 0; i < m.FaceCount(); i++) {
+    const ON_MeshFace& f = m.m_F[i];
+    const ON_3dPoint a = m.Vertex(f.vi[0]);
+    for (int k = 1; k + 1 < (f.IsQuad() ? 4 : 3); k++) {
+      const ON_3dPoint b = m.Vertex(f.vi[k]), c = m.Vertex(f.vi[k + 1]);
+      v += ON_DotProduct(ON_3dVector(a), ON_CrossProduct(ON_3dVector(b), ON_3dVector(c))) / 6.0;
+    }
+  }
+  return std::fabs(v);
+}
+
 static double Len(const ON_Geometry* g) {
   const ON_Curve* c = ON_Curve::Cast(g);
   if (!c) return -1;
@@ -691,6 +704,7 @@ int main(int argc, char** argv) {
     Case("MeshBox", "_MeshBox 0,0 10,5 3", [](Ctx& c) {
       const auto* m = ON_Mesh::Cast(c.Last());
       CHECK(m && m->FaceCount() == 6 && m->IsClosed());
+      CHECK(m && std::fabs(MeshVolume(*m) - 150.0) < 1e-6);  // facce non intrecciate
     });
     Case("MeshSphere", "_MeshSphere 0,0,0 5", [](Ctx& c) {
       const auto* m = ON_Mesh::Cast(c.Last());
@@ -1062,6 +1076,27 @@ int main(int argc, char** argv) {
   // Deformazioni e altri comandi (CmdExtra3)
   {
     std::printf("Altri comandi (3)\n");
+    Case("Tangent", "_Circle 0,0 5\n_Tangent 5,0 5,7", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && NearPt(l->m_line.from, ON_3dPoint(5, 0, 0), 1e-6) && NearPt(l->m_line.to, ON_3dPoint(5, 7, 0), 1e-6));
+    });
+    Case("Perpendicular", "_Circle 0,0 5\n_Perpendicular 0,5 3,9", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      CHECK(l && NearPt(l->m_line.from, ON_3dPoint(0, 5, 0), 1e-6) && NearPt(l->m_line.to, ON_3dPoint(0, 9, 0), 1e-6));
+    });
+    Case("Reduce", "_MeshSphere 0,0,0 10\n_SelAll _Reduce ReductionPercent=75", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsValid() && c.Objects().size() == 1);
+      // la forma resta una sfera: tutti i vertici vicini al raggio
+      bool ok = m != nullptr;
+      for (int i = 0; m && i < m->VertexCount(); i++) ok = ok && std::fabs(ON_3dPoint(m->m_V[i]).DistanceTo(ON_origin) - 10) < 1.0;
+      CHECK(ok);
+      CHECK(m && m->IsClosed());
+    });
+    Case("SubDCone", "_SubDCone 0,0,0 5 10", [](Ctx& c) {
+      const auto* s = ON_SubD::Cast(c.Last());
+      CHECK(s && s->IsValid() && s->FaceCount() == 8 + 8);
+    });
     Case("Twist_linea", "_Line 5,0,0 5,0,10\n_SelAll _Twist 0,0,0 0,0,10 90", [](Ctx& c) {
       const auto* cv = ON_Curve::Cast(c.Last());
       // la cima ruota di 90 gradi attorno a z: (5,0,10) -> (0,5,10)
@@ -1209,6 +1244,36 @@ int main(int argc, char** argv) {
     Case("Flow_stretch", "_Line 0,0 10,0\n_Line 0,20 0,40\n_Point 5,0,0\n_SelPt _Flow Stretch=Yes 0,0 0,20", [](Ctx& c) {
       const auto* p = ON_Point::Cast(c.Last());
       CHECK(p && NearPt(p->point, ON_3dPoint(0, 30, 0), 1e-3));
+    });
+    Case("LineSrfNormal", "_Sphere 0,0,0 10\n_LineSrfNormal 0,0.1,10.2 5", [](Ctx& c) {
+      const auto* l = ON_LineCurve::Cast(c.Last());
+      // punto della sfera piu' vicino al clic e normale radiale
+      CHECK(l && std::fabs(l->m_line.from.DistanceTo(ON_origin) - 10) < 1e-6 && std::fabs(l->m_line.to.DistanceTo(ON_origin) - 15) < 1e-6);
+      CHECK(l && l->m_line.from.y > 0.05 && l->m_line.from.y < 0.15);
+    });
+    Case("NetworkSrf", "_Line 0,0,0 10,0,0\n_Line 10,0,0 10,10,0\n_Line 10,10,0 0,10,0\n_Line 0,10,0 0,0,0\n"
+                       "_Arc3Pt 5,0,0 5,10,0 5,5,3\n_SelCrv _NetworkSrf", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid() && b->m_F.Count() == 1);
+      // la superficie passa vicino al colmo della curva interna
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      CHECK(b && bb.m_max.z > 2.7 && bb.m_max.z < 3.3);
+    });
+    Case("MeshBooleanUnion", "_MeshBox 0,0 10,10 10\n_MeshBox 5,5,5 15,15,5 10\n_SelMesh _MeshBooleanUnion", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && c.Objects().size() == 1 && m->IsClosed());
+      ON_BoundingBox bb = c.BBox();
+      CHECK(NearPt(bb.m_min, ON_3dPoint(0, 0, 0), 1e-6) && NearPt(bb.m_max, ON_3dPoint(15, 15, 15), 1e-6));
+      CHECK(m && std::fabs(MeshVolume(*m) - (1000.0 * 2 - 125.0)) < 1e-3);
+    });
+    Case("MeshBooleanDifference", "_MeshBox 0,0 10,10 10\n_MeshBox 5,5,5 15,15,5 10\n_SelMesh _MeshBooleanDifference", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && std::fabs(MeshVolume(*m) - 875.0) < 1e-3);
+    });
+    Case("MeshBooleanIntersection", "_MeshBox 0,0 10,10 10\n_MeshBox 5,5,5 15,15,5 10\n_SelMesh _MeshBooleanIntersection", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && std::fabs(MeshVolume(*m) - 125.0) < 1e-3);
     });
     Case("ArraySrf", "_Plane 0,0 10,10\n_Point 0,0,1\n_SelPt _ArraySrf 0,0,0 5,5 3 2", [](Ctx& c) {
       CHECK(c.Objects().size() == 2 + 6);

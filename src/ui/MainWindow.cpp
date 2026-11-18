@@ -233,9 +233,9 @@ void MainWindow::BuildMenus() {
                      {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Linee singole", "_Lines"},
                      {"Rettangolo arrotondato", "_RoundedRectangle"}, {"Parabola", "_Parabola"}, {"Iperbole", "_Hyperbola"},
                      {"Bisettrice", "_Bisector"}, {"Curva per punti", "_CurveThroughPt"}, {"Leviga", "_Smooth"},
-                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Tira su superficie (Pull)", "_Pull"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
+                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Tira su superficie (Pull)", "_Pull"}, {"Linea tangente", "_Tangent"}, {"Linea perpendicolare", "_Perpendicular"}, {"Normale a superficie", "_LineSrfNormal"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
   addCmds("&Superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi curva", "_ExtrudeCrv"},
-                         {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"}, {"Sweep 2 binari", "_Sweep2"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi superficie", "_ExtendSrf"},
+                         {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"}, {"Sweep 2 binari", "_Sweep2"}, {"Da rete di curve", "_NetworkSrf"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi superficie", "_ExtendSrf"},
                          {"Offset superficie", "_OffsetSrf"}, {"Da 3 o 4 punti", "_SrfPt"},
                          {"Da 2, 3 o 4 curve di bordo", "_EdgeSrf"}, {"Patch", "_Patch"},
                          {"Piano da 3 punti", "_Plane3Pt"}, {"Piano verticale", "_PlaneVertical"},
@@ -247,13 +247,13 @@ void MainWindow::BuildMenus() {
                       {"Differenza booleana", "_BooleanDifference"}, {"Intersezione booleana", "_BooleanIntersection"},
                       {"Divisione booleana", "_BooleanSplit"}, {"Raccorda spigoli", "_FilletEdge"},
                       {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}});
-  addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}, {"Sfera SubD", "_SubDSphere"}, {"Cilindro SubD", "_SubDCylinder"},
+  addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}, {"Sfera SubD", "_SubDSphere"}, {"Cilindro SubD", "_SubDCylinder"}, {"Cono SubD", "_SubDCone"},
                     {"Toro SubD", "_SubDTorus"}, {"Piano SubD", "_SubDPlane"}, {"SubD da mesh", "_SubDFromMesh"},
                     {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}});
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano mesh", "_MeshPlane"}, {"Box mesh", "_MeshBox"},
                     {"Sfera mesh", "_MeshSphere"}, {"Cilindro mesh", "_MeshCylinder"}, {"Cono mesh", "_MeshCone"},
                     {"Toro mesh", "_MeshTorus"}, {"Mesh da polilinea", "_MeshPolyline"},
-                    {"Salda", "_Weld"}, {"Unifica normali", "_UnifyMeshNormals"}, {"Chiudi fori", "_FillMeshHoles"}, {"Mesh in NURBS", "_MeshToNURB"}});
+                    {"Salda", "_Weld"}, {"Unifica normali", "_UnifyMeshNormals"}, {"Chiudi fori", "_FillMeshHoles"}, {"Riduci", "_Reduce"}, {"Unione mesh", "_MeshBooleanUnion"}, {"Differenza mesh", "_MeshBooleanDifference"}, {"Intersezione mesh", "_MeshBooleanIntersection"}, {"Mesh in NURBS", "_MeshToNURB"}});
   addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
                       {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
                       {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
@@ -320,7 +320,7 @@ QWidget* MainWindow::BuildToolTabs() {
                              {"Proietta", "_Project"}, {"Curve di livello", "_Contour"}, {"Sezione", "_Section"},
                              {"Copia spigoli", "_DupEdge"}});
   addTab("Strumenti superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi", "_ExtrudeCrv"},
-                                 {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"}, {"Sweep 2", "_Sweep2"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi", "_ExtendSrf"},
+                                 {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1", "_Sweep1"}, {"Sweep 2", "_Sweep2"}, {"Rete di curve", "_NetworkSrf"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi", "_ExtendSrf"},
                                  {"Offset superficie", "_OffsetSrf"}, {"Dividi", "_Split"}, {"Estrai superficie", "_ExtractSrf"},
                                  {"Da punti", "_SrfPt"}, {"Da bordi", "_EdgeSrf"}, {"Patch", "_Patch"}, {"Rimuovi tagli", "_UntrimAll"}});
   addTab("Strumenti solidi", {{"Box", "_Box"}, {"Sfera", "_Sphere"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
@@ -329,7 +329,7 @@ QWidget* MainWindow::BuildToolTabs() {
                               {"Divisione", "_BooleanSplit"}, {"Raccorda spigoli", "_FilletEdge"},
                               {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori", "_Cap"}, {"Guscio", "_Shell"},
                               {"Estrudi superficie", "_ExtrudeSrf"}});
-  addTab("Strumenti SubD", {{"Box SubD", "_SubDBox"}, {"Sfera", "_SubDSphere"}, {"Cilindro", "_SubDCylinder"},
+  addTab("Strumenti SubD", {{"Box SubD", "_SubDBox"}, {"Sfera", "_SubDSphere"}, {"Cilindro", "_SubDCylinder"}, {"Cono", "_SubDCone"},
                             {"Toro", "_SubDTorus"}, {"Piano", "_SubDPlane"}, {"Da mesh", "_SubDFromMesh"}});
   addTab("Strumenti mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano", "_MeshPlane"}, {"Box", "_MeshBox"},
                             {"Sfera", "_MeshSphere"}, {"Cilindro", "_MeshCylinder"}, {"Toro", "_MeshTorus"}});

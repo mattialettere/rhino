@@ -499,6 +499,38 @@ bool CmdSubDCylinder(Engine& e, TokenStream& ts) {
   return AddSubD(e, s, "cilindro SubD");
 }
 
+// SubDCone: base aperta e punta; la gabbia ha gli anelli che si stringono fino al vertice.
+bool CmdSubDCone(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto c = e.ReadPoint(ts, "centro della base");
+  if (!c) return false;
+  auto r = e.ReadNumber(ts, "raggio");
+  if (!r) return false;
+  auto h = e.ReadNumber(ts, "altezza");
+  if (!h) return false;
+  if (*r <= e.Tolerance() || std::fabs(*h) <= e.Tolerance()) return e.Fail("cono degenere");
+  const int n = std::max(3, OptInt(opts, "aroundcount", 8)), nv = std::max(1, OptInt(opts, "verticalcount", 2));
+  auto* cage = new ON_Mesh();
+  for (int j = 0; j < nv; j++)
+    for (int i = 0; i < n; i++) {
+      const double a = 2 * ON_PI * i / n, k = 1.0 - double(j) / nv;
+      cage->m_V.Append(ON_3fPoint(float(k * std::cos(a)), float(k * std::sin(a)), float(*h * j / nv)));
+    }
+  const int apex = cage->m_V.Count();
+  cage->m_V.Append(ON_3fPoint(0, 0, float(*h)));
+  for (int j = 0; j + 1 < nv; j++)
+    for (int i = 0; i < n; i++)
+      cage->SetQuad(cage->m_F.Count(), j * n + i, j * n + (i + 1) % n, (j + 1) * n + (i + 1) % n, (j + 1) * n + i);
+  for (int i = 0; i < n; i++) cage->SetTriangle(cage->m_F.Count(), (nv - 1) * n + i, (nv - 1) * n + (i + 1) % n, apex);
+  ON_SubD* s = SubDFromCage(cage);
+  if (!s) return e.Fail("SubD non valido");
+  const ON_BoundingBox bb = LimitBox(*s);
+  const double ext = 0.5 * (bb.m_max.x - bb.m_min.x);
+  ON_Xform sc = ON_Xform::DiagonalTransformation(*r / ext, *r / ext, 1.0);
+  s->Transform(ON_Xform::TranslationTransformation(*c - ON_3dPoint::Origin) * sc);
+  return AddSubD(e, s, "cono SubD");
+}
+
 bool CmdSubDTorus(Engine& e, TokenStream& ts) {
   auto opts = e.ReadOptions(ts);
   auto c = e.ReadPoint(ts, "centro del toro");
@@ -1368,6 +1400,7 @@ void RegisterExtra2Commands(Engine& e) {
   reg("SubDSphere", "SubD", "Sfera SubD", CmdSubDSphere);
   reg("SubDPlane", "SubD", "Piano SubD", CmdSubDPlane);
   reg("SubDCylinder", "SubD", "Cilindro SubD (aperto)", CmdSubDCylinder);
+  reg("SubDCone", "SubD", "Cono SubD (base aperta)", CmdSubDCone);
   reg("SubDTorus", "SubD", "Toro SubD", CmdSubDTorus);
   reg("SubDFromMesh", "SubD", "SubD dalla gabbia di una mesh", CmdSubDFromMesh);
   reg("Weld", "Mesh", "Salda i vertici coincidenti delle mesh", CmdWeld);

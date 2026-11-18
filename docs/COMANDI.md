@@ -15,14 +15,14 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Categoria | Fatti / totali |
 |---|---|
 | Punti | 6 / 9 |
-| Curve: linee e polilinee | 7 / 11 |
+| Curve: linee e polilinee | 10 / 11 |
 | Curve: forme | 17 / 19 |
 | Curve: forme libere | 10 / 18 |
 | Curve da oggetti | 12 / 14 |
-| Superfici | 21 / 29 |
+| Superfici | 22 / 29 |
 | Solidi | 23 / 24 |
-| SubD | 9 / 23 |
-| Mesh | 12 / 19 |
+| SubD | 10 / 23 |
+| Mesh | 15 / 19 |
 | Trasformazioni | 23 / 30 |
 | Modifica | 26 / 34 |
 | Selezione | 18 / 19 |
@@ -31,7 +31,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Annotazioni | 12 / 14 |
 | Analisi | 11 / 15 |
 | File | 7 / 7 |
-| **Totale** | **228 / 303** |
+| **Totale** | **236 / 303** |
 
 ## Punti
 
@@ -53,13 +53,13 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 |---|---|
 | Line | ✔ |
 | Lines | ✔ |
-| LineSrfNormal | 🧱 |
+| LineSrfNormal | ✔ |
 | Polyline | ✔ |
 | PolylineThroughPoints | ✔ |
 | PolylineOnMesh | 🧱 |
 | ConvertToPolyline | ✔ |
-| Tangent | 🧱 |
-| Perpendicular | 🧱 |
+| Tangent | ✔ |
+| Perpendicular | ✔ |
 | Bisector | ✔ |
 | AngleLine | ✔ |
 
@@ -142,7 +142,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Loft | ✔ |
 | Sweep1 | ✔ |
 | Sweep2 | ✔ |
-| NetworkSrf | 🧱 |
+| NetworkSrf | ✔ |
 | Patch | ✔ |
 | Revolve | ✔ |
 | RailRevolve | 🧱 |
@@ -199,7 +199,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SubDBox | ✔ |
 | SubDSphere | ✔ |
 | SubDCylinder | ✔ |
-| SubDCone | ⬜ |
+| SubDCone | ✔ |
 | SubDTorus | ✔ |
 | SubDPlane | ✔ |
 | SubDFromMesh | ✔ |
@@ -234,9 +234,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | MeshPolyline | ✔ |
 | MeshPatch | 🧱 |
 | QuadRemesh | 🧱 |
-| Reduce | 🧱 |
-| MeshBooleanUnion | 🧱 |
-| MeshBooleanDifference | 🧱 |
+| Reduce | ✔ |
+| MeshBooleanUnion | ✔ |
+| MeshBooleanDifference | ✔ |
 | Weld | ✔ |
 | UnweldEdge | 🧱 |
 | FillMeshHoles | ✔ |

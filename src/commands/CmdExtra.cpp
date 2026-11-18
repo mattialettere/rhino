@@ -356,10 +356,14 @@ bool CmdMeshBox(Engine& e, TokenStream& ts) {
   if (bb.m_max.x - bb.m_min.x <= e.Tolerance() || bb.m_max.y - bb.m_min.y <= e.Tolerance() || bb.m_max.z - bb.m_min.z <= e.Tolerance())
     return e.Fail("parallelepipedo degenere");
   auto* m = new ON_Mesh();
-  ON_3dPoint c[8];
-  bb.GetCorners(c);
-  for (auto& p : c) m->m_V.Append(ON_3fPoint(p));
-  // GetCorners: 0..3 in basso (x,y) = (min,min),(max,min),(max,max),(min,max); 4..7 in alto
+  // 0..3 in basso (x,y) = (min,min),(max,min),(max,max),(min,max); 4..7 in alto
+  // (ON_BoundingBox::GetCorners usa un altro ordine: x, poi y, poi z)
+  for (int k = 0; k < 2; k++) {
+    const double z = k ? bb.m_max.z : bb.m_min.z;
+    for (const auto& xy : {ON_2dPoint(bb.m_min.x, bb.m_min.y), ON_2dPoint(bb.m_max.x, bb.m_min.y),
+                           ON_2dPoint(bb.m_max.x, bb.m_max.y), ON_2dPoint(bb.m_min.x, bb.m_max.y)})
+      m->m_V.Append(ON_3fPoint(float(xy.x), float(xy.y), float(z)));
+  }
   const int F[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {1, 2, 6, 5}, {2, 3, 7, 6}, {3, 0, 4, 7}};
   for (auto& f : F) m->SetQuad(m->m_F.Count(), f[0], f[1], f[2], f[3]);
   m->ComputeVertexNormals();
