@@ -3,6 +3,7 @@
 #include "ui/MainWindow.h"
 #include <QApplication>
 #include <QFile>
+#include <QIcon>
 #include <QScreen>
 #include <QSurfaceFormat>
 #include <QTimer>
@@ -17,6 +18,9 @@ int main(int argc, char** argv) {
   fmt.setSamples(4);
   QSurfaceFormat::setDefaultFormat(fmt);
   QApplication app(argc, argv);
+  QApplication::setApplicationName("Kurva3D");
+  QApplication::setApplicationVersion(KURVA3D_VERSION);
+  QApplication::setWindowIcon(QIcon(":/kurva3d.png"));
   cad::InitLibrary();
   QString open, script, shot;
   const QStringList args = app.arguments();

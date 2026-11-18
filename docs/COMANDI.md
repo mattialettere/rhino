@@ -14,24 +14,24 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 
 | Categoria | Fatti / totali |
 |---|---|
-| Punti | 6 / 9 |
+| Punti | 9 / 9 |
 | Curve: linee e polilinee | 11 / 11 |
 | Curve: forme | 19 / 19 |
-| Curve: forme libere | 12 / 18 |
-| Curve da oggetti | 13 / 14 |
-| Superfici | 23 / 29 |
+| Curve: forme libere | 16 / 18 |
+| Curve da oggetti | 14 / 14 |
+| Superfici | 26 / 29 |
 | Solidi | 24 / 24 |
-| SubD | 11 / 23 |
-| Mesh | 17 / 19 |
-| Trasformazioni | 25 / 30 |
-| Modifica | 28 / 34 |
+| SubD | 14 / 23 |
+| Mesh | 18 / 19 |
+| Trasformazioni | 28 / 30 |
+| Modifica | 33 / 34 |
 | Selezione | 19 / 19 |
 | Blocchi | 5 / 6 |
-| Livelli e proprieta' | 11 / 12 |
+| Livelli e proprieta' | 12 / 12 |
 | Annotazioni | 12 / 14 |
 | Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **258 / 303** |
+| **Totale** | **282 / 303** |
 
 ## Punti
 
@@ -40,12 +40,12 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Point | ✔ |
 | Points | ✔ |
 | PointGrid | ✔ |
-| DivideCrv | 🧱 |
+| DivideCrv | ✔ |
 | Divide | ✔ |
-| Measure | 🧱 |
+| Measure | ✔ |
 | ExtractPt | ✔ |
 | ExtractControlPoints | ✔ |
-| MarkCurvature | 🧱 |
+| MarkCurvature | ✔ |
 
 ## Curve: linee e polilinee
 
@@ -97,16 +97,16 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | HandleCurve | ⬜ |
 | Sketch | ⬜ |
 | CurveThroughPt | ✔ |
-| Blend | 🧱 |
+| Blend | ✔ |
 | BlendCrv | ✔ |
 | Fillet | ✔ |
 | FilletCorners | ✔ |
 | Chamfer | ✔ |
 | Offset | ✔ |
-| OffsetCrvOnSrf | 🧱 |
+| OffsetCrvOnSrf | ✔ |
 | Rebuild | ✔ |
-| RebuildCrvNonUniform | 🧱 |
-| Fair | 🧱 |
+| RebuildCrvNonUniform | ✔ |
+| Fair | ✔ |
 | Smooth | ✔ |
 | Simplify | ✔ |
 
@@ -121,7 +121,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | DupFaceBorder | ✔ |
 | Contour | ✔ |
 | Section | ✔ |
-| Silhouette | 🧱 |
+| Silhouette | ✔ |
 | Intersect | ✔ |
 | CreateUVCrv | ✔ |
 | ExtractIsocurve | ✔ |
@@ -153,9 +153,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | ExtrudeSrf | ✔ |
 | Pipe | ✔ |
 | OffsetSrf | ✔ |
-| FilletSrf | 🧱 |
-| ChamferSrf | 🧱 |
-| BlendSrf | 🧱 |
+| FilletSrf | ✔ |
+| ChamferSrf | ✔ |
+| BlendSrf | ✔ |
 | MatchSrf | 🧱 |
 | ExtendSrf | ✔ |
 | ShrinkTrimmedSrf | ✔ |
@@ -204,8 +204,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SubDPlane | ✔ |
 | SubDFromMesh | ✔ |
 | ToSubD | ✔ |
-| ToNURBS | 🧱 |
-| SubDLoft | 🧱 |
+| ToNURBS | ✔ |
+| SubDLoft | ✔ |
 | SubDSweep | 🧱 |
 | SubDExtrude | 🧱 |
 | Bevel | 🧱 |
@@ -215,7 +215,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | InsertEdge | 🧱 |
 | Stitch | 🧱 |
 | Append | 🧱 |
-| Fill | 🧱 |
+| Fill | ✔ |
 | Reflect | ⬜ |
 | MultiPipe | 🧱 |
 | SubDDisplayToggle | ✔ |
@@ -232,7 +232,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | MeshTorus | ✔ |
 | MeshPlane | ✔ |
 | MeshPolyline | ✔ |
-| MeshPatch | 🧱 |
+| MeshPatch | ✔ |
 | QuadRemesh | 🧱 |
 | Reduce | ✔ |
 | MeshBooleanUnion | ✔ |
@@ -275,9 +275,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | FlowAlongSrf | ✔ |
 | Splop | 🧱 |
 | CageEdit | 🧱 |
-| Smash | 🧱 |
-| UnrollSrf | 🧱 |
-| Squish | 🧱 |
+| Smash | ✔ |
+| UnrollSrf | ✔ |
+| Squish | ✔ |
 
 ## Modifica
 
@@ -289,9 +289,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Trim | ✔ |
 | Split | ✔ |
 | Extend | ✔ |
-| ExtendCrvOnSrf | 🧱 |
+| ExtendCrvOnSrf | ✔ |
 | Flip | ✔ |
-| Dir | ⬜ |
+| Dir | ✔ |
 | Reverse | ✔ |
 | Group | ✔ |
 | Ungroup | ✔ |
@@ -302,15 +302,15 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Undo | ✔ |
 | Redo | ✔ |
 | CloseCrv | ✔ |
-| Seam | 🧱 |
+| Seam | ✔ |
 | ChangeDegree | ✔ |
 | InsertKnot | ✔ |
 | RemoveKnot | ✔ |
-| InsertControlPoint | 🧱 |
+| InsertControlPoint | ✔ |
 | PointsOn | ✔ |
 | PointsOff | ✔ |
 | EditPtOn | ⬜ |
-| MakePeriodic | 🧱 |
+| MakePeriodic | ✔ |
 | Match | ✔ |
 | Fit | ✔ |
 | ConvertToBezier | ✔ |
@@ -364,7 +364,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | LayerOn | ✔ |
 | LayerLock | ✔ |
 | LayerUnlock | ✔ |
-| Properties | ⬜ |
+| Properties | ✔ |
 | SetObjectName | ✔ |
 | MatchProperties | ✔ |
 | SetUserText | ✔ |

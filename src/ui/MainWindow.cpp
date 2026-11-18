@@ -12,6 +12,8 @@
 #include <QCheckBox>
 #include <QDockWidget>
 #include <QFileDialog>
+#include <QFile>
+#include <QIcon>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -174,12 +176,12 @@ void MainWindow::BuildMenus() {
   auto* file = menuBar()->addMenu("&File");
   file->addAction("Nuovo", QKeySequence::New, this, [this] { Submit("_New"); });
   file->addAction("Apri...", QKeySequence::Open, this, [this] {
-    QString p = QFileDialog::getOpenFileName(this, "Apri", QString(), "Modelli Rhino (*.3dm)");
+    QString p = QFileDialog::getOpenFileName(this, "Apri", QString(), "File 3DM (*.3dm)");
     if (!p.isEmpty()) OpenFile(p);
   });
   file->addAction("Salva", QKeySequence::Save, this, [this] {
     if (m_engine.currentPath.empty()) {
-      QString p = QFileDialog::getSaveFileName(this, "Salva", QString(), "Modelli Rhino 8 (*.3dm)");
+      QString p = QFileDialog::getSaveFileName(this, "Salva", QString(), "File 3DM, versione 8 (*.3dm)");
       if (p.isEmpty()) return;
       Submit("_SaveAs \"" + p + "\"");
     } else {
@@ -187,7 +189,7 @@ void MainWindow::BuildMenus() {
     }
   });
   file->addAction("Salva con nome...", QKeySequence::SaveAs, this, [this] {
-    QString p = QFileDialog::getSaveFileName(this, "Salva con nome", QString(), "Modelli Rhino 8 (*.3dm)");
+    QString p = QFileDialog::getSaveFileName(this, "Salva con nome", QString(), "File 3DM, versione 8 (*.3dm)");
     if (!p.isEmpty()) Submit("_SaveAs \"" + p + "\"");
   });
   file->addSeparator();
@@ -237,14 +239,14 @@ void MainWindow::BuildMenus() {
                      {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Linee singole", "_Lines"},
                      {"Rettangolo arrotondato", "_RoundedRectangle"}, {"Parabola", "_Parabola"}, {"Iperbole", "_Hyperbola"},
                      {"Bisettrice", "_Bisector"}, {"Curva per punti", "_CurveThroughPt"}, {"Leviga", "_Smooth"},
-                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Tira su superficie (Pull)", "_Pull"}, {"Linea tangente", "_Tangent"}, {"Cerchio tangente a 3 curve", "_CircleTangent"}, {"Arco tangente a 2 curve", "_ArcTangent"}, {"Polilinea su mesh", "_PolylineOnMesh"}, {"Disegno 2D (Make2D)", "_Make2D"}, {"Linea perpendicolare", "_Perpendicular"}, {"Normale a superficie", "_LineSrfNormal"}, {"Curva su superficie", "_InterpCrvOnSrf"}, {"Raccorda a curva (Match)", "_Match"}, {"Semplifica", "_SimplifyCrv"}, {"Riadatta (FitCrv)", "_FitCrv"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
+                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Tira su superficie (Pull)", "_Pull"}, {"Linea tangente", "_Tangent"}, {"Cerchio tangente a 3 curve", "_CircleTangent"}, {"Arco tangente a 2 curve", "_ArcTangent"}, {"Polilinea su mesh", "_PolylineOnMesh"}, {"Disegno 2D (Make2D)", "_Make2D"}, {"Linea perpendicolare", "_Perpendicular"}, {"Normale a superficie", "_LineSrfNormal"}, {"Curva su superficie", "_InterpCrvOnSrf"}, {"Raccorda a curva (Match)", "_Match"}, {"Semplifica", "_SimplifyCrv"}, {"Riadatta (FitCrv)", "_FitCrv"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}, {"Contorno apparente (Silhouette)", "_Silhouette"}, {"Offset curva su superficie", "_OffsetCrvOnSrf"}, {"Estendi curva su superficie", "_ExtendCrvOnSrf"}, {"Leviga (Fair)", "_Fair"}, {"Ricostruisci non uniforme", "_RebuildCrvNonUniform"}, {"Rendi periodica", "_MakePeriodic"}, {"Sposta giunzione (Seam)", "_Seam"}, {"Aggiungi punto di controllo", "_InsertControlPoint"}, {"Misura (punti a distanza)", "_Measure"}});
   addCmds("&Superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi curva", "_ExtrudeCrv"},
                          {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"}, {"Sweep 2 binari", "_Sweep2"}, {"Da rete di curve", "_NetworkSrf"}, {"Rivoluzione su binario", "_RailRevolve"}, {"Estrudi rastremato", "_ExtrudeCrvTapered"}, {"Estendi superficie", "_ExtendSrf"},
                          {"Offset superficie", "_OffsetSrf"}, {"Da 3 o 4 punti", "_SrfPt"},
                          {"Da 2, 3 o 4 curve di bordo", "_EdgeSrf"}, {"Patch", "_Patch"},
                          {"Piano da 3 punti", "_Plane3Pt"}, {"Piano verticale", "_PlaneVertical"},
                          {"Estrudi fino a un punto", "_ExtrudeCrvToPoint"}, {"Estrudi lungo una curva", "_ExtrudeCrvAlongCrv"},
-                         {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}});
+                         {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}, {"Raccordo tra superfici", "_FilletSrf"}, {"Smusso tra superfici", "_ChamferSrf"}, {"Raccordo con tangenza (BlendSrf)", "_BlendSrf"}, {"Sviluppa (UnrollSrf)", "_UnrollSrf"}, {"Appiattisci (Smash)", "_Smash"}, {"Converti in NURBS", "_ToNURBS"}});
   addCmds("S&olidi", {{"Parallelepipedo", "_Box"}, {"Sfera", "_Sphere"}, {"Sfera da 3 punti", "_Sphere3Pt"}, {"Box da 3 punti", "_Box3Pt"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
                       {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Piramide", "_Pyramid"}, {"Cuneo", "_Wedge"}, {"Lastra (Slab)", "_Slab"}, {"Sposta faccia", "_MoveFace"},
                       {"Tronco di cono", "_TruncatedCone"}, {"Ellissoide", "_Ellipsoid"}, {"Unione booleana", "_BooleanUnion"},
@@ -253,11 +255,11 @@ void MainWindow::BuildMenus() {
                       {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}});
   addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}, {"Sfera SubD", "_SubDSphere"}, {"Cilindro SubD", "_SubDCylinder"}, {"Cono SubD", "_SubDCone"}, {"Converti in SubD", "_ToSubD"},
                     {"Toro SubD", "_SubDTorus"}, {"Piano SubD", "_SubDPlane"}, {"SubD da mesh", "_SubDFromMesh"},
-                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}});
+                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}});
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano mesh", "_MeshPlane"}, {"Box mesh", "_MeshBox"},
                     {"Sfera mesh", "_MeshSphere"}, {"Cilindro mesh", "_MeshCylinder"}, {"Cono mesh", "_MeshCone"},
                     {"Toro mesh", "_MeshTorus"}, {"Mesh da polilinea", "_MeshPolyline"},
-                    {"Salda", "_Weld"}, {"Unifica normali", "_UnifyMeshNormals"}, {"Chiudi fori", "_FillMeshHoles"}, {"Riduci", "_Reduce"}, {"Estrai parte", "_ExtractMeshPart"}, {"Separa vertici (Unweld)", "_Unweld"}, {"Separa spigoli", "_UnweldEdge"}, {"Unione mesh", "_MeshBooleanUnion"}, {"Differenza mesh", "_MeshBooleanDifference"}, {"Intersezione mesh", "_MeshBooleanIntersection"}, {"Mesh in NURBS", "_MeshToNURB"}});
+                    {"Salda", "_Weld"}, {"Unifica normali", "_UnifyMeshNormals"}, {"Chiudi fori", "_FillMeshHoles"}, {"Riduci", "_Reduce"}, {"Estrai parte", "_ExtractMeshPart"}, {"Separa vertici (Unweld)", "_Unweld"}, {"Separa spigoli", "_UnweldEdge"}, {"Unione mesh", "_MeshBooleanUnion"}, {"Differenza mesh", "_MeshBooleanDifference"}, {"Intersezione mesh", "_MeshBooleanIntersection"}, {"Mesh in NURBS", "_MeshToNURB"}, {"Mesh da punti e curve (MeshPatch)", "_MeshPatch"}});
   addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
                       {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
                       {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
@@ -266,7 +268,7 @@ void MainWindow::BuildMenus() {
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
                          {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Scorri lungo curva (Flow)", "_Flow"}, {"Scorri su superficie", "_FlowAlongSrf"}, {"Orienta su superficie", "_OrientOnSrf"},
                          {"Allinea", "_Align"}, {"Imposta punti (SetPt)", "_SetPt"}});
-  addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
+  addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Direzione (Dir)", "_Dir"}, {"Segna curvatura", "_MarkCurvature"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
                          {"Angolo", "_Angle"}, {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"},
                          {"Scatola di ingombro", "_BoundingBox"}, {"Zebra", "_Zebra"}, {"Zebra spento", "_ZebraOff"},
                          {"Angolo di sformo", "_DraftAngleAnalysis"}, {"Angolo di sformo spento", "_DraftAngleAnalysisOff"},
@@ -276,6 +278,9 @@ void MainWindow::BuildMenus() {
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
   auto* help = menuBar()->addMenu("&?");
   help->addAction("Elenco comandi", this, [this] { Submit("?"); });
+  help->addAction("Licenza d'uso", this, [this] { ShowTextFile("EULA.txt", "Licenza d'uso di Kurva3D"); });
+  help->addAction("Componenti di terze parti", this, [this] { ShowTextFile("THIRD_PARTY_NOTICES.txt", "Componenti di terze parti"); });
+  help->addSeparator();
   help->addAction("Informazioni su Kurva3D", this, [this] { ShowAbout(); });
 }
 
@@ -285,7 +290,8 @@ void MainWindow::ShowAbout() {
   QMessageBox box(this);
   box.setWindowTitle("Informazioni su Kurva3D");
   box.setTextFormat(Qt::RichText);
-  box.setText(QString("<h3>Kurva3D %1</h3>"
+  box.setIconPixmap(QIcon(":/kurva3d.png").pixmap(64, 64));
+  box.setText(QString("<h3>Kurva3D %1</h3><p>Copyright &copy; 2026 %3. Tutti i diritti riservati.</p>"
       "<p>Modellatore 3D NURBS indipendente, compatibile con i file .3dm.</p>"
       "<p><b>Librerie di terze parti</b></p><ul>"
       "<li>openNURBS 8 (Robert McNeel &amp; Associates) - licenza openNURBS (permissiva, tipo MIT)</li>"
@@ -295,8 +301,29 @@ void MainWindow::ShowAbout() {
       "Testi completi delle licenze e indirizzi dei sorgenti: THIRD_PARTY_NOTICES.txt.</p>"
       "<p>Rhinoceros e Rhino sono marchi di Robert McNeel &amp; Associates; "
       "Kurva3D non e' affiliato a McNeel.</p>")
-      .arg(KURVA3D_VERSION).arg(qVersion()));
+      .arg(KURVA3D_VERSION).arg(qVersion()).arg(KURVA3D_PUBLISHER));
   box.exec();
+}
+
+// Testo (licenza d'uso, avvisi di terze parti) dalla cartella del programma.
+void MainWindow::ShowTextFile(const QString& file, const QString& title) {
+  QString text;
+  for (const QString& dir : {QCoreApplication::applicationDirPath(), QCoreApplication::applicationDirPath() + "/..", QString(".")}) {
+    QFile f(dir + "/" + file);
+    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) { text = QString::fromUtf8(f.readAll()); break; }
+  }
+  if (text.isEmpty()) text = "File " + file + " non trovato nella cartella del programma.";
+  QDialog dlg(this);
+  dlg.setWindowTitle(title);
+  dlg.resize(720, 560);
+  auto* lay = new QVBoxLayout(&dlg);
+  auto* view = new QPlainTextEdit(text);
+  view->setReadOnly(true);
+  lay->addWidget(view);
+  auto* bb = new QDialogButtonBox(QDialogButtonBox::Close);
+  connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  lay->addWidget(bb);
+  dlg.exec();
 }
 
 // Barre strumenti a schede sopra le viste, come Rhino 8 (pulsanti con testo:
@@ -641,6 +668,12 @@ void MainWindow::Submit(const QString& text) {
   if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
   if (norm == "blockmanager") { ShowBlockManager(); return; }
   if (norm == "about") { ShowAbout(); return; }
+  if (norm == "properties") {  // pannello Proprieta'
+    for (auto* d : findChildren<QDockWidget*>())
+      if (d->windowTitle() == "Proprietà") { d->show(); d->raise(); }
+    Log("Pannello Proprietà");
+    return;
+  }
   if (norm == "properties" || (norm == "layer" && t.find(' ') == std::string::npos)) {
     const QString title = norm == "properties" ? "Proprietà" : "Livelli";
     for (auto* d : findChildren<QDockWidget*>())

@@ -1,0 +1,80 @@
+KURVA3D - CONTRATTO DI LICENZA D'USO PER L'UTENTE FINALE (EULA)
+Versione 1.0 - BOZZA DA FAR VERIFICARE A UN LEGALE PRIMA DELLA VENDITA
+
+Titolare: [NOME E COGNOME O RAGIONE SOCIALE], [INDIRIZZO], P.IVA [NUMERO],
+e-mail [INDIRIZZO DI CONTATTO] ("Titolare").
+
+Installando o usando Kurva3D (il "Software") accetti questo contratto. Se non
+lo accetti, non installare e non usare il Software.
+
+1. Licenza
+   Il Titolare ti concede una licenza non esclusiva e non trasferibile per
+   installare e usare il Software, anche per scopi professionali e
+   commerciali, sul numero di computer indicato nell'acquisto (in mancanza di
+   indicazioni: un utente, fino a due computer di sua proprieta', non in uso
+   contemporaneo). Il Software e' concesso in licenza, non venduto.
+
+2. Versione di prova
+   Se hai ricevuto il Software come versione di valutazione, puoi usarlo solo
+   per valutarlo, per il periodo indicato al momento del download.
+
+3. Limitazioni
+   Salvo quanto consentito dalla legge e dal punto 5, non puoi: (a) vendere,
+   noleggiare, prestare, sublicenziare o distribuire il Software; (b)
+   rimuovere avvisi di copyright o di licenza; (c) aggirare le misure di
+   attivazione o di protezione della licenza. Restano salvi i diritti che la
+   legge riconosce comunque all'utente legittimo (artt. 64-ter e 64-quater
+   della legge 633/1941), che questo contratto non limita.
+
+4. Proprieta'
+   Il Software e' protetto dal diritto d'autore. Tutti i diritti non
+   espressamente concessi restano del Titolare. I file che crei con il
+   Software (modelli .3dm, disegni, esportazioni) sono tuoi.
+
+5. Componenti di terze parti
+   Il Software contiene componenti di terze parti, elencate nel file
+   THIRD_PARTY_NOTICES.txt, che restano soggette alle proprie licenze
+   (testi completi nella cartella "licenses"). In particolare Open CASCADE
+   Technology (GNU LGPL 2.1 con eccezione) e Qt (GNU LGPL 3) sono librerie
+   collegate dinamicamente: puoi sostituirle con versioni modificate, e per
+   le sole finalita' consentite da tali licenze (modificare quelle librerie
+   per uso personale e fare il reverse engineering necessario al debug di
+   tali modifiche) le limitazioni del punto 3 non si applicano. Nulla in
+   questo contratto limita i diritti che ti danno le licenze di quei
+   componenti.
+
+6. Marchi
+   Kurva3D e' un nome del Titolare. Rhinoceros e Rhino sono marchi di
+   Robert McNeel & Associates: il Software e' un prodotto indipendente,
+   compatibile con il formato di file .3dm, e non e' affiliato, approvato o
+   sponsorizzato da Robert McNeel & Associates.
+
+7. Garanzia
+   Il Software e' fornito "cosi' com'e'". Il Titolare non garantisce che sia
+   privo di errori o adatto a uno scopo particolare, ne' l'esattezza dei
+   calcoli geometrici: verifica sempre i modelli prima di usarli per la
+   produzione. Se sei un consumatore restano salvi i diritti che il Codice
+   del Consumo (d.lgs. 206/2005) ti riconosce sui contenuti digitali, che
+   questo contratto non esclude ne' limita.
+
+8. Limitazione di responsabilita'
+   Nei limiti consentiti dalla legge, il Titolare non risponde di danni
+   indiretti, perdita di dati, mancato guadagno o fermo produttivo derivanti
+   dall'uso del Software, e la sua responsabilita' complessiva non supera
+   l'importo pagato per la licenza. La limitazione non si applica in caso di
+   dolo o colpa grave, ne' ai danni alla persona.
+
+9. Durata e risoluzione
+   La licenza dura a tempo indeterminato (o per il periodo dell'abbonamento,
+   se acquistata in abbonamento) e cessa automaticamente se violi questo
+   contratto. Alla cessazione devi disinstallare il Software.
+
+10. Dati personali
+    Il Software non invia dati personali al Titolare. Eventuali dati raccolti
+    per l'acquisto o l'attivazione sono trattati secondo l'informativa
+    privacy del Titolare.
+
+11. Legge applicabile e foro
+    Si applica la legge italiana. Per le controversie con consumatori e'
+    competente il foro di residenza del consumatore; negli altri casi il
+    foro di [CITTA'].

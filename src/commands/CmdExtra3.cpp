@@ -562,6 +562,7 @@ void RegisterExtra3Commands(Engine& e) {
   reg("ConvertToPolyline", "Curve", "Converte le curve in polilinee (Tolerance=)", CmdConvertToPolyline);
   reg("FilletCorners", "Curve", "Raccorda gli angoli delle polilinee", CmdFilletCorners);
   reg("BlendCrv", "Curve", "Raccordo tra due curve (Continuity=)", CmdBlendCrv);
+  reg("Blend", "Curve", "Come BlendCrv", CmdBlendCrv);
   reg("UnifyMeshNormals", "Mesh", "Orienta in modo coerente le facce delle mesh", CmdUnifyMeshNormals);
   reg("FillMeshHoles", "Mesh", "Chiude i fori delle mesh", CmdFillMeshHoles);
 }

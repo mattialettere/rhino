@@ -74,6 +74,8 @@ jobs:
           Copy-Item examples dist\examples -Recurse
           Copy-Item README.md dist\
           Copy-Item THIRD_PARTY_NOTICES.txt dist\
+          Copy-Item EULA.txt dist\
+          Copy-Item LICENSE.txt dist\
           Copy-Item licenses dist\licenses -Recurse
           # note di copyright delle librerie installate da vcpkg (OCCT, Qt e dipendenze)
           New-Item -ItemType Directory -Force dist\licenses\vcpkg | Out-Null
@@ -90,6 +92,32 @@ jobs:
           if (-not (Test-Path dist\screenshot-avvio.png)) { throw "screenshot non creato: la finestra non si e' aperta" }
           Get-Item dist\screenshot-avvio.png | Format-List Name, Length
           if ((Get-Item dist\screenshot-avvio.png).Length -lt 20000) { throw "screenshot troppo piccolo" }
+
+      # Installer (Inno Setup): crea Kurva3D-Setup-<versione>.exe, poi lo prova
+      # con un'installazione silenziosa in una cartella temporanea e la disinstalla.
+      - name: Installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup non disponibile" }
+          $ver = (Get-Content RELEASE -First 1).Trim().TrimStart('v')
+          & $iscc /Qp "/DAppVersion=$ver" "/DSourceDir=$PWD\dist" "/DOutputDir=$PWD\out" installer\kurva3d.iss
+          if ($LASTEXITCODE -ne 0) { throw "compilazione dell'installer fallita" }
+          $setup = Get-ChildItem out\Kurva3D-Setup-*.exe | Select-Object -First 1
+          $dir = "$env:RUNNER_TEMP\k3d-test"
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', "/DIR=$dir" -PassThru -Wait
+          if (-not (Test-Path "$dir\kurva3d.exe")) { throw "installazione silenziosa non riuscita (codice $($p.ExitCode))" }
+          if (-not (Test-Path "$dir\EULA.txt")) { throw "EULA non installata" }
+          $u = Get-ChildItem "$dir\unins*.exe" | Select-Object -First 1
+          Start-Process -FilePath $u.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait
+          Get-Item $setup.FullName | Format-List Name, Length
+
+      - name: Pubblica l'installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-setup
+          path: out
 
       - name: Pubblica lo zip
         if: always()
@@ -117,4 +145,5 @@ jobs:
           }
           $global:LASTEXITCODE = 0
           Compress-Archive -Path dist\* -DestinationPath "kurva3d-windows-x64-$tag.zip"
-          gh release create $tag "kurva3d-windows-x64-$tag.zip" --target $env:GITHUB_SHA --title "Kurva3D $tag (Windows 64 bit)" --notes-file docs/RELEASE_NOTES.md
+          $setup = (Get-ChildItem out\Kurva3D-Setup-*.exe | Select-Object -First 1).FullName
+          gh release create $tag "kurva3d-windows-x64-$tag.zip" $setup --target $env:GITHUB_SHA --title "Kurva3D $tag (Windows 64 bit)" --notes-file docs/RELEASE_NOTES.md

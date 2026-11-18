@@ -194,6 +194,17 @@ bool CmdDivide(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// Measure: come Divide con Length=, la lunghezza si chiede come valore.
+bool CmdMeasure(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("Measure", "seleziona le curve, poi Invio");
+  if (sel.empty()) return false;
+  auto len = e.ReadNumber(ts, "lunghezza dei tratti");
+  if (!len) return false;
+  if (*len <= 0) return e.Fail("lunghezza non valida");
+  TokenStream sub("Length=" + std::to_string(*len));
+  return CmdDivide(e, sub);
+}
+
 // Minimi quadrati: n punti di controllo, grado p, nodi uniformi, estremi fissi.
 ON_NurbsCurve* FitCurve(const ON_Curve& c, int n, int p) {
   if (n < p + 1) n = p + 1;
@@ -618,6 +629,7 @@ bool CmdExplodeBlock(Engine& e, TokenStream&) {
 }  // namespace
 
 double CurveLengthOf(const ON_Curve& c) { return CurveLength(c); }
+double ParamAtLengthOf(const ON_Curve& c, double s) { return ParamAtLength(c, s); }
 
 void RegisterMoreCommands(Engine& e) {
   auto reg = [&](const char* n, const char* cat, const char* d, CommandFn f, bool mod = true) {
@@ -631,6 +643,8 @@ void RegisterMoreCommands(Engine& e) {
   reg("Radius", "Analisi", "Raggio di archi e cerchi", CmdRadius, false);
   reg("BoundingBox", "Analisi", "Scatola di ingombro degli oggetti", CmdBoundingBox);
   reg("Divide", "Punti", "Punti a distanze uguali lungo le curve (numero o Length=)", CmdDivide);
+  reg("DivideCrv", "Punti", "Come Divide", CmdDivide);
+  reg("Measure", "Punti", "Punti lungo le curve a una distanza data (lunghezza dei tratti)", CmdMeasure);
   reg("Rebuild", "Curve", "Ricostruisce le curve (PointCount=, Degree=)", CmdRebuild);
   reg("ChangeDegree", "Curve", "Cambia il grado delle curve", CmdChangeDegree);
   reg("ProjectToCPlane", "Trasforma", "Proietta gli oggetti sul piano di costruzione", CmdProjectToCPlane);

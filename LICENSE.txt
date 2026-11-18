@@ -1,0 +1,13 @@
+Kurva3D
+Copyright (C) 2026 [NOME E COGNOME O RAGIONE SOCIALE]. Tutti i diritti riservati.
+
+Il codice sorgente di Kurva3D (cartelle src, tests, tools, res, docs ed
+esempi), salvo dove indicato diversamente, e' di proprieta' del titolare e
+non e' concesso in licenza: la sua pubblicazione su GitHub non da' alcun
+diritto di copiarlo, modificarlo o distribuirlo.
+
+L'uso del programma compilato e' regolato da EULA.txt.
+
+Le librerie di terze parti (openNURBS, Open CASCADE Technology, Qt e le loro
+dipendenze) hanno le proprie licenze: vedi THIRD_PARTY_NOTICES.txt e la
+cartella licenses.

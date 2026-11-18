@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(kurva3d VERSION 0.5.1 LANGUAGES C CXX)
+project(kurva3d VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -42,6 +42,7 @@ add_library(cadcore STATIC
   src/commands/Grips.cpp
   src/commands/CmdExtra3.cpp
   src/commands/CmdExtra4.cpp
+  src/commands/CmdExtra5.cpp
   src/commands/Deform.cpp
   src/commands/Deform.h
   src/commands/Grips.h)
@@ -51,7 +52,7 @@ target_include_directories(cadcore PUBLIC src)
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
   message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: comandi del motore geometrico attivi")
-  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp)
+  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp)
   target_include_directories(cadcore PUBLIC ${OpenCASCADE_INCLUDE_DIR})
   target_link_libraries(cadcore PUBLIC TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo
     TKTopAlgo TKPrim TKBO TKShHealing TKBool TKFillet TKOffset TKMesh TKHLR)
@@ -90,13 +91,23 @@ if(Qt6_FOUND)
       set_target_properties(Qt6::Platform PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_qt_defs}")
     endif()
   endif()
+  set(CMAKE_AUTORCC ON)
+  # Nome del titolare dei diritti (dati versione dell'exe e finestra Informazioni)
+  set(KURVA3D_PUBLISHER "Kurva3D" CACHE STRING "Titolare dei diritti di Kurva3D")
+  set(_kurva_res res/kurva3d.qrc)
+  if(WIN32)
+    enable_language(RC)
+    configure_file(res/kurva3d.rc.in ${CMAKE_BINARY_DIR}/kurva3d.rc @ONLY)
+    list(APPEND _kurva_res ${CMAKE_BINARY_DIR}/kurva3d.rc)
+  endif()
   add_executable(kurva3d WIN32
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
-    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h)
-  target_compile_definitions(kurva3d PRIVATE KURVA3D_VERSION="${PROJECT_VERSION}")
+    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h ${_kurva_res})
+  target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_PUBLISHER="${KURVA3D_PUBLISHER}">)
+  target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_VERSION="${PROJECT_VERSION}">)
   target_link_libraries(kurva3d PRIVATE cadcore Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
   if(MSVC)
-    target_compile_options(kurva3d PRIVATE /UWIN32)
+    target_compile_options(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/UWIN32>)
   endif()
 else()
   message(WARNING "Qt 6 non trovato: l'interfaccia grafica non verra' compilata")

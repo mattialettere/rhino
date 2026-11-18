@@ -51,6 +51,7 @@ private:
   void ShowSelectionFilter();
   void ShowBlockManager();
   void ShowAbout();
+  void ShowTextFile(const QString& file, const QString& title);
   bool PassesFilter(const ON_UUID& id) const;
   unsigned m_selFilter = 0xFFFF;  // tipi selezionabili (SelectionFilter)
 

@@ -1,0 +1,32 @@
+// Risorse Windows di kurva3d.exe: icona e dati della versione (Proprieta' > Dettagli)
+#include <winver.h>
+IDI_ICON1 ICON "@CMAKE_SOURCE_DIR@/res/kurva3d.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+ PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0x0L
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "041004b0"
+    BEGIN
+      VALUE "CompanyName", "@KURVA3D_PUBLISHER@"
+      VALUE "FileDescription", "Kurva3D - modellatore 3D NURBS"
+      VALUE "FileVersion", "@PROJECT_VERSION@"
+      VALUE "InternalName", "kurva3d"
+      VALUE "LegalCopyright", "Copyright (C) 2026 @KURVA3D_PUBLISHER@"
+      VALUE "OriginalFilename", "kurva3d.exe"
+      VALUE "ProductName", "Kurva3D"
+      VALUE "ProductVersion", "@PROJECT_VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x410, 1200
+  END
+END

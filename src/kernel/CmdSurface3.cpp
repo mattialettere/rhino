@@ -1181,6 +1181,11 @@ bool CmdFitCrv(Engine& e, TokenStream& ts) {
 
 }  // namespace
 
+// Usata anche da CmdKernel5 (FilletSrf, ChamferSrf, BlendSrf).
+ON_Brep* SectionsSurface(const std::vector<ON_NurbsCurve>& secs, const std::vector<double>& v, bool periodic, double tol) {
+  return SurfaceFromSections(secs, v, periodic, tol);
+}
+
 void RegisterSurface3Commands(Engine& e) {
   auto reg = [&](const char* n, const char* cat, const char* d, CommandFn f) {
     CommandInfo i{n, cat, d, f};

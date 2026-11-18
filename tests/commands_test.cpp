@@ -1518,8 +1518,87 @@ int main(int argc, char** argv) {
     Case("Wedge", "_Wedge 0,0,0 10,4 3\n_SelAll _Volume", [&](Ctx& c) {
       CHECK(Near(num(c, "Volume = "), 10.0 * 4.0 * 3.0 / 2.0, 1e-6));
     });
+    // --- v0.6 ---
+    Case("FilletSrf", "_Plane 0,0,0 10,10\n_PlaneVertical 0,0,0 0,10,0 10\n_FilletSrf Radius=2 5,5,0 0,5,5\n_SelNone _SelLast _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), ON_PI * 2.0 / 2.0 * 10.0, 1e-3));
+    });
+    Case("ChamferSrf", "_Plane 0,0,0 10,10\n_PlaneVertical 0,0,0 0,10,0 10\n_ChamferSrf Distance=2 5,5,0 0,5,5\n_SelNone _SelLast _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), std::sqrt(8.0) * 10.0, 1e-3));
+    });
+    Case("BlendSrf", "_Plane 0,0,0 10,10\n_Plane 15,0,5 25,10\n_BlendSrf 10,5,0 15,5,5", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->m_F.Count() == 1);
+      if (b) {
+        ON_BoundingBox bb = b->BoundingBox();
+        CHECK(Near(bb.m_min.x, 10, 1e-3) && Near(bb.m_max.x, 15, 1e-3) && Near(bb.m_min.z, 0, 1e-3) && Near(bb.m_max.z, 5, 1e-3));
+      }
+    });
+    Case("UnrollSrf_cilindro", "_Cylinder 0,0,0 5 10\n_SelAll _UnrollSrf\n_SelNone _SelLast _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), 2 * ON_PI * 5 * 10 + 2 * ON_PI * 25, 1.0));
+    });
+    Case("UnrollSrf_cono", "_Cone 0,0,0 5 10\n_SelAll _UnrollSrf\n_SelNone _SelLast _Area", [&](Ctx& c) {
+      CHECK(Near(num(c, "Area = "), ON_PI * 5 * std::sqrt(125.0) + ON_PI * 25, 1.0));
+    });
+    Case("Silhouette", "_Sphere 0,0,0 5\n_SelAll _Silhouette View=Top\n_SelNone _SelCrv _Length", [&](Ctx& c) {
+      CHECK(Near(num(c, "Lunghezza = "), 2 * ON_PI * 5, 0.1));
+    });
+    Case("RebuildCrvNonUniform", "_InterpCrv 0,0 3,2 6,-1 10,0 _Enter\n_SelAll _RebuildCrvNonUniform RequestedTolerance=0.001", [](Ctx& c) {
+      const auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && NearPt(n->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-3) && NearPt(n->PointAtEnd(), ON_3dPoint(10, 0, 0), 1e-3));
+    });
+    Case("ExtendCrvOnSrf", "_Plane 0,0,0 10,10\n_Line 2,2,0 5,5,0\n_ExtendCrvOnSrf 5,5,0 1,8,0\n_SelNone _SelCrv _Length", [&](Ctx& c) {
+      CHECK(Near(num(c, "Lunghezza = "), 8 * std::sqrt(2.0), 1e-3));
+    });
+    Case("OffsetCrvOnSrf", "_Plane 0,0,0 10,10\n_Line 2,2,0 8,2,0\n_OffsetCrvOnSrf Distance=3 5,2,0 1,8,0 5,9,0", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(2, 5, 0), 1e-3) && NearPt(cv->PointAtEnd(), ON_3dPoint(8, 5, 0), 1e-3));
+    });
   }
 #endif
+
+  // --- v0.6 (solo openNURBS) ---
+  Case("MarkCurvature", "_Circle 0,0 5\n_MarkCurvature 5,0,0", [](Ctx& c) {
+    const auto* a = ON_ArcCurve::Cast(c.Last());
+    CHECK(a && Near(a->Radius(), 5.0, 1e-6));
+  });
+  Case("Dir_Flip", "_Line 0,0 10,0\n_SelAll _Dir Flip=Yes", [](Ctx& c) {
+    const auto* cv = ON_Curve::Cast(c.Last());
+    CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(10, 0, 0)));
+  });
+  Case("Seam", "_Circle 0,0 5\n_Seam 0,5,0", [](Ctx& c) {
+    const auto* cv = ON_Curve::Cast(c.Last());
+    CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(0, 5, 0), 1e-6));
+  });
+  Case("InsertControlPoint", "_Curve 0,0 5,5 10,0 15,5 _Enter\n_InsertControlPoint 7,2.5,0 _Enter", [](Ctx& c) {
+    const auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->CVCount() == 5);
+  });
+  Case("MakePeriodic", "_Rectangle 0,0 10,10\n_SelAll _MakePeriodic", [](Ctx& c) {
+    const auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->IsPeriodic() && n->IsClosed());
+  });
+  Case("Fair", "_InterpCrv 0,0 2,1 4,-1 6,1.5 8,-1 10,0 _Enter\n_SelAll _Fair Tolerance=0.5", [](Ctx& c) {
+    const auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && NearPt(n->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-9) && NearPt(n->PointAtEnd(), ON_3dPoint(10, 0, 0), 1e-9));
+  });
+  Case("SubDLoft_Fill", "_Circle 0,0,0 5\n_Circle 0,0,10 5\n_SelAll _SubDLoft\n_SelNone _SelSubD _Fill", [](Ctx& c) {
+    const ON_SubD* s = nullptr;
+    for (auto* g : c.Objects()) if (auto* x = ON_SubD::Cast(g)) s = x;
+    CHECK(s && s->FaceCount() > 0);
+    CHECK(c.log.str().find("Chiusi 2 fori") != std::string::npos);
+  });
+  Case("MeshPatch", "_Point 0,0,0\n_Point 10,0,0\n_Point 10,10,1\n_Point 0,10,0\n_Point 5,5,3\n_SelAll _MeshPatch", [](Ctx& c) {
+    const auto* m = ON_Mesh::Cast(c.Last());
+    CHECK(m && m->FaceCount() == 4 && m->VertexCount() == 5);
+  });
+  Case("Measure", "_Line 0,0 10,0\n_SelAll _Measure 2.5", [](Ctx& c) {
+    int pts = 0;
+    for (auto* g : c.Objects()) if (ON_Point::Cast(g)) pts++;
+    CHECK(pts == 5);
+  });
+  Case("ToNURBS", "_Cylinder 0,0,0 5 10\n_SelAll _ToNURBS", [](Ctx& c) {
+    CHECK(ON_Brep::Cast(c.Last()) != nullptr);
+  });
 
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);

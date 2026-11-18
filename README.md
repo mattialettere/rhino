@@ -131,6 +131,10 @@ build\Release\3dm-roundtrip.exe C:\percorso\modello.3dm C:\percorso\copia.3dm
 all'originale per tutto ciò che il confronto controlla (vedi
 `src/core/ModelCompare.h`).
 
+## Licenza e vendita
+
+Il codice di Kurva3D è "tutti i diritti riservati" (`LICENSE.txt`); l'uso del programma è regolato da `EULA.txt`. Cosa serve per venderlo è in [docs/VENDITA.md](docs/VENDITA.md).
+
 ## Licenze di terze parti
 
 Kurva3D usa openNURBS (licenza permissiva di McNeel), Open CASCADE Technology (LGPL 2.1 con eccezione) e Qt 6 (LGPL 3). Elenco e testi completi in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) e nella cartella `licenses`, copiati anche nello zip di ogni versione. Rhinoceros e Rhino sono marchi di Robert McNeel & Associates; Kurva3D non è affiliato a McNeel.

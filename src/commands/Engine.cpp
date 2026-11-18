@@ -79,12 +79,14 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterExtra2Commands(*this);
   RegisterExtra3Commands(*this);
   RegisterExtra4Commands(*this);
+  RegisterExtra5Commands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
   RegisterSurfaceMoreCommands(*this);
   RegisterSurface3Commands(*this);
   RegisterKernel4Commands(*this);
+  RegisterKernel5Commands(*this);
 #endif
 }
 
