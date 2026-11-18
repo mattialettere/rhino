@@ -1815,6 +1815,11 @@ int main(int argc, char** argv) {
     v = ai::Validate(c.e, {"_Sphere 0,0,0"});
     CHECK(!v.ok && v.line == 0);
     CHECK(ai::RepairRequest({"_Sphere 0,0,0"}, v).find("Line 1") != std::string::npos);
+    // nomi inventati dai modelli piccoli e nomi con spazi (dalla prova reale con Qwen3 0.6B)
+    const auto al = ai::ExtractScript("```kurva\n_Cube 0,0,0 20 20 20 => Cylindrical Hole\nDifference\n```");
+    CHECK(al.size() == 2 && al[0] == "_Box 0,0,0 20 20 20 => Cylindrical Hole" && al[1] == "_BooleanDifference");
+    const auto ax = ai::ExpandScript({al[0]}, nullptr);
+    CHECK(ax.size() == 5 && ax[3] == "_SetObjectName \"CylindricalHole\"");
   }
   {
     std::printf("AI_scelta_del_modello\n");

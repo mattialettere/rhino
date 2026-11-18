@@ -134,7 +134,7 @@ Rules of the command language:
   };
   const auto ex = ReferenceExamples();
   for (size_t i = 0; i < ex.size(); i++) o << "  " << ex[i] << "    (" << notes[i] << ")\n";
-  o << R"(- Naming: add " => Name" at the end of a creating command to name what it creates, e.g.
+  o << R"(- Naming: add " => Name" (one word, no spaces) at the end of a creating command to name what it creates, e.g.
   _Box 0,0,0 100,50 30 => Body
 - Commands that act on objects need a selection first:
   _SelNone                clear the selection
@@ -216,6 +216,18 @@ std::string CommandName(const std::string& line) {
   while (j < t.size() && !std::isspace((unsigned char)t[j])) j++;
   return Lower(t.substr(i, j - i));
 }
+// Nomi che i modelli inventano spesso, ricondotti al comando giusto.
+const char* Alias(const std::string& n) {
+  static const std::pair<const char*, const char*> a[] = {
+      {"cube", "Box"}, {"cuboid", "Box"}, {"block", "Box"}, {"ball", "Sphere"}, {"cyl", "Cylinder"},
+      {"union", "BooleanUnion"}, {"booleanadd", "BooleanUnion"}, {"difference", "BooleanDifference"},
+      {"subtract", "BooleanDifference"}, {"booleansubtract", "BooleanDifference"},
+      {"intersection", "BooleanIntersection"}, {"booleanintersect", "BooleanIntersection"},
+      {"extrude", "ExtrudeCrv"}, {"fillet3d", "FilletEdge"}, {"selectname", "SelName"}, {"selectall", "SelAll"},
+      {"selectnone", "SelNone"}, {"deselectall", "SelNone"}, {"rect", "Rectangle"}, {"polygonal", "Polygon"}};
+  for (const auto& [k, v] : a) if (n == k) return v;
+  return nullptr;
+}
 }  // namespace
 
 std::vector<std::string> ExtractScript(const std::string& replyIn) {
@@ -242,6 +254,13 @@ std::vector<std::string> ExtractScript(const std::string& replyIn) {
       if (!std::isalpha((unsigned char)l[0])) continue;
       l = "_" + l;
     }
+    if (const char* real = Alias(CommandName(l))) {
+      size_t i = 0;
+      while (i < l.size() && (l[i] == '_' || l[i] == '-' || l[i] == '!')) i++;
+      size_t j = i;
+      while (j < l.size() && !std::isspace((unsigned char)l[j])) j++;
+      l = l.substr(0, i) + real + l.substr(j);
+    }
     out.push_back(l);
   }
   return out;
@@ -257,6 +276,8 @@ std::vector<std::string> ExpandScript(const std::vector<std::string>& lines, std
     if (arrow == std::string::npos) { push(l, k); continue; }
     std::string name = Trim(l.substr(arrow + 2));
     if (name.size() >= 2 && name.front() == '"' && name.back() == '"') name = name.substr(1, name.size() - 2);
+    // un nome e' una parola sola (SelName separa i nomi con gli spazi)
+    name.erase(std::remove_if(name.begin(), name.end(), [](unsigned char c) { return std::isspace(c); }), name.end());
     push(Trim(l.substr(0, arrow)), k);
     if (name.empty()) continue;
     push("_SelNone", k);
@@ -288,7 +309,11 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
   const size_t before = se.AllObjectIds(true).size();
   for (size_t i = 0; i < expanded.size(); i++) {
     const std::string name = CommandName(expanded[i]);
-    if (!se.Commands().count(name)) { v.line = origin[i]; v.error = "comando sconosciuto: " + name; return v; }
+    if (!se.Commands().count(name)) {
+      v.line = origin[i];
+      v.error = "unknown command " + name + ": use only the commands listed in the reference";
+      return v;
+    }
     if (!CommandAllowed(expanded[i])) { v.line = origin[i]; v.error = "comando non permesso: " + name; return v; }
     if (!se.Run(expanded[i])) {
       v.line = origin[i];
