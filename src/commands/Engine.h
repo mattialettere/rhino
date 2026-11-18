@@ -106,6 +106,8 @@ public:
   double Tolerance() const;
   ON_UUID AddObject(ON_Object* geometry, const ON_3dmObjectAttributes* attrs = nullptr);
   bool DeleteObject(const ON_UUID& id);
+  // Sostituisce la geometria conservando attributi e id dell'oggetto.
+  ON_UUID ReplaceObject(const ON_UUID& id, ON_Object* geometry);
   const ON_ModelGeometryComponent* Object(const ON_UUID& id) const;
   ON_Geometry* EditableGeometry(const ON_UUID& id);
   ON_3dmObjectAttributes* EditableAttributes(const ON_UUID& id);
@@ -135,6 +137,8 @@ public:
   const std::string& LastError() const { return m_lastError; }
 
   std::string currentPath;   // percorso del file aperto/salvato
+  // Oggetti con i punti di controllo visibili (PointsOn / PointsOff)
+  std::set<ON_UUID, UuidLess> pointsOn;
   ON_3dPoint lastPoint = ON_3dPoint::Origin;
 
 private:

@@ -3,6 +3,7 @@
 // wireframe, i punti e (se disponibile) la mesh ombreggiata.
 #include "commands/Annotation.h"
 #include "commands/Engine.h"
+#include "commands/Grips.h"
 #include <map>
 #include <memory>
 #include <vector>
@@ -30,6 +31,9 @@ struct DisplayObject {
   std::vector<SilEdge> silhouette;
   std::vector<SnapPoint> snapPoints;   // estremi, punti medi, centri, quadranti, nodi, vertici
   std::shared_ptr<ON_Mesh> shaded;     // nullptr se non ombreggiabile
+  // Punti di controllo (PointsOn) e poligono/rete di controllo
+  std::vector<Grip> grips;
+  std::vector<std::vector<ON_3dPoint>> cage;
   ON_Color color = ON_Color::Black;
   bool selected = false, locked = false;
   ON_BoundingBox bbox;
@@ -43,6 +47,10 @@ public:
   void RefreshSelection();
   const std::vector<DisplayObject>& Objects() const { return m_objects; }
   ON_BoundingBox Bounds() const;
+  const ON_Geometry* Geometry(const ON_UUID& id) const {
+    const auto* o = m_engine.Object(id);
+    return o ? o->Geometry(nullptr) : nullptr;
+  }
 
 private:
   void AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::string& sig,

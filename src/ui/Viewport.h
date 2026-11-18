@@ -93,6 +93,12 @@ private:
   void DrawGumball(QPainter& p) const;
   bool GumballValue(const QPoint& pos, double& value) const;  // parametro sull'asse o angolo
   ON_Xform GumballXform() const;
+  // --- punti di controllo (PointsOn) ---
+  struct GripDrag { bool active = false; ON_UUID id = ON_nil_uuid; int i = 0, j = -1; ON_3dPoint start, cur; };
+  bool GripPick(const QPoint& pos, GripDrag& out) const;
+  ON_3dPoint GripDragPoint(const QPoint& pos) const;
+  void DrawGrips(QPainter& p) const;
+  GripDrag m_gripDrag;
   GumballHit m_gbDrag;
   double m_gbStart = 0, m_gbCurrent = 0;
   ON_3dPoint m_gbCenter;

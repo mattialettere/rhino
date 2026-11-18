@@ -1,4 +1,5 @@
 #include "ui/Viewport.h"
+#include <memory>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QOpenGLFunctions_1_1>
@@ -338,6 +339,40 @@ void Viewport::paintGL() {
     }
   }
 
+  // poligoni e reti di controllo degli oggetti con i punti attivi
+  gl->glLineWidth(1.0f);
+  for (const auto& obj : m_scene.Objects()) {
+    if (obj.cage.empty()) continue;
+    gl->glColor3ub(70, 70, 70);
+    for (const auto& poly : obj.cage) {
+      gl->glBegin(GL_LINE_STRIP);
+      for (const auto& q : poly) gl->glVertex3d(q.x, q.y, q.z);
+      gl->glEnd();
+    }
+  }
+  if (m_gripDrag.active) {  // anteprima del punto trascinato
+    gl->glDisable(GL_DEPTH_TEST);
+    gl->glColor3ub(60, 60, 60);
+    if (const ON_Geometry* g = m_scene.Geometry(m_gripDrag.id)) {
+      std::unique_ptr<ON_Geometry> moved(MoveGrip(g, m_gripDrag.i, m_gripDrag.j, m_gripDrag.cur));
+      if (const auto* c = ON_Curve::Cast(moved.get())) {
+        std::vector<ON_3dPoint> w;
+        TessellateCurve(*c, w);
+        gl->glBegin(GL_LINE_STRIP);
+        for (const auto& q : w) gl->glVertex3d(q.x, q.y, q.z);
+        gl->glEnd();
+      }
+      GripSet gs;
+      if (moved && GetGrips(moved.get(), gs))
+        for (const auto& poly : gs.cage) {
+          gl->glBegin(GL_LINE_STRIP);
+          for (const auto& q : poly) gl->glVertex3d(q.x, q.y, q.z);
+          gl->glEnd();
+        }
+    }
+    gl->glEnable(GL_DEPTH_TEST);
+  }
+
   if (m_gbDrag.mode) {  // anteprima del Gumball: gli oggetti selezionati trasformati
     const ON_Xform x = GumballXform();
     double m[16];
@@ -374,6 +409,7 @@ void Viewport::paintGL() {
   QPainter p(this);
   p.setRenderHint(QPainter::Antialiasing);
   DrawLabels(p);
+  DrawGrips(p);
   DrawGumball(p);
   p.setPen(QColor(30, 30, 30));
   QFont f = p.font(); f.setBold(true); p.setFont(f);
@@ -886,6 +922,73 @@ std::vector<ON_UUID> Viewport::PickWindow(const QPoint& a, const QPoint& b) cons
   return out;
 }
 
+bool Viewport::GripPick(const QPoint& pos, GripDrag& out) const {
+  double best = 7.0;
+  bool found = false;
+  for (const auto& obj : m_scene.Objects())
+    for (const auto& g : obj.grips) {
+      double sx, sy;
+      if (!m_cam.Project(g.p, width(), height(), sx, sy)) continue;
+      const double d = std::hypot(sx - pos.x(), sy - pos.y());
+      if (d < best) {
+        best = d;
+        out.active = true;
+        out.id = obj.id;
+        out.i = g.i;
+        out.j = g.j;
+        out.start = out.cur = g.p;
+        found = true;
+      }
+    }
+  return found;
+}
+
+// Posizione del punto trascinato: osnap se presente, altrimenti sul piano
+// parallelo al piano di costruzione che passa per il punto di partenza.
+ON_3dPoint Viewport::GripDragPoint(const QPoint& pos) const {
+  ON_3dPoint snapped;
+  QString label;
+  if (Shared().osnap && FindOsnap(pos, snapped, label)) return snapped;
+  ON_3dPoint o;
+  ON_3dVector dir;
+  m_cam.Ray(pos.x(), pos.y(), width(), height(), o, dir);
+  const ON_Plane cp = m_cam.CPlane();
+  ON_Plane pl(m_gripDrag.start, cp.xaxis, cp.yaxis);
+  const double den = dir * pl.zaxis;
+  if (std::fabs(den) < 1e-12) return m_gripDrag.cur;
+  ON_3dPoint p = o + dir * (((pl.origin - o) * pl.zaxis) / den);
+  if (Shared().gridSnap && Shared().gridSpacing > 0) {
+    const double g = Shared().gridSpacing;
+    const ON_3dVector v = p - cp.origin;
+    const double u = std::round((v * cp.xaxis) / g) * g, w = std::round((v * cp.yaxis) / g) * g;
+    const double h = (m_gripDrag.start - cp.origin) * cp.zaxis;
+    p = cp.origin + cp.xaxis * u + cp.yaxis * w + cp.zaxis * h;
+  }
+  return p;
+}
+
+void Viewport::DrawGrips(QPainter& p) const {
+  p.setRenderHint(QPainter::Antialiasing, false);
+  for (const auto& obj : m_scene.Objects())
+    for (const auto& g : obj.grips) {
+      double sx, sy;
+      if (!m_cam.Project(g.p, width(), height(), sx, sy)) continue;
+      p.setPen(QPen(QColor(0, 0, 0), 1));
+      p.setBrush(QColor(255, 255, 255));
+      p.drawRect(QRectF(std::round(sx) - 3, std::round(sy) - 3, 6, 6));
+    }
+  if (m_gripDrag.active) {
+    double sx, sy;
+    if (m_cam.Project(m_gripDrag.cur, width(), height(), sx, sy)) {
+      p.setPen(QPen(QColor(0, 0, 0), 1));
+      p.setBrush(QColor(255, 255, 0));
+      p.drawRect(QRectF(std::round(sx) - 3, std::round(sy) - 3, 6, 6));
+    }
+  }
+  p.setBrush(Qt::NoBrush);
+  p.setRenderHint(QPainter::Antialiasing, true);
+}
+
 void Viewport::mousePressEvent(QMouseEvent* e) {
   setFocus();
   emit Activated(this);
@@ -902,6 +1005,10 @@ void Viewport::mousePressEvent(QMouseEvent* e) {
   }
   m_pressPos = m_lastPos = e->pos();
   m_dragButton = e->button();
+  if (e->button() == Qt::LeftButton && !Shared().waitingForPoint) {
+    GripDrag gd;
+    if (GripPick(e->pos(), gd)) { m_gripDrag = gd; return; }
+  }
   if (e->button() == Qt::LeftButton) {
     const GumballHit h = GumballPick(e->pos());
     double size;
@@ -933,6 +1040,13 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
     update();
     return;
   }
+  if (m_gripDrag.active) {
+    m_gripDrag.cur = GripDragPoint(e->pos());
+    m_hoverWorld = m_gripDrag.cur;
+    emit MouseWorld(m_hoverWorld);
+    update();
+    return;
+  }
   if (m_gbDrag.mode) {
     double v;
     if (GumballValue(e->pos(), v)) m_gbCurrent = v;
@@ -959,6 +1073,19 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
 
 void Viewport::mouseReleaseEvent(QMouseEvent* e) {
   const bool wasDrag = (e->pos() - m_pressPos).manhattanLength() > 4;
+  if (m_gripDrag.active) {
+    const GripDrag gd = m_gripDrag;
+    m_gripDrag = {};
+    m_dragButton = Qt::NoButton;
+    if (wasDrag && gd.cur.DistanceTo(gd.start) > 1e-12) {
+      char sid[64];
+      ON_UuidToString(gd.id, sid);
+      emit GumballCommand(QString("-_GripMove %1 %2 %3 %4,%5,%6").arg(sid).arg(gd.i).arg(gd.j)
+                              .arg(gd.cur.x, 0, 'g', 12).arg(gd.cur.y, 0, 'g', 12).arg(gd.cur.z, 0, 'g', 12));
+    }
+    update();
+    return;
+  }
   if (m_gbDrag.mode) {
     const GumballHit h = m_gbDrag;
     m_gbDrag = {};

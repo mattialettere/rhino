@@ -3,6 +3,7 @@
 // confrontato (nessuna differenza ammessa).
 #include "commands/Annotation.h"
 #include "commands/Engine.h"
+#include "commands/Grips.h"
 #include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
 #include <cmath>
@@ -942,6 +943,45 @@ int main(int argc, char** argv) {
     });
     Case("SetUserText", "_Point 0,0\n_SelAll _SetUserText Peso 12\n_GetUserText", [](Ctx& c) {
       CHECK(c.log.str().find("Peso = 12") != std::string::npos);
+    });
+    Case("PointsOn_GripMove", "_Curve 0,0 5,5 10,0 15,5 _Enter\n_SelAll _PointsOn", [](Ctx& c) {
+      CHECK(c.e.pointsOn.size() == 1);
+      const ON_UUID id = *c.e.pointsOn.begin();
+      char s[64];
+      ON_UuidToString(id, s);
+      CHECK(c.e.Run(std::string("_GripMove ") + s + " 1 -1 5,20,0"));
+      const auto* n = ON_NurbsCurve::Cast(c.e.Object(id)->Geometry(nullptr));
+      ON_3dPoint p;
+      CHECK(n && n->GetCV(1, p) && NearPt(p, ON_3dPoint(5, 20, 0), 1e-12));
+      CHECK(c.e.pointsOn.count(id) == 1 && c.e.AllObjectIds().size() == 1);
+      CHECK(c.e.Undo());
+      const auto* u = ON_NurbsCurve::Cast(c.e.Object(id) ? c.e.Object(id)->Geometry(nullptr) : nullptr);
+      CHECK(u && u->GetCV(1, p) && NearPt(p, ON_3dPoint(5, 5, 0), 1e-12));
+    });
+    Case("GripMove_superficie_mesh_subd", "_Plane 0,0 10,10\n_MeshPlane 20,0 30,10\n_SubDBox 40,0,0 50,10 10\n_SelAll _PointsOn", [](Ctx& c) {
+      CHECK(c.e.pointsOn.size() == 3);
+      int moved = 0;
+      for (const auto& id : c.e.AllObjectIds()) {
+        GripSet gs;
+        const ON_Geometry* g = c.e.Object(id)->Geometry(nullptr);
+        if (!GetGrips(g, gs) || gs.grips.empty()) continue;
+        const Grip gp = gs.grips.front();
+        char s[64];
+        ON_UuidToString(id, s);
+        const ON_3dPoint target = gp.p + ON_3dVector(0, 0, 7);
+        if (c.e.Run(std::string("_GripMove ") + s + " " + std::to_string(gp.i) + " " + std::to_string(gp.j) + " " +
+                    std::to_string(target.x) + "," + std::to_string(target.y) + "," + std::to_string(target.z))) {
+          GripSet after;
+          GetGrips(c.e.Object(id)->Geometry(nullptr), after);
+          bool found = false;
+          for (const auto& q : after.grips) if (q.p.DistanceTo(target) < 1e-6) found = true;
+          if (found) moved++;
+        }
+      }
+      CHECK(moved == 3);
+    });
+    Case("PointsOff", "_Line 0,0 1,1\n_SelAll _PointsOn\n_PointsOff", [](Ctx& c) {
+      CHECK(c.e.pointsOn.empty());
     });
     Case("Purge", "-_Layer _New A\n-_Layer _New B\n_CurrentLayer B\n_Point 0,0\n_Purge", [](Ctx& c) {
       CHECK(c.log.str().find("Eliminati") != std::string::npos);

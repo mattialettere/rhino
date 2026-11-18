@@ -38,7 +38,9 @@ add_library(cadcore STATIC
   src/commands/CmdDocument.cpp src/commands/CmdMore.cpp
   src/commands/CmdAnnotation.cpp src/commands/Annotation.cpp src/commands/Annotation.h
   src/commands/CmdExtra.cpp
-  src/commands/CmdExtra2.cpp)
+  src/commands/CmdExtra2.cpp
+  src/commands/Grips.cpp
+  src/commands/Grips.h)
 target_include_directories(cadcore PUBLIC src)
 
 # Motore geometrico opzionale: OpenCASCADE (booleane, raccordi, offset, ...)

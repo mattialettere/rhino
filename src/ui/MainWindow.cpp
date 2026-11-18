@@ -200,6 +200,9 @@ void MainWindow::BuildMenus() {
   edit->addAction("Dividi", this, [this] { Submit("_Split"); });
   edit->addAction("Unisci", this, [this] { Submit("_Join"); });
   edit->addAction("Esplodi", this, [this] { Submit("_Explode"); });
+  edit->addSeparator();
+  edit->addAction("Punti di controllo attivi", QKeySequence(Qt::Key_F10), this, [this] { Submit("_PointsOn"); });
+  edit->addAction("Punti di controllo disattivi", QKeySequence(Qt::Key_F11), this, [this] { Submit("_PointsOff"); });
 
   auto* view = menuBar()->addMenu("&Vista");
   view->addAction("Zoom estensione (tutte le viste)", this, [this] { ZoomExtentsAll(); });
@@ -622,6 +625,7 @@ void MainWindow::ToggleMaximize(Viewport* v) {
 void MainWindow::keyPressEvent(QKeyEvent* e) {
   if (e->key() == Qt::Key_Escape) {
     if (!m_pending.empty()) Cancel();
+    else if (m_engine.Selection().empty() && !m_engine.pointsOn.empty()) Submit("_PointsOff");  // come Rhino: Esc spegne i punti
     else { m_engine.ClearSelection(); m_scene.RefreshSelection(); RefreshPanels(); for (auto* v : m_views) v->update(); }
     return;
   }

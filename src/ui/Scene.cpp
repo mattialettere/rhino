@@ -401,6 +401,10 @@ void Scene::Rebuild() {
     for (int i = 0; i < 3; i++) sig += "|" + std::to_string(d.bbox.m_min[i]) + "|" + std::to_string(d.bbox.m_max[i]);
 
     AddGeometry(g, d, sig, newCache, 0);
+    if (m_engine.pointsOn.count(id)) {
+      GripSet gs;
+      if (GetGrips(g, gs)) { d.grips = std::move(gs.grips); d.cage = std::move(gs.cage); }
+    }
     m_objects.push_back(std::move(d));
   }
   m_meshCache.swap(newCache);

@@ -6,6 +6,7 @@
 // trasformazioni (Shear, SetPt, Align), selezione (SelColor, SelSmall),
 // proprieta' (MatchProperties, SetUserText, GetUserText), Purge.
 #include "commands/Engine.h"
+#include "commands/Grips.h"
 #include "core/SubDLimit.h"
 #include <algorithm>
 #include <cmath>
@@ -877,6 +878,52 @@ bool CmdPurge(Engine& e, TokenStream&) {
   return true;
 }
 
+
+// --- Punti di controllo ------------------------------------------------------------
+// PointsOn: mostra i punti di controllo degli oggetti selezionati (F10).
+bool CmdPointsOn(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("PointsOn", "seleziona gli oggetti, poi Invio");
+  if (sel.empty()) return false;
+  int n = 0;
+  for (const auto& id : sel)
+    if (SupportsGrips(Geo(e, id))) { e.pointsOn.insert(id); n++; }
+  if (!n) return e.Fail("nessun oggetto con punti di controllo modificabili (polisuperfici e superfici tagliate non sono supportate)");
+  e.ClearSelection();
+  e.Out() << "  Punti di controllo attivi su " << n << " oggetti\n";
+  return true;
+}
+
+// PointsOff: nasconde tutti i punti di controllo (F11).
+bool CmdPointsOff(Engine& e, TokenStream&) {
+  const size_t n = e.pointsOn.size();
+  e.pointsOn.clear();
+  e.Out() << "  Punti di controllo disattivati su " << n << " oggetti\n";
+  return true;
+}
+
+// GripMove (interno, usato trascinando un punto nella vista):
+// id dell'oggetto, indice i, indice j (-1 per le curve), nuova posizione.
+bool CmdGripMove(Engine& e, TokenStream& ts) {
+  auto sid = e.ReadString(ts, "id dell'oggetto");
+  if (!sid) return false;
+  auto i = e.ReadInt(ts, "indice del punto");
+  if (!i) return false;
+  auto j = e.ReadInt(ts, "secondo indice");
+  if (!j) return false;
+  auto p = e.ReadPoint(ts, "nuova posizione");
+  if (!p) return false;
+  const ON_UUID id = ON_UuidFromString(Unquote(*sid).c_str());
+  const ON_Geometry* g = Geo(e, id);
+  if (!g) return e.Fail("oggetto inesistente");
+  ON_Geometry* ng = MoveGrip(g, *i, *j, *p);
+  if (!ng) return e.Fail("punto di controllo non modificabile");
+  e.pointsOn.erase(id);
+  const ON_UUID nid = e.ReplaceObject(id, ng);
+  if (ON_UuidIsNil(nid)) return e.Fail("sostituzione non riuscita");
+  e.pointsOn.insert(nid);
+  return true;
+}
+
 }  // namespace
 
 void RegisterExtra2Commands(Engine& e) {
@@ -915,6 +962,9 @@ void RegisterExtra2Commands(Engine& e) {
   reg("SetUserText", "Proprieta'", "Imposta il testo utente", CmdSetUserText);
   reg("GetUserText", "Proprieta'", "Mostra il testo utente", CmdGetUserText, false);
   reg("Purge", "File", "Elimina livelli e blocchi non usati", CmdPurge);
+  reg("PointsOn", "Modifica", "Mostra i punti di controllo (F10)", CmdPointsOn, false);
+  reg("PointsOff", "Modifica", "Nasconde i punti di controllo (F11)", CmdPointsOff, false);
+  reg("GripMove", "Interno", "Sposta un punto di controllo (trascinamento nella vista)", CmdGripMove);
 }
 
 }  // namespace cad

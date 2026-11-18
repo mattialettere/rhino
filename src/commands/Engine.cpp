@@ -295,6 +295,22 @@ ON_3dmObjectAttributes* Engine::EditableAttributes(const ON_UUID& id) {
   return o ? o->ExclusiveAttributes() : nullptr;
 }
 
+ON_UUID Engine::ReplaceObject(const ON_UUID& id, ON_Object* geometry) {
+  const auto* o = Object(id);
+  if (!o || !geometry) { delete geometry; return ON_nil_uuid; }
+  auto* a = new ON_3dmObjectAttributes(*o->Attributes(&ON_3dmObjectAttributes::DefaultAttributes));
+  const bool wasSelected = IsSelected(id);
+  ONX_Model& m = Model();
+  m.RemoveModelComponent(ON_ModelComponent::Type::ModelGeometry, id);
+  a->m_uuid = id;  // stesso id: selezione, gruppi e riferimenti restano validi
+  ON_ModelComponentReference ref = m.AddManagedModelGeometryComponent(geometry, a, true);
+  const auto* mgc = ON_ModelGeometryComponent::Cast(ref.ModelComponent());
+  if (!mgc || !mgc->Attributes(nullptr)) return ON_nil_uuid;
+  const ON_UUID nid = mgc->Attributes(nullptr)->m_uuid;
+  if (wasSelected && ON_UuidCompare(nid, id) != 0) Deselect(id);
+  return nid;
+}
+
 bool Engine::DeleteObject(const ON_UUID& id) {
   Deselect(id);
   return !Model().RemoveModelComponent(ON_ModelComponent::Type::ModelGeometry, id).IsEmpty();

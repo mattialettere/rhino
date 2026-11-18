@@ -24,14 +24,14 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SubD | 6 / 23 |
 | Mesh | 10 / 19 |
 | Trasformazioni | 17 / 30 |
-| Modifica | 22 / 34 |
+| Modifica | 24 / 34 |
 | Selezione | 17 / 19 |
 | Blocchi | 3 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 11 / 14 |
 | Analisi | 10 / 15 |
 | File | 4 / 7 |
-| **Totale** | **195 / 303** |
+| **Totale** | **197 / 303** |
 
 ## Punti
 
@@ -307,8 +307,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | InsertKnot | ✔ |
 | RemoveKnot | ⬜ |
 | InsertControlPoint | 🧱 |
-| PointsOn | ⬜ |
-| PointsOff | ⬜ |
+| PointsOn | ✔ |
+| PointsOff | ✔ |
 | EditPtOn | ⬜ |
 | MakePeriodic | 🧱 |
 | Match | 🧱 |
