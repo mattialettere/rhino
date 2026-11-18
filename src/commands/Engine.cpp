@@ -77,6 +77,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterAnnotationCommands(*this);
   RegisterExtraCommands(*this);
   RegisterExtra2Commands(*this);
+  RegisterExtra3Commands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);

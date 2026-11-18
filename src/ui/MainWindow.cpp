@@ -233,7 +233,7 @@ void MainWindow::BuildMenus() {
                      {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Linee singole", "_Lines"},
                      {"Rettangolo arrotondato", "_RoundedRectangle"}, {"Parabola", "_Parabola"}, {"Iperbole", "_Hyperbola"},
                      {"Bisettrice", "_Bisector"}, {"Curva per punti", "_CurveThroughPt"}, {"Leviga", "_Smooth"},
-                     {"Conica", "_ConicCurve"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
+                     {"Conica", "_ConicCurve"}, {"Raccordo curve (Blend)", "_BlendCrv"}, {"Raccorda angoli", "_FilletCorners"}, {"Converti in polilinea", "_ConvertToPolyline"}, {"Estrai isocurva", "_ExtractIsocurve"}, {"Estrai wireframe", "_ExtractWireframe"}});
   addCmds("&Superfici", {{"Piano", "_Plane"}, {"Da curve planari", "_PlanarSrf"}, {"Estrudi curva", "_ExtrudeCrv"},
                          {"Rivoluzione", "_Revolve"}, {"Loft", "_Loft"}, {"Sweep 1 binario", "_Sweep1"},
                          {"Offset superficie", "_OffsetSrf"}, {"Da 3 o 4 punti", "_SrfPt"},
@@ -253,14 +253,14 @@ void MainWindow::BuildMenus() {
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano mesh", "_MeshPlane"}, {"Box mesh", "_MeshBox"},
                     {"Sfera mesh", "_MeshSphere"}, {"Cilindro mesh", "_MeshCylinder"}, {"Cono mesh", "_MeshCone"},
                     {"Toro mesh", "_MeshTorus"}, {"Mesh da polilinea", "_MeshPolyline"},
-                    {"Salda", "_Weld"}, {"Mesh in NURBS", "_MeshToNURB"}});
+                    {"Salda", "_Weld"}, {"Unifica normali", "_UnifyMeshNormals"}, {"Chiudi fori", "_FillMeshHoles"}, {"Mesh in NURBS", "_MeshToNURB"}});
   addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
                       {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
                       {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
                       {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
-                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"},
+                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"},
                          {"Allinea", "_Align"}, {"Imposta punti (SetPt)", "_SetPt"}});
   addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
                          {"Angolo", "_Angle"}, {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"},

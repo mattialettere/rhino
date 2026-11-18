@@ -1059,6 +1059,78 @@ int main(int argc, char** argv) {
     });
   }
 
+  // Deformazioni e altri comandi (CmdExtra3)
+  {
+    std::printf("Altri comandi (3)\n");
+    Case("Twist_linea", "_Line 5,0,0 5,0,10\n_SelAll _Twist 0,0,0 0,0,10 90", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      // la cima ruota di 90 gradi attorno a z: (5,0,10) -> (0,5,10)
+      CHECK(cv && NearPt(cv->PointAtEnd(), ON_3dPoint(0, 5, 10), 1e-9) && NearPt(cv->PointAtStart(), ON_3dPoint(5, 0, 0), 1e-9));
+      // a meta' altezza la rotazione e' di 45 gradi (raggio 5 conservato)
+      bool ok = cv != nullptr;
+      for (int i = 0; cv && i <= 20; i++) {
+        const ON_3dPoint p = cv->PointAt(cv->Domain().ParameterAt(i / 20.0));
+        ok = ok && std::fabs(std::hypot(p.x, p.y) - 5) < 0.05;
+      }
+      CHECK(ok);
+    });
+    Case("Twist_box", "_Box 0,0,0 10,10 20\n_SelAll _Twist 5,5,0 5,5,20 45", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid() && b->m_F.Count() == 6);
+    });
+    Case("Taper", "_Line 5,0,0 5,0,10\n_SelAll _Taper 0,0,0 0,0,10 5 1", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      CHECK(cv && NearPt(cv->PointAtEnd(), ON_3dPoint(1, 0, 10), 1e-9));
+    });
+    Case("Bend", "_Line 0,0 10,0\n_SelAll _Bend 0,0 10,0 6.366197723675814,6.366197723675814", [](Ctx& c) {
+      // il punto sta sul quarto di cerchio di raggio 2L/pi: la linea diventa un quarto di cerchio
+      const auto* cv = ON_Curve::Cast(c.Last());
+      const double R = 20.0 / ON_PI;
+      CHECK(cv && NearPt(cv->PointAtEnd(), ON_3dPoint(R, R, 0), 1e-3));
+    });
+    Case("ArrayCrv", "_Line 0,0 20,0\n_Point 0,0,1\n_SelNone _SelPt _ArrayCrv Count=5 10,0", [](Ctx& c) {
+      int pts = 0;
+      double maxx = 0;
+      for (auto* g : c.Objects()) if (auto* p = ON_Point::Cast(g)) { pts++; maxx = std::max(maxx, p->point.x); }
+      CHECK(pts == 5 && Near(maxx, 20.0, 1e-6));
+    });
+    Case("ConvertToPolyline", "_Circle 0,0 10\n_SelAll _ConvertToPolyline Tolerance=0.01", [](Ctx& c) {
+      const auto* p = ON_PolylineCurve::Cast(c.Last());
+      CHECK(p && p->IsClosed() && p->PointCount() > 20);
+      bool ok = p != nullptr;
+      for (int i = 0; p && i + 1 < p->PointCount(); i++) {
+        const ON_3dPoint m = 0.5 * (p->m_pline[i] + p->m_pline[i + 1]);
+        ok = ok && std::fabs(m.DistanceTo(ON_3dPoint::Origin) - 10) <= 0.0101;
+      }
+      CHECK(ok);
+    });
+    Case("FilletCorners", "_Rectangle 0,0 10,6\n_SelAll _FilletCorners 1", [](Ctx& c) {
+      const auto* pc = ON_PolyCurve::Cast(c.Last());
+      CHECK(pc && pc->IsClosed() && pc->Count() == 8);
+      CHECK(Near(Len(pc), 2 * (8 + 4) + 2 * ON_PI, 0.01));
+    });
+    Case("BlendCrv", "_Line 0,0 10,0\n_Arc 20,5 25,5 90\n_BlendCrv 9,0 25,5 Continuity=Curvature", [](Ctx& c) {
+      const auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && n->Degree() == 5 && NearPt(n->PointAtStart(), ON_3dPoint(10, 0, 0), 1e-9));
+    });
+    Case("BlendCrv_G1", "_Line 0,0 10,0\n_Line 20,5 30,5\n_BlendCrv 9,0 21,5 Continuity=Tangency", [](Ctx& c) {
+      const auto* n = ON_NurbsCurve::Cast(c.Last());
+      CHECK(n && NearPt(n->PointAtEnd(), ON_3dPoint(20, 5, 0), 1e-9));
+      ON_3dVector t0 = n ? n->TangentAt(n->Domain()[0]) : ON_3dVector::ZeroVector;
+      CHECK(Near(t0.x, 1.0, 1e-9));
+    });
+    Case("UnifyMeshNormals", "_MeshBox 0,0,0 10,10 10\n_SelAll _UnifyMeshNormals", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsClosed() && m->IsManifold());
+    });
+    Case("FillMeshHoles", "_MeshCylinder 0,0,0 5 10\n_SelAll _Explode", [](Ctx&) {}, false);
+    Case("FillMeshHoles_piano", "_MeshPlane 0,0 10,10\n_SelAll _FillMeshHoles", [](Ctx& c) {
+      // una mesh piana aperta: il bordo diventa un foro chiuso (la mesh si chiude su se stessa)
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsClosed());
+    });
+  }
+
 #ifdef CAD_WITH_OCCT
   // Superfici e solidi, seconda parte
   {

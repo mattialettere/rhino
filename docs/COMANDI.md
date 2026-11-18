@@ -15,15 +15,15 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Categoria | Fatti / totali |
 |---|---|
 | Punti | 6 / 9 |
-| Curve: linee e polilinee | 6 / 11 |
+| Curve: linee e polilinee | 7 / 11 |
 | Curve: forme | 17 / 19 |
-| Curve: forme libere | 8 / 18 |
+| Curve: forme libere | 10 / 18 |
 | Curve da oggetti | 11 / 14 |
 | Superfici | 18 / 29 |
 | Solidi | 22 / 24 |
 | SubD | 9 / 23 |
-| Mesh | 10 / 19 |
-| Trasformazioni | 17 / 30 |
+| Mesh | 12 / 19 |
+| Trasformazioni | 21 / 30 |
 | Modifica | 26 / 34 |
 | Selezione | 18 / 19 |
 | Blocchi | 3 / 6 |
@@ -31,7 +31,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Annotazioni | 12 / 14 |
 | Analisi | 11 / 15 |
 | File | 7 / 7 |
-| **Totale** | **212 / 303** |
+| **Totale** | **221 / 303** |
 
 ## Punti
 
@@ -57,7 +57,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Polyline | ✔ |
 | PolylineThroughPoints | ✔ |
 | PolylineOnMesh | 🧱 |
-| ConvertToPolyline | 🧱 |
+| ConvertToPolyline | ✔ |
 | Tangent | 🧱 |
 | Perpendicular | 🧱 |
 | Bisector | ✔ |
@@ -98,9 +98,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Sketch | ⬜ |
 | CurveThroughPt | ✔ |
 | Blend | 🧱 |
-| BlendCrv | 🧱 |
+| BlendCrv | ✔ |
 | Fillet | ✔ |
-| FilletCorners | 🧱 |
+| FilletCorners | ✔ |
 | Chamfer | ✔ |
 | Offset | ✔ |
 | OffsetCrvOnSrf | 🧱 |
@@ -239,8 +239,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | MeshBooleanDifference | 🧱 |
 | Weld | ✔ |
 | UnweldEdge | 🧱 |
-| FillMeshHoles | 🧱 |
-| UnifyMeshNormals | 🧱 |
+| FillMeshHoles | ✔ |
+| UnifyMeshNormals | ✔ |
 | MeshToNURB | ✔ |
 | ExtractMeshPart | ⬜ |
 
@@ -263,14 +263,14 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Array | ✔ |
 | ArrayLinear | ✔ |
 | ArrayPolar | ✔ |
-| ArrayCrv | 🧱 |
+| ArrayCrv | ✔ |
 | ArraySrf | 🧱 |
 | Align | ✔ |
 | SetPt | ✔ |
 | Shear | ✔ |
-| Twist | 🧱 |
-| Bend | 🧱 |
-| Taper | 🧱 |
+| Twist | ✔ |
+| Bend | ✔ |
+| Taper | ✔ |
 | Flow | 🧱 |
 | FlowAlongSrf | 🧱 |
 | Splop | 🧱 |

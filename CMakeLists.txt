@@ -40,6 +40,9 @@ add_library(cadcore STATIC
   src/commands/CmdExtra.cpp
   src/commands/CmdExtra2.cpp
   src/commands/Grips.cpp
+  src/commands/CmdExtra3.cpp
+  src/commands/Deform.cpp
+  src/commands/Deform.h
   src/commands/Grips.h)
 target_include_directories(cadcore PUBLIC src)
 
