@@ -2573,6 +2573,142 @@ int main(int argc, char** argv) {
 #endif
 
   {
+    std::printf("Import/Export .3dm con tabelle\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/merge";
+    fs::create_directories(dir);
+    const std::string img = dir + "/scacchi.png";
+    { std::ofstream f(img, std::ios::binary); f << "immagine di prova"; }
+    Ctx a;
+    CHECK(a.e.Run(
+        "_Linetypes _New Tratteggio 5,-2\n"
+        "-_Layer _New Edificio::Muri\n-_Layer _Color Muri 200,30,30\n-_Layer _Linetype Muri Tratteggio\n"
+        "-_Layer _Current Muri\n"
+        "_Box 0,0,0 2,2 2\n_Circle 1,1 3\n_SelAll _Block Name=Vite 1,1,0\n_SelNone\n"
+        "_SelAll _Block Name=Doppia 0,0,0\n_SelNone\n"  // blocco annidato: Doppia contiene un'istanza di Vite
+        "_Insert Doppia 20,0,0\n"
+        "_Sphere 40,0,0 3\n_SelLast _SetMaterial Color=10,200,10 Name=Verde\n_SelNone\n"
+        "_Box 50,0,0 55,5 5\n_SelLast _ApplyTexture File=\"" + img + "\"\n_SelNone\n"
+        "_Line 0,20 10,20\n_Line 0,25 10,25\n_SelLast\n_Line 0,30 10,30\n_SelNone\n"
+        "_Rectangle 60,0 70,10\n_SelLast _Hatch\n_SelNone\n"
+        "_DimStyle Name=\"Mia quota\" TextHeight=5\n_Dim 0,40 30,40 15,45\n_SelNone\n"
+        "-_Layer _Current Default\n_Point 99,99\n"));
+    // gruppo con due linee
+    {
+      std::vector<ON_UUID> lines;
+      for (const auto& id : a.e.AllObjectIds())
+        if (ON_LineCurve::Cast(a.e.Object(id)->Geometry(nullptr))) lines.push_back(id);
+      CHECK(lines.size() == 3);
+      a.e.ClearSelection();
+      a.e.Select(lines[0]);
+      a.e.Select(lines[1]);
+      CHECK(a.e.Run("_Group"));
+    }
+    const std::string f = dir + "/esportato.3dm";
+    std::remove(f.c_str());
+    // esporta tutto tranne il punto sul livello Default
+    a.e.ClearSelection();
+    int nsel = 0;
+    for (const auto& id : a.e.AllObjectIds())
+      if (!ON_Point::Cast(a.e.Object(id)->Geometry(nullptr))) { a.e.Select(id); nsel++; }
+    CHECK(a.e.Run("_Export \"" + f + "\""));
+    // il file esportato contiene le tabelle usate
+    Document3dm ex;
+    CHECK(ex.Load(f));
+    const ModelSummary sx = ex.Summarize();
+    CHECK(sx.counts.at(Category::BlockDefinition) == 2);
+    CHECK(sx.counts.at(Category::Linetype) == 1);
+    CHECK(sx.counts.at(Category::EmbeddedFile) == 1);
+    CHECK(sx.counts.at(Category::Group) == 1);
+    CHECK(sx.counts.at(Category::Material) >= 2);
+    // importa in un documento che ha gia' un blocco "Vite" diverso e un livello Muri di primo livello
+    Ctx b;
+    CHECK(b.e.Run("-_Layer _New Muri\n_Sphere 0,0,0 1\n_SelAll _Block Name=Vite 0,0,0\n_SelNone"));
+    CHECK(b.e.Run("_Import \"" + f + "\""));
+    const ONX_Model& m = b.e.Model();
+    int top = 0;
+    std::map<std::string, int> cls;
+    for (const auto& id : b.e.AllObjectIds()) {
+      const auto* o = b.e.Object(id);
+      cls[o->Geometry(nullptr)->ClassId()->ClassName()]++;
+      top++;
+    }
+    CHECK(top == 1 + nsel);
+    // livelli: Edificio::Muri nuovo (non il Muri di primo livello), con colore e tipo di linea
+    const ON_Layer* muri = nullptr;
+    {
+      ONX_ModelComponentIterator it(m, ON_ModelComponent::Type::Layer);
+      for (auto* c = it.FirstComponent(); c; c = it.NextComponent())
+        if (const auto* l = ON_Layer::Cast(c); l && l->Name() == L"Muri" && ON_UuidIsNotNil(l->ParentLayerId())) muri = l;
+    }
+    CHECK(muri != nullptr);
+    if (muri) {
+      const auto* par = ON_Layer::Cast(m.ComponentFromId(ON_ModelComponent::Type::Layer, muri->ParentLayerId()).ModelComponent());
+      CHECK(par && par->Name() == L"Edificio");
+      CHECK(muri->Color() == ON_Color(200, 30, 30));
+      const auto* lt = ON_Linetype::Cast(m.ComponentFromIndex(ON_ModelComponent::Type::LinePattern, muri->LinetypeIndex()).ModelComponent());
+      CHECK(lt && lt->Name() == L"Tratteggio" && lt->SegmentCount() == 2);
+    }
+    // blocchi: "Vite" esistente riusato, "Doppia" copiata e riferita a quella
+    int ndefs = 0;
+    const ON_InstanceDefinition* doppia = nullptr;
+    {
+      ONX_ModelComponentIterator it(m, ON_ModelComponent::Type::InstanceDefinition);
+      for (auto* c = it.FirstComponent(); c; c = it.NextComponent())
+        if (const auto* idf = ON_InstanceDefinition::Cast(c)) { ndefs++; if (idf->Name() == L"Doppia") doppia = idf; }
+    }
+    CHECK(ndefs == 2 && doppia != nullptr);
+    if (doppia) {
+      bool nested = false;
+      for (int i = 0; i < doppia->InstanceGeometryIdList().Count(); i++) {
+        const auto* mg = ON_ModelGeometryComponent::Cast(m.ComponentFromId(ON_ModelComponent::Type::ModelGeometry, doppia->InstanceGeometryIdList()[i]).ModelComponent());
+        const auto* ir = mg ? ON_InstanceRef::Cast(mg->Geometry(nullptr)) : nullptr;
+        if (ir) {
+          const auto* vite = m.ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, ir->m_instance_definition_uuid).ModelComponent();
+          nested = vite && vite->Name() == L"Vite";
+        }
+      }
+      CHECK(nested);
+    }
+    // materiale, texture con immagine incorporata, gruppo, retino, stile di quota
+    bool verde = false, tex = false, hatch = false, dim = false;
+    std::map<int, int> groups;
+    for (const auto& id : b.e.AllObjectIds()) {
+      const auto* o = b.e.Object(id);
+      const auto* at = o->Attributes(nullptr);
+      const auto* mt = ON_Material::Cast(m.ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, at->m_material_index).ModelComponent());
+      if (mt && mt->Name() == L"Verde" && mt->Diffuse() == ON_Color(10, 200, 10)) verde = true;
+      if (mt && mt->m_textures.Count() == 1 && at->m_rendering_attributes.m_mappings.Count() > 0) {
+        const ON_MappingChannel* ch = at->m_rendering_attributes.m_mappings[0].m_mapping_channels.Count()
+                                          ? &at->m_rendering_attributes.m_mappings[0].m_mapping_channels[0] : nullptr;
+        tex = ch && m.ComponentFromId(ON_ModelComponent::Type::TextureMapping, ch->m_mapping_id).ModelComponent() != nullptr;
+      }
+      for (int i = 0; i < at->GroupCount(); i++) groups[at->GroupList()[i]]++;
+      if (const auto* h = ON_Hatch::Cast(o->Geometry(nullptr)))
+        hatch = m.ComponentFromIndex(ON_ModelComponent::Type::HatchPattern, h->PatternIndex()).ModelComponent() != nullptr;
+      if (const auto* an = ON_Annotation::Cast(o->Geometry(nullptr))) {
+        const auto* ds = m.ComponentFromId(ON_ModelComponent::Type::DimStyle, an->DimensionStyleId()).ModelComponent();
+        dim = ds && ds->Name() == L"Mia quota";
+      }
+    }
+    CHECK(verde && tex && hatch && dim);
+    CHECK(groups.size() == 1 && groups.begin()->second == 2);
+    CHECK(b.doc.Summarize().counts.at(Category::EmbeddedFile) == 1);
+    // salvataggio e rilettura senza differenze
+    const std::string f2 = dir + "/importato.3dm";
+    const ModelSnapshot before = TakeSnapshot(m);
+    CHECK(b.doc.Save(f2));
+    Document3dm back;
+    CHECK(back.Load(f2));
+    CHECK(CompareSnapshots(before, TakeSnapshot(back.Model())).Equal());
+    // un solo passo di annullamento toglie tutto l'import
+    CHECK(b.e.Run("_Undo"));
+    int left = 0;
+    for (const auto& id : b.e.AllObjectIds()) { (void)id; left++; }
+    CHECK(left == 1);
+  }
+
+  {
     std::printf("Render content (materiali Rhino 8)\n");
     // Materiale PBR come lo scrive Rhino 8: render content + voce ON_Material collegata.
     Ctx a;

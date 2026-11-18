@@ -6,6 +6,7 @@
 // trasformazioni (Shear, SetPt, Align), selezione (SelColor, SelSmall),
 // proprieta' (MatchProperties, SetUserText, GetUserText), Purge.
 #include "commands/Engine.h"
+#include "core/ModelMerge.h"
 #include "commands/Exchange.h"
 #include "commands/Grips.h"
 #include "core/SubDLimit.h"
@@ -993,17 +994,8 @@ bool CmdGripMove(Engine& e, TokenStream& ts) {
 }
 
 // --- File ------------------------------------------------------------------------
-// Livello con lo stesso nome nel modello di destinazione (creato se manca).
-int MatchLayer(ONX_Model& dst, const ONX_Model& src, int srcIndex) {
-  const auto* sl = ON_Layer::Cast(src.LayerFromIndex(srcIndex).ModelComponent());
-  if (!sl) return 0;
-  ONX_ModelComponentIterator it(dst, ON_ModelComponent::Type::Layer);
-  for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent())
-    if (const auto* l = ON_Layer::Cast(c); l && ON_wString::EqualOrdinal(l->Name(), sl->Name(), true)) return l->Index();
-  return dst.AddLayer(static_cast<const wchar_t*>(sl->Name()), sl->Color());
-}
-
-// Import: aggiunge al modello gli oggetti di un altro file .3dm (livelli per nome).
+// Import: aggiunge al modello gli oggetti di un altro file .3dm con livelli (per percorso),
+// tipi di linea, materiali, gruppi, stili di quota, retini e blocchi (vedi core/ModelMerge.h).
 bool CmdImport(Engine& e, TokenStream& ts) {
   auto path = e.ReadString(ts, "file da importare (.3dm, .stp, .igs, .stl, .obj, .dxf)");
   if (!path) return false;
@@ -1011,32 +1003,22 @@ bool CmdImport(Engine& e, TokenStream& ts) {
   Document3dm src;
   if (!src.Load(Unquote(*path))) return e.Fail("impossibile aprire " + Unquote(*path));
   e.ClearSelection();
-  int n = 0, skipped = 0;
-  ONX_ModelComponentIterator it(src.Model(), ON_ModelComponent::Type::ModelGeometry);
-  for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent()) {
-    const auto* mg = ON_ModelGeometryComponent::Cast(c);
-    const ON_Geometry* g = mg ? mg->Geometry(nullptr) : nullptr;
-    const ON_3dmObjectAttributes* a = mg ? mg->Attributes(nullptr) : nullptr;
-    if (!g || !a) continue;
-    if (ON_InstanceRef::Cast(g)) { skipped++; continue; }  // i blocchi richiedono le definizioni
-    if (a->m_space == ON::page_space) continue;            // oggetti delle tavole dell'altro file
-    ON_3dmObjectAttributes at = *a;
-    at.m_layer_index = MatchLayer(e.Model(), src.Model(), a->m_layer_index);
-    at.m_material_index = -1;
-    at.SetMaterialSource(ON::material_from_layer);
-    at.m_linetype_index = -1;
-    at.SetLinetypeSource(ON::linetype_from_layer);
-    at.RemoveFromAllGroups();
-    const ON_UUID id = e.AddObject(g->Duplicate(), &at);
-    if (!ON_UuidIsNil(id)) { e.Select(id); n++; }
-  }
-  e.Out() << "  Importati " << n << " oggetti";
-  if (skipped) e.Out() << " (" << skipped << " blocchi non importati)";
+  MergeOptions mo;
+  mo.addObject = [&](ON_Object* g, const ON_3dmObjectAttributes& a) { return e.AddObject(g, &a); };
+  const MergeResult r = MergeModel(e.Model(), src.Model(), mo);
+  for (const auto& id : r.objects) e.Select(id);
+  e.Out() << "  Importati " << r.objects.size() << " oggetti";
+  if (r.layers || r.materials || r.blocks || r.linetypes)
+    e.Out() << " (nuovi: " << r.layers << " livelli, " << r.materials << " materiali, " << r.blocks << " blocchi, "
+            << r.linetypes << " tipi di linea)";
+  if (r.blocksReused) e.Out() << "; " << r.blocksReused << " blocchi con lo stesso nome: usati quelli esistenti";
+  if (r.skipped) e.Out() << "; " << r.skipped << " oggetti delle tavole non importati";
   e.Out() << "\n";
-  return n > 0 || e.Fail("nessun oggetto importato");
+  return !r.objects.empty() || e.Fail("nessun oggetto importato");
 }
 
-// Export (Esporta selezione): salva gli oggetti selezionati in un nuovo file Rhino 8.
+// Export (Esporta selezione): salva gli oggetti selezionati in un nuovo file Rhino 8,
+// con le voci di tabella che usano (livelli, materiali, blocchi, ...).
 bool CmdExport(Engine& e, TokenStream& ts) {
   auto sel = e.RequireSelection("Export", "seleziona gli oggetti da esportare, poi Invio");
   if (sel.empty()) return false;
@@ -1046,23 +1028,13 @@ bool CmdExport(Engine& e, TokenStream& ts) {
   Document3dm out;
   out.NewEmpty();
   out.Model().m_settings.m_ModelUnitsAndTolerances = e.Model().m_settings.m_ModelUnitsAndTolerances;
-  int n = 0;
-  for (const auto& id : sel) {
-    const ON_Geometry* g = Geo(e, id);
-    if (!g || ON_InstanceRef::Cast(g)) continue;
-    ON_3dmObjectAttributes at = AttrsOf(e, id);
-    at.m_layer_index = MatchLayer(out.Model(), e.Model(), at.m_layer_index);
-    at.m_material_index = -1;
-    at.SetMaterialSource(ON::material_from_layer);
-    at.m_linetype_index = -1;
-    at.SetLinetypeSource(ON::linetype_from_layer);
-    at.RemoveFromAllGroups();
-    auto* a = new ON_3dmObjectAttributes(at);
-    if (!out.Model().AddManagedModelGeometryComponent(g->Duplicate(), a, true).IsEmpty()) n++;
-  }
-  if (!n) return e.Fail("nessun oggetto esportabile");
+  std::set<ON_UUID, UuidLess> want(sel.begin(), sel.end());
+  MergeOptions mo;
+  mo.filter = [&](const ON_UUID& id) { return want.count(id) > 0; };
+  const MergeResult r = MergeModel(out.Model(), e.Model(), mo);
+  if (r.objects.empty()) return e.Fail("nessun oggetto esportabile");
   if (!out.Save(Unquote(*path), kRhino8ArchiveVersion)) return e.Fail("impossibile salvare " + Unquote(*path));
-  e.Out() << "  Esportati " << n << " oggetti in " << Unquote(*path) << " (formato Rhino 8)\n";
+  e.Out() << "  Esportati " << r.objects.size() << " oggetti in " << Unquote(*path) << " (formato Rhino 8)\n";
   return true;
 }
 
