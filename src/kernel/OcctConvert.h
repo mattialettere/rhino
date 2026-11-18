@@ -30,6 +30,9 @@ ON_Brep* ShapeToBrep(const TopoDS_Shape& shape, double tolerance);
 std::vector<ON_Curve*> ShapeToCurves(const TopoDS_Shape& shape, double tolerance);
 
 // Mesh di visualizzazione/esportazione di una shape.
-ON_Mesh* MeshShape(const TopoDS_Shape& shape, double linearDeflection, double angularDeflectionRad);
+// weld = vertici coincidenti tra facce saldati (mesh chiusa); senza saldatura ogni
+// faccia ha i suoi vertici e le normali esatte della superficie (spigoli vivi
+// netti nella vista ombreggiata, come in Rhino).
+ON_Mesh* MeshShape(const TopoDS_Shape& shape, double linearDeflection, double angularDeflectionRad, bool weld = true);
 
 }  // namespace cad::occt

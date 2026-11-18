@@ -29,9 +29,9 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Blocchi | 3 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 12 / 14 |
-| Analisi | 11 / 15 |
+| Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **241 / 303** |
+| **Totale** | **245 / 303** |
 
 ## Punti
 
@@ -402,10 +402,10 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Radius | ✔ |
 | EvaluatePt | ✔ |
 | BoundingBox | ✔ |
-| CurvatureGraph | 🧱 |
-| Zebra | 🧱 |
-| Draft | 🧱 |
-| ShowEdges | 🧱 |
+| CurvatureGraph | ✔ |
+| Zebra | ✔ |
+| Draft | ✔ |
+| ShowEdges | ✔ |
 | Check | ✔ |
 | SelBadObjects | ✔ |
 

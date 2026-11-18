@@ -1,4 +1,5 @@
 #include "ui/Viewport.h"
+#include <algorithm>
 #include <memory>
 #include <QMenu>
 #include <QMouseEvent>
@@ -216,6 +217,139 @@ void Viewport::DrawGrid() {
   gl->glEnd();
 }
 
+namespace {
+bool InList(const std::vector<ON_UUID>& v, const ON_UUID& id) {
+  for (const auto& x : v) if (ON_UuidCompare(x, id) == 0) return true;
+  return false;
+}
+// rosso -> verde -> blu al crescere di f in [0,1]
+void Ramp(double f, float c[3]) {
+  f = std::clamp(f, 0.0, 1.0);
+  if (f < 0.5) { c[0] = float(1 - 2 * f); c[1] = float(2 * f); c[2] = 0; }
+  else { c[0] = 0; c[1] = float(2 - 2 * f); c[2] = float(2 * f - 1); }
+}
+}  // namespace
+
+// Analisi come in Rhino: strisce di zebra (riflessione di strisce verticali),
+// angolo di sformo rispetto a z del mondo (0..10 gradi, rosso -> blu), grafico
+// della curvatura delle curve e spigoli nudi delle polisuperfici.
+void Viewport::DrawAnalysis() {
+  const Settings& S = Shared();
+  if (S.zebra.empty() && S.draft.empty() && S.curvature.empty() && S.edges.empty()) return;
+  auto* gl = GL(context());
+  const bool persp = m_cam.kind == Camera::Kind::Perspective;
+  const ON_3dPoint eye = m_cam.Eye();
+  ON_3dVector vd = m_cam.Dir();
+  vd.Unitize();
+  if (!S.zebra.empty() && !m_zebraTex) {
+    GLuint t = 0;
+    gl->glGenTextures(1, &t);
+    m_zebraTex = t;
+    gl->glBindTexture(GL_TEXTURE_1D, t);
+    unsigned char px[64 * 3];
+    for (int i = 0; i < 64; i++) { const unsigned char v = i < 32 ? 20 : 245; px[3 * i] = px[3 * i + 1] = px[3 * i + 2] = v; }
+    gl->glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, 64, 0, GL_RGB, GL_UNSIGNED_BYTE, px);
+    gl->glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gl->glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    gl->glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  }
+  gl->glDisable(GL_LIGHTING);
+  gl->glEnable(GL_POLYGON_OFFSET_FILL);
+  gl->glPolygonOffset(1.f, 1.f);
+  for (const auto& obj : m_scene.Objects()) {
+    const bool z = InList(S.zebra, obj.id), d = InList(S.draft, obj.id);
+    if ((z || d) && obj.shaded) {
+      const ON_Mesh& m = *obj.shaded;
+      if (!m.HasVertexNormals()) continue;
+      if (z) {
+        gl->glEnable(GL_TEXTURE_1D);
+        gl->glBindTexture(GL_TEXTURE_1D, m_zebraTex);
+        gl->glColor3f(1, 1, 1);
+      }
+      gl->glBegin(GL_TRIANGLES);
+      for (int i = 0; i < m.m_F.Count(); i++) {
+        const ON_MeshFace& f = m.m_F[i];
+        const int tri[2][3] = {{f.vi[0], f.vi[1], f.vi[2]}, {f.vi[0], f.vi[2], f.vi[3]}};
+        for (int t = 0; t < (f.IsQuad() ? 2 : 1); t++)
+          for (int k = 0; k < 3; k++) {
+            const int vi = tri[t][k];
+            const ON_3dPoint p(m.m_V[vi]);
+            ON_3dVector n(m.m_N[vi]);
+            if (z) {
+              ON_3dVector dir = persp ? ON_3dVector(p - eye) : vd;
+              dir.Unitize();
+              if (n * dir > 0) n = -n;  // lato visto
+              const ON_3dVector r = dir - 2.0 * (dir * n) * n;
+              gl->glTexCoord1d(std::atan2(r.y, r.x) / ON_PI * 6.0);
+            } else {
+              float c[3];
+              const double ang = std::asin(std::clamp(n.z, -1.0, 1.0)) * 180.0 / ON_PI;
+              Ramp(ang / 10.0, c);
+              gl->glColor3fv(c);
+            }
+            gl->glVertex3d(p.x, p.y, p.z);
+          }
+      }
+      gl->glEnd();
+      if (z) gl->glDisable(GL_TEXTURE_1D);
+    }
+    if (InList(S.curvature, obj.id)) {
+      const auto* c = ON_Curve::Cast(m_scene.Geometry(obj.id));
+      if (c) {
+        const ON_Interval dom = c->Domain();
+        const int n = 200;
+        std::vector<ON_3dPoint> P(n + 1);
+        std::vector<ON_3dVector> K(n + 1);
+        double maxK = 0, len = 0;
+        for (int i = 0; i <= n; i++) {
+          const double t = dom.ParameterAt(double(i) / n);
+          P[i] = c->PointAt(t);
+          K[i] = c->CurvatureAt(t);
+          maxK = std::max(maxK, K[i].Length());
+          if (i) len += P[i].DistanceTo(P[i - 1]);
+        }
+        if (maxK > 1e-12) {
+          const double s = 0.25 * len / maxK;
+          gl->glColor3ub(200, 0, 200);
+          gl->glLineWidth(1.f);
+          gl->glBegin(GL_LINES);
+          for (int i = 0; i <= n; i += 2) {
+            const ON_3dPoint q = P[i] - K[i] * s;
+            gl->glVertex3d(P[i].x, P[i].y, P[i].z);
+            gl->glVertex3d(q.x, q.y, q.z);
+          }
+          gl->glEnd();
+          gl->glBegin(GL_LINE_STRIP);
+          for (int i = 0; i <= n; i++) { const ON_3dPoint q = P[i] - K[i] * s; gl->glVertex3d(q.x, q.y, q.z); }
+          gl->glEnd();
+        }
+      }
+    }
+    if (InList(S.edges, obj.id)) {
+      const ON_Geometry* g = m_scene.Geometry(obj.id);
+      std::unique_ptr<ON_Brep> owned;
+      const ON_Brep* b = ON_Brep::Cast(g);
+      if (!b && g && g->HasBrepForm()) { owned.reset(g->BrepForm()); b = owned.get(); }
+      if (b) {
+        gl->glColor3ub(255, 0, 255);
+        gl->glLineWidth(3.f);
+        for (int ei = 0; ei < b->m_E.Count(); ei++) {
+          const ON_BrepEdge& e = b->m_E[ei];
+          if (e.m_ti.Count() != 1) continue;
+          gl->glBegin(GL_LINE_STRIP);
+          for (int i = 0; i <= 32; i++) {
+            const ON_3dPoint q = e.PointAt(e.Domain().ParameterAt(i / 32.0));
+            gl->glVertex3d(q.x, q.y, q.z);
+          }
+          gl->glEnd();
+        }
+        gl->glLineWidth(1.f);
+      }
+    }
+  }
+  gl->glDisable(GL_POLYGON_OFFSET_FILL);
+}
+
 void Viewport::paintGL() {
   auto* gl = GL(context());
   const int w = width(), h = height();
@@ -297,6 +431,7 @@ void Viewport::paintGL() {
     gl->glDisable(GL_LIGHTING);
     if (transparent) { gl->glDepthMask(GL_TRUE); gl->glDisable(GL_BLEND); }
   }
+  DrawAnalysis();
   if (mode == DisplayMode::XRay) gl->glDisable(GL_DEPTH_TEST);
 
   // Wireframe, punti

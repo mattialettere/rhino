@@ -367,7 +367,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
         b->GetTightBoundingBox(bb);
         const double size = bb.Diagonal().Length();
         TopoDS_Shape shape = occt::BrepToShape(*b, m_engine.Tolerance());
-        bm.reset(occt::MeshShape(shape, std::max(size / 400.0, 0.01), 15.0 * ON_PI / 180.0));
+        bm.reset(occt::MeshShape(shape, std::max(size / 400.0, 0.01), 15.0 * ON_PI / 180.0, false));
       }
       newCache[sig] = bm;
       AddShaded(d, bm);

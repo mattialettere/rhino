@@ -51,6 +51,8 @@ public:
     ON_3dPoint lastPoint = ON_3dPoint::Origin;
     bool hasLastPoint = false;
     bool gumball = true;          // Gumball sugli oggetti selezionati (barra di stato)
+    // Analisi attive (Zebra, DraftAngleAnalysis, CurvatureGraph, ShowEdges) per oggetto
+    std::vector<ON_UUID> zebra, draft, curvature, edges;
   };
   enum OsnapBit : unsigned { End = 1, Near = 2, Point = 4, Mid = 8, Cen = 16, Int = 32, Perp = 64,
                              Tan = 128, Quad = 256, Knot = 512, Vertex = 1024 };
@@ -99,6 +101,8 @@ private:
   bool GripPick(const QPoint& pos, GripDrag& out) const;
   ON_3dPoint GripDragPoint(const QPoint& pos) const;
   void DrawGrips(QPainter& p) const;
+  void DrawAnalysis();
+  unsigned m_zebraTex = 0;
   GripDrag m_gripDrag;
   GumballHit m_gbDrag;
   double m_gbStart = 0, m_gbCurrent = 0;

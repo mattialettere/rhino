@@ -5,6 +5,7 @@
 #include <BRepBuilderAPI_NurbsConvert.hxx>
 #include <BRepLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
+#include <BRepGProp_Face.hxx>
 #include <BRepTools.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <BRep_Builder.hxx>
@@ -412,7 +413,7 @@ std::vector<ON_Curve*> ShapeToCurves(const TopoDS_Shape& shape, double) {
   return out;
 }
 
-ON_Mesh* MeshShape(const TopoDS_Shape& shape, double lin, double ang) {
+ON_Mesh* MeshShape(const TopoDS_Shape& shape, double lin, double ang, bool weld) {
   BRepMesh_IncrementalMesh mesher(shape, lin, Standard_False, ang, Standard_True);
   auto* mesh = new ON_Mesh();
   for (TopExp_Explorer fx(shape, TopAbs_FACE); fx.More(); fx.Next()) {
@@ -426,6 +427,22 @@ ON_Mesh* MeshShape(const TopoDS_Shape& shape, double lin, double ang) {
       gp_Pnt p = tri->Node(i).Transformed(tr);
       mesh->m_V.Append(ON_3fPoint(static_cast<float>(p.X()), static_cast<float>(p.Y()), static_cast<float>(p.Z())));
     }
+    if (!weld) {
+      // normali esatte dalla superficie nei nodi (orientate come la faccia)
+      if (mesh->m_N.Count() != base) mesh->m_N.SetCount(base);
+      BRepGProp_Face gf(face);
+      for (int i = 1; i <= tri->NbNodes(); i++) {
+        gp_Vec n(0, 0, 0);
+        if (tri->HasUVNodes()) {
+          gp_Pnt q;
+          const gp_Pnt2d uv = tri->UVNode(i);
+          try { gf.Normal(uv.X(), uv.Y(), q, n); } catch (...) {}
+          if (!loc.IsIdentity()) n.Transform(tr);
+        }
+        if (n.Magnitude() > 1e-15) n.Normalize();
+        mesh->m_N.Append(ON_3fVector(static_cast<float>(n.X()), static_cast<float>(n.Y()), static_cast<float>(n.Z())));
+      }
+    }
     const bool rev = face.Orientation() == TopAbs_REVERSED;
     for (int i = 1; i <= tri->NbTriangles(); i++) {
       int a, bI, c;
@@ -435,6 +452,20 @@ ON_Mesh* MeshShape(const TopoDS_Shape& shape, double lin, double ang) {
     }
   }
   if (mesh->m_F.Count() == 0) { delete mesh; return nullptr; }
+  if (!weld) {
+    // normali mancanti (poli, nodi senza uv): dalla media delle facce della stessa faccia
+    bool bad = mesh->m_N.Count() != mesh->m_V.Count();
+    for (int i = 0; !bad && i < mesh->m_N.Count(); i++) if (mesh->m_N[i].LengthSquared() < 0.5f) bad = true;
+    if (bad) {
+      ON_3fVectorArray keep = mesh->m_N;
+      mesh->m_N.Destroy();
+      mesh->ComputeVertexNormals();
+      if (keep.Count() == mesh->m_N.Count())
+        for (int i = 0; i < keep.Count(); i++) if (keep[i].LengthSquared() >= 0.5f) mesh->m_N[i] = keep[i];
+    }
+    mesh->Compact();
+    return mesh;
+  }
   // Saldatura dei vertici coincidenti tra facce adiacenti (mesh chiusa per i solidi).
   {
     std::map<std::tuple<long long, long long, long long>, int> index;
