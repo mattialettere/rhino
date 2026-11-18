@@ -823,8 +823,8 @@ void Viewport::paintGL() {
       const unsigned tid = tex ? TextureId(obj.texture) : 0;
       if (tid) {
         const float s = obj.selected ? 0.75f : 1.f;
-        const float tc[4] = {obj.diffuse.FractionRed() * s, obj.diffuse.FractionGreen() * s,
-                             obj.diffuse.FractionBlue() * (obj.selected ? 0.5f : 1.f), 1.f};
+        const float tc[4] = {(float)obj.diffuse.FractionRed() * s, (float)obj.diffuse.FractionGreen() * s,
+                             (float)obj.diffuse.FractionBlue() * (obj.selected ? 0.5f : 1.f), 1.f};
         gl->glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, tc);
         gl->glEnable(GL_TEXTURE_2D);
         gl->glBindTexture(GL_TEXTURE_2D, tid);
