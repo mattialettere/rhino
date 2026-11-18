@@ -51,6 +51,7 @@ private:
   void BuildSidebar();
   bool ApplyTextureToSelection(const QString& file);
   bool CaptureView(const QString& path, int width, int height, bool grid);
+  bool AdoptFileViews();
   void SetTheme(ThemeMode m);
   void RefreshThemeIcons();
   QWidget* BuildToolTabs();

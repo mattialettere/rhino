@@ -32,7 +32,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Analisi | 15 / 15 |
 | File | 9 / 9 |
 | Rendering (texture) | 5 / 5 |
-| **Totale** | **310 / 310** |
+| Viste e sezioni | 7 / 7 |
+| **Totale** | **317 / 317** |
 
 ## Punti
 
@@ -435,5 +436,18 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | ApplySurfaceMapping | ✔ |
 
 Comandi in più di Kurva3D (non sono di Rhino 8): **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture) e **RemoveTexture**.
+
+## Viste e sezioni
+
+| Comando | Stato |
+|---|---|
+| CPlane | ✔ (World, Origin, Elevation, 3Point, Reset) |
+| NamedView | ✔ (riga di comando, senza pannello) |
+| NamedCPlane | ✔ (riga di comando, senza pannello) |
+| ClippingPlane | ✔ |
+| EnableClippingPlane | ✔ |
+| DisableClippingPlane | ✔ |
+| Snapshots | ✔ (formato non compatibile con Rhino, D-061) |
+
 
 Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (rendering, layout, scripting, Grasshopper restano fuori per ora).

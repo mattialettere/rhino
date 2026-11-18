@@ -155,6 +155,7 @@ bool CmdOpen(Engine& e, TokenStream& ts) {
 }
 
 bool SaveTo(Engine& e, const std::string& path) {
+  if (e.beforeSave) e.beforeSave();
   std::string log;
   if (!e.Doc().Save(path, kRhino8ArchiveVersion, &log)) return e.Fail("impossibile salvare " + path);
   e.currentPath = path;

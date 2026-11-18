@@ -69,6 +69,22 @@ MainWindow::MainWindow(QWidget* parent)
     }
     return true;
   };
+  // Viste: id fissi delle quattro viste (sostituiti da quelli del file aperto), vista attiva,
+  // viste con nome, CPlane e viste scritte nel .3dm al salvataggio
+  m_engine.getActiveView = [this](ON_3dmView& v) { v = Active()->ToView(); return true; };
+  m_engine.setActiveView = [this](const ON_3dmView& v) { Active()->FromView(v); return true; };
+  m_engine.setActiveCPlane = [this](const ON_Plane* p) {
+    Camera& c = Active()->Cam();
+    c.customCPlane = p != nullptr;
+    if (p) c.cplane = *p;
+    Active()->update();
+    return true;
+  };
+  m_engine.beforeSave = [this] {
+    auto& views = m_engine.Model().m_settings.m_views;
+    views.Empty();
+    for (auto* v : m_views) views.Append(v->ToView());
+  };
   m_engine.viewCapture = [this](const std::string& path, int w, int h, bool grid) {
     return CaptureView(QString::fromStdString(path), w, h, grid);
   };
@@ -159,12 +175,21 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_views[i], &Viewport::ObjectsClicked, this, &MainWindow::OnObjectsClicked);
     connect(m_views[i], &Viewport::GumballCommand, this, [this](QString c) { PropertyCommand(c); });
     connect(m_views[i], &Viewport::ToggleMaximize, this, &MainWindow::ToggleMaximize);
-    connect(m_views[i], &Viewport::Activated, this, [this](Viewport* v) { m_active = v; });
+    connect(m_views[i], &Viewport::Activated, this, [this](Viewport* v) { m_active = v; m_engine.activeViewportId = v->id; });
     connect(m_views[i], &Viewport::MouseWorld, this, [this](ON_3dPoint p) {
       m_coords->setText(QString("x %1   y %2   z %3").arg(p.x, 0, 'f', 3).arg(p.y, 0, 'f', 3).arg(p.z, 0, 'f', 3));
     });
   }
   vbox->addWidget(views, 1);
+  {
+    const char* ids[4] = {"4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f01", "4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f02",
+                          "4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f03", "4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f04"};
+    for (int i = 0; i < 4; i++) {
+      m_views[i]->id = ON_UuidFromString(ids[i]);
+      m_engine.viewportIds.push_back(m_views[i]->id);
+    }
+    m_engine.activeViewportId = m_views[1]->id;
+  }
   setCentralWidget(central);
 
   // Pannelli a destra: Livelli e Proprieta'
@@ -370,6 +395,32 @@ void MainWindow::BuildMenus() {
   view->addAction("Ingrandisci / ripristina vista attiva", this, [this] {
     for (auto* v : m_views) if (v->hasFocus()) ToggleMaximize(v);
   });
+  {
+    view->addSeparator();
+    auto sub = [&](QMenu* m, std::initializer_list<std::pair<const char*, const char*>> items) {
+      for (auto& [label, cmd] : items) {
+        const QString c = cmd;
+        m->addAction(label, this, [this, c] { Submit(c); });
+      }
+    };
+    sub(view->addMenu("Piano di costruzione"),
+        {{"Superiore (Top)", "_CPlane World Top"}, {"Frontale (Front)", "_CPlane World Front"},
+         {"Destro (Right)", "_CPlane World Right"}, {"Origine", "_CPlane Origin"}, {"Altezza", "_CPlane Elevation"},
+         {"Da 3 punti", "_CPlane 3Point"}, {"Ripristina", "_CPlane Reset"}});
+    sub(view->addMenu("Viste con nome"),
+        {{"Salva vista", "_NamedView Save"}, {"Ripristina vista", "_NamedView Restore"},
+         {"Elimina vista", "_NamedView Delete"}, {"Elenco", "_NamedView List"}});
+    sub(view->addMenu("Piani di costruzione con nome"),
+        {{"Salva piano", "_NamedCPlane Save"}, {"Ripristina piano", "_NamedCPlane Restore"},
+         {"Elimina piano", "_NamedCPlane Delete"}, {"Elenco", "_NamedCPlane List"}});
+    sub(view->addMenu("Piani di sezione"),
+        {{"Nuovo piano di sezione", "_ClippingPlane"}, {"Attiva nella vista", "_EnableClippingPlane"},
+         {"Attiva in tutte le viste", "_EnableClippingPlane All"}, {"Disattiva nella vista", "_DisableClippingPlane"},
+         {"Disattiva in tutte le viste", "_DisableClippingPlane All"}});
+    sub(view->addMenu("Istantanee"),
+        {{"Salva istantanea", "_Snapshots Save"}, {"Ripristina istantanea", "_Snapshots Restore"},
+         {"Elimina istantanea", "_Snapshots Delete"}, {"Elenco", "_Snapshots List"}});
+  }
 
   auto addCmds = [&](const char* title, std::initializer_list<std::pair<const char*, const char*>> items) {
     auto* m = menuBar()->addMenu(title);
@@ -826,11 +877,34 @@ void MainWindow::ShowBlockManager() {
   dlg.exec();
 }
 
+// Viste del file aperto: le viste con lo stesso nome prendono camera e id (cosi' i piani di
+// sezione del file restano attivi nelle viste giuste).
+bool MainWindow::AdoptFileViews() {
+  bool any = false;
+  m_engine.viewportIds.clear();
+  const auto& views = m_engine.Model().m_settings.m_views;
+  for (auto* v : m_views) {
+    for (int i = 0; i < views.Count(); i++)
+      if (views[i].m_name.CompareOrdinal(ON_wString(v->Title().toStdWString().c_str()), true) == 0 &&
+          !ON_UuidIsNil(views[i].m_vp.ViewportId())) {
+        v->id = views[i].m_vp.ViewportId();
+        v->FromView(views[i]);
+        any = true;
+      }
+    m_engine.viewportIds.push_back(v->id);
+  }
+  m_engine.activeViewportId = Active()->id;
+  m_scene.Rebuild();
+  for (auto* v : m_views) v->update();
+  return any;
+}
+
 bool MainWindow::OpenFile(const QString& path) {
   Submit("_Open \"" + path + "\"");
+  const bool hasViews = AdoptFileViews();
   const bool is3dm = QFileInfo(path).suffix().compare("3dm", Qt::CaseInsensitive) == 0;
   if (is3dm && m_engine.currentPath.empty()) return false;
-  ZoomExtentsAll();
+  if (!hasViews) ZoomExtentsAll();
   return true;
 }
 

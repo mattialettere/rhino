@@ -400,6 +400,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
 
 void Scene::Rebuild() {
   m_objects.clear();
+  m_clips.clear();
   std::map<std::string, std::shared_ptr<ON_Mesh>> newCache;
   ONX_Model& model = m_engine.Model();
   for (const auto& id : m_engine.AllObjectIds(false)) {
@@ -424,6 +425,31 @@ void Scene::Rebuild() {
     if (const auto* sd = ON_SubD::Cast(g)) sig += "|" + std::string(static_cast<const char*>(sd->GeometryHash().ToUTF8String(false)));
     else sig += "|" + std::to_string(g->DataCRC(0));
 
+    if (const auto* cp = ON_ClippingPlaneSurface::Cast(g)) {
+      // piano di sezione: rettangolo con la freccia della direzione di vista (lato visibile)
+      const ON_Plane& pl = cp->m_clipping_plane.m_plane;
+      const ON_Interval du = cp->Extents(0), dv = cp->Extents(1);
+      std::vector<ON_3dPoint> r;
+      for (auto [u, v] : {std::pair{du[0], dv[0]}, {du[1], dv[0]}, {du[1], dv[1]}, {du[0], dv[1]}, {du[0], dv[0]}})
+        r.push_back(pl.PointAt(u, v));
+      d.wires.push_back(r);
+      const double len = 0.25 * std::min(du.Length(), dv.Length());
+      const ON_3dPoint tip = pl.origin - pl.zaxis * len;
+      d.wires.push_back({pl.origin, tip});
+      d.wires.push_back({tip, tip + (pl.zaxis + pl.xaxis * 0.5) * len * 0.3});
+      d.wires.push_back({tip, tip + (pl.zaxis - pl.xaxis * 0.5) * len * 0.3});
+      for (const auto& q : r) d.snapPoints.push_back({q, SnapKind::End});
+      d.unclipped = true;
+      if (cp->m_clipping_plane.m_bEnabled) {
+        ClipPlane c;
+        c.eq.Create(pl.origin, pl.zaxis);
+        for (int i = 0; i < cp->m_clipping_plane.m_viewport_ids.Count(); i++)
+          c.views.push_back(cp->m_clipping_plane.m_viewport_ids.Array()[i]);
+        m_clips.push_back(c);
+      }
+      m_objects.push_back(std::move(d));
+      continue;
+    }
     AddGeometry(g, d, sig, newCache, 0);
     if (d.shaded) ApplyTexture(*a, d);
     if (m_engine.pointsOn.count(id)) {

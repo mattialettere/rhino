@@ -40,6 +40,7 @@ add_library(cadcore STATIC
   src/commands/CmdExtra.cpp
   src/commands/CmdMaterial.cpp src/commands/Materials.h
   src/commands/Exchange.cpp src/commands/Exchange.h
+  src/commands/CmdViews.cpp
   src/commands/CmdExtra2.cpp
   src/commands/Grips.cpp
   src/commands/CmdExtra3.cpp

@@ -129,6 +129,10 @@ dall'estensione). Da riga di comando: `_Import "pezzo.stp"`,
 **File > Salva vista come immagine** (comando ViewCaptureToFile, opzioni
 Width=, Height=, DrawGrid=No) salva la vista attiva in PNG o JPG.
 
+## Viste, piani di costruzione e sezioni
+
+Menu **Vista**: piano di costruzione della vista attiva (`CPlane`), viste e piani con nome (`NamedView`, `NamedCPlane`, salvati nel .3dm come in Rhino), piani di sezione (`ClippingPlane` disegna un rettangolo sul piano di costruzione e taglia la vista attiva; `EnableClippingPlane`/`DisableClippingPlane` con `All` per tutte le viste) e istantanee (`Snapshots`: vista, livelli e stato degli oggetti). Le viste delle finestre vengono salvate nel file e ritrovate alla riapertura.
+
 ## Texture
 
 Pannello **Texture** (a destra, o menu **Render > Pannello Texture**): mostra le

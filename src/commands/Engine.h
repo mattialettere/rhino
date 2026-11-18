@@ -163,6 +163,14 @@ public:
   std::function<bool(const std::string& path, int& w, int& h, std::vector<double>& gray)> imageLoader;
   std::function<bool(const std::string& text, const std::string& font, double height,
                      std::vector<std::vector<std::vector<ON_3dPoint>>>& contours)> textOutliner;
+  // Viste (dall'interfaccia): vista attiva come ON_3dmView (camera, CPlane, nome), ripristino
+  // di una vista salvata e CPlane della vista attiva (nullptr = quello predefinito della vista).
+  std::function<bool(ON_3dmView&)> getActiveView;
+  std::function<bool(const ON_3dmView&)> setActiveView;
+  std::function<bool(const ON_Plane*)> setActiveCPlane;
+  std::function<void()> beforeSave;         // l'interfaccia scrive le viste correnti nel modello
+  ON_UUID activeViewportId = ON_nil_uuid;   // vista attiva (piani di sezione)
+  std::vector<ON_UUID> viewportIds;         // tutte le viste della finestra
   // ViewCaptureToFile/ToClipboard: immagine della vista attiva (percorso vuoto = appunti);
   // larghezza e altezza 0 = come la vista
   std::function<bool(const std::string& path, int width, int height, bool grid)> viewCapture;
@@ -206,6 +214,7 @@ void RegisterExtra5Commands(Engine& e);
 void RegisterExtra6Commands(Engine& e);
 void RegisterMaterialCommands(Engine& e);
 void RegisterExchangeCommands(Engine& e);
+void RegisterViewCommands(Engine& e);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti
 int UpdateCageCaptives(Engine& e, const ON_UUID& cageId);
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.

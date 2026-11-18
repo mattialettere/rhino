@@ -41,7 +41,14 @@ struct DisplayObject {
   ON_Color diffuse = ON_Color(255, 255, 255);
   ON_Color color = ON_Color::Black;
   bool selected = false, locked = false;
+  bool unclipped = false;              // i piani di sezione non tagliano se stessi
   ON_BoundingBox bbox;
+};
+
+// Piano di sezione (ClippingPlane) e viste in cui e' attivo
+struct ClipPlane {
+  ON_PlaneEquation eq;
+  std::vector<ON_UUID> views;
 };
 
 class Scene {
@@ -51,6 +58,7 @@ public:
   void Rebuild();
   void RefreshSelection();
   const std::vector<DisplayObject>& Objects() const { return m_objects; }
+  const std::vector<ClipPlane>& Clips() const { return m_clips; }
   ON_BoundingBox Bounds() const;
   const ON_Geometry* Geometry(const ON_UUID& id) const {
     const auto* o = m_engine.Object(id);
@@ -64,6 +72,7 @@ private:
   void ApplyTexture(const ON_3dmObjectAttributes& a, DisplayObject& d);
   Engine& m_engine;
   std::vector<DisplayObject> m_objects;
+  std::vector<ClipPlane> m_clips;
   std::map<std::string, std::shared_ptr<ON_Mesh>> m_meshCache;  // chiave: id + firma
   using EdgeList = std::vector<std::vector<ON_3dPoint>>;
   std::map<std::string, std::shared_ptr<EdgeList>> m_subdEdges, m_newSubdEdges;  // spigoli limite dei SubD

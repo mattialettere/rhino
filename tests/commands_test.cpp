@@ -1959,6 +1959,116 @@ int main(int argc, char** argv) {
     CHECK(!bad.e.Run("_Box 0,0,0 1,1 1\n_SelAll\n_ApplyTexture File=nessuna.png"));
   }
   {
+    std::printf("Viste_e_sezioni\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/viste";
+    fs::create_directories(dir);
+    Ctx c;
+    // finta finestra: una vista con il suo CPlane
+    ON_3dmView cur;
+    cur.m_vp.ChangeToParallelProjection(true);
+    cur.m_vp.SetCameraLocation(ON_3dPoint(0, 0, 100));
+    cur.m_vp.SetCameraDirection(-ON_3dVector::ZAxis);
+    cur.m_vp.SetCameraUp(ON_3dVector::YAxis);
+    cur.m_vp.SetFrustum(-10, 10, -10, 10, 1, 1000);
+    cur.m_cplane.m_plane = ON_Plane::World_xy;
+    cur.m_name = L"Top";
+    c.e.getActiveView = [&](ON_3dmView& v) { v = cur; return true; };
+    c.e.setActiveView = [&](const ON_3dmView& v) { const ON_wString n = cur.m_name; cur = v; cur.m_name = n; return true; };
+    c.e.setActiveCPlane = [&](const ON_Plane* p) { cur.m_cplane.m_plane = p ? *p : ON_Plane::World_xy; return true; };
+    ON_UUID vp1, vp2;
+    ON_CreateUuid(vp1);
+    ON_CreateUuid(vp2);
+    c.e.activeViewportId = vp1;
+    c.e.viewportIds = {vp1, vp2};
+    // CPlane
+    CHECK(c.e.Run("_CPlane World Front"));
+    CHECK(cur.m_cplane.m_plane.zaxis.IsParallelTo(ON_3dVector::YAxis) != 0);
+    CHECK(c.e.Run("_CPlane Reset\n_CPlane Elevation 5"));
+    CHECK(Near(cur.m_cplane.m_plane.origin.z, 5));
+    CHECK(c.e.Run("_CPlane Origin 1,2,3"));
+    CHECK(NearPt(cur.m_cplane.m_plane.origin, ON_3dPoint(1, 2, 3)));
+    CHECK(c.e.Run("_CPlane 3Point 0,0,0 0,1,0 0,0,1"));
+    CHECK(cur.m_cplane.m_plane.zaxis.IsParallelTo(ON_3dVector::XAxis) != 0);
+    CHECK(!c.e.Run("_CPlane 3Point 0,0,0 1,0,0 2,0,0"));
+    // CPlane con nome
+    CHECK(c.e.Run("_NamedCPlane Save Parete\n_CPlane Reset"));
+    CHECK(cur.m_cplane.m_plane.zaxis.IsParallelTo(ON_3dVector::ZAxis) != 0);
+    CHECK(c.e.Run("_NamedCPlane Restore Parete"));
+    CHECK(cur.m_cplane.m_plane.zaxis.IsParallelTo(ON_3dVector::XAxis) != 0);
+    CHECK(c.e.Run("_NamedCPlane Rename Parete Muro"));
+    CHECK(!c.e.Run("_NamedCPlane Restore Parete"));
+    CHECK(c.e.Model().m_settings.m_named_cplanes.Count() == 1);
+    // vista con nome
+    CHECK(c.e.Run("_NamedView Save \"Pianta alta\""));
+    cur.m_vp.SetCameraLocation(ON_3dPoint(50, 50, 100));
+    CHECK(c.e.Run("_NamedView Restore \"Pianta alta\""));
+    CHECK(NearPt(cur.m_vp.CameraLocation(), ON_3dPoint(0, 0, 100)));
+    CHECK(c.e.Model().m_settings.m_named_views.Count() == 1);
+    CHECK(c.e.Run("_NamedView Save Seconda\n_NamedView Delete Seconda"));
+    CHECK(c.e.Model().m_settings.m_named_views.Count() == 1);
+    CHECK(!c.e.Run("_NamedView Restore Seconda"));
+    // piano di sezione nella vista attiva
+    CHECK(c.e.Run("_CPlane Reset\n_Box -5,-5,0 5,5 10\n_ClippingPlane -8,-8,0 8,8,0"));
+    const ON_ClippingPlaneSurface* cps = ON_ClippingPlaneSurface::Cast(c.Last());
+    CHECK(cps && cps->m_clipping_plane.m_bEnabled && cps->m_clipping_plane.m_viewport_ids.Count() == 1 &&
+          cps->m_clipping_plane.m_viewport_ids.FindUuid(vp1));
+    // la parte sopra il piano (verso la normale) e' nascosta, come una pianta
+    if (cps) {
+      const ON_PlaneEquation eq = cps->m_clipping_plane.m_plane.plane_equation;
+      CHECK(eq.ValueAt(ON_3dPoint(0, 0, 5)) > 0 && eq.ValueAt(ON_3dPoint(0, 0, -5)) < 0);
+    }
+    CHECK(c.e.Run("_EnableClippingPlane All"));
+    cps = ON_ClippingPlaneSurface::Cast(c.Last());
+    CHECK(cps && cps->m_clipping_plane.m_viewport_ids.Count() == 2);
+    CHECK(c.e.Run("_DisableClippingPlane All"));
+    cps = ON_ClippingPlaneSurface::Cast(c.Last());
+    CHECK(cps && cps->m_clipping_plane.m_viewport_ids.Count() == 0 && !cps->m_clipping_plane.m_bEnabled);
+    CHECK(c.e.Run("_EnableClippingPlane"));
+    cps = ON_ClippingPlaneSurface::Cast(c.Last());
+    CHECK(cps && cps->m_clipping_plane.m_bEnabled && cps->m_clipping_plane.m_viewport_ids.Count() == 1);
+    // istantanee: livelli e stato degli oggetti
+    CHECK(c.e.Run("-_Layer New Arredi\n_CurrentLayer Arredi\n_Point 20,20\n_CurrentLayer Default\n_SelNone\n_Snapshots Save Prima"));
+    const auto ids = c.e.AllObjectIds(true);
+    CHECK(c.e.Run("_SelNone\n_SelLayer Arredi\n_LayerOff\n_SelAll\n_Lock"));
+    cur.m_vp.SetCameraLocation(ON_3dPoint(7, 7, 100));
+    CHECK(c.e.Run("_Snapshots Restore Prima"));
+    CHECK(NearPt(cur.m_vp.CameraLocation(), ON_3dPoint(0, 0, 100), 1e-6));
+    bool unlocked = true;
+    for (const auto& id : ids) if (c.e.Object(id)->Attributes(nullptr)->Mode() != ON::object_mode::normal_object) unlocked = false;
+    CHECK(unlocked);
+    bool arrediVisible = false;
+    { ONX_ModelComponentIterator it(c.e.Model(), ON_ModelComponent::Type::Layer);
+      for (auto* m = it.FirstComponent(); m; m = it.NextComponent())
+        if (auto* l = ON_Layer::Cast(m); l && ToUtf8(l->Name()) == "Arredi") arrediVisible = l->IsVisible(); }
+    CHECK(arrediVisible);
+    CHECK(c.e.Run("_Snapshots List") && c.log.str().find("Prima") != std::string::npos);
+    CHECK(!c.e.Run("_Snapshots Restore Nessuna"));
+    // tutto resta nel .3dm
+    const std::string path = dir + "/viste.3dm";
+    CHECK(c.doc.Save(path));
+    Document3dm back;
+    CHECK(back.Load(path));
+    const auto& st = back.Model().m_settings;
+    CHECK(st.m_named_views.Count() == 1 && ToUtf8(st.m_named_views[0].m_name) == "Pianta alta");
+    CHECK(st.m_named_cplanes.Count() == 1 && ToUtf8(st.m_named_cplanes[0].m_name) == "Muro" &&
+          st.m_named_cplanes[0].m_plane.zaxis.IsParallelTo(ON_3dVector::XAxis) != 0);
+    ON_wString snap;
+    CHECK(back.Model().GetDocumentUserString(L"Kurva3D.Snapshot:Prima", snap) && !snap.IsEmpty());
+    bool clipBack = false;
+    { ONX_ModelComponentIterator it(back.Model(), ON_ModelComponent::Type::ModelGeometry);
+      for (auto* m = it.FirstComponent(); m; m = it.NextComponent())
+        if (auto* g = ON_ModelGeometryComponent::Cast(m))
+          if (auto* s = ON_ClippingPlaneSurface::Cast(g->Geometry(nullptr)))
+            clipBack = s->m_clipping_plane.m_viewport_ids.FindUuid(vp1); }
+    CHECK(clipBack);
+    // senza finestra: nessun crash, errori chiari
+    Ctx bare;
+    CHECK(!bare.e.Run("_CPlane World Top"));
+    CHECK(!bare.e.Run("_NamedView Save X"));
+    CHECK(bare.e.Run("_ClippingPlane 0,0,0 1,1,0"));
+  }
+  {
     std::printf("AI_lettura_risposta\n");
     const auto l = ai::ExtractScript("<think>devo fare un cubo</think>Ecco:\n```kurva\n_Box 0,0,0 10,10 10 => Cubo\n\n# commento\nSphere 0,0,0 3\n```\nFatto.");
     CHECK(l.size() == 2 && l[0] == "_Box 0,0,0 10,10 10 => Cubo" && l[1] == "_Sphere 0,0,0 3");

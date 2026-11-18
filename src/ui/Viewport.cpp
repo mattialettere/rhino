@@ -68,6 +68,7 @@ ON_3dPoint Camera::Eye() const {
 }
 
 ON_Plane Camera::CPlane() const {
+  if (customCPlane) return cplane;
   switch (kind) {
     case Kind::Front: case Kind::Back: return ON_Plane(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::ZAxis);
     case Kind::Right: case Kind::Left: return ON_Plane(ON_3dPoint::Origin, ON_3dVector::YAxis, ON_3dVector::ZAxis);
@@ -218,6 +219,75 @@ void Viewport::ShowViewMenu(const QPoint& at) {
 }
 
 void Viewport::initializeGL() {}
+
+QString Viewport::Title() const { return QString::fromUtf8(KindName(m_cam.kind)); }
+
+ON_3dmView Viewport::ToView() const {
+  ON_3dmView v;
+  ON_Viewport& vp = v.m_vp;
+  const double aspect = double(std::max(1, width())) / std::max(1, height());
+  if (m_cam.kind == Camera::Kind::Perspective) {
+    vp.ChangeToPerspectiveProjection(ON_UNSET_VALUE, true, m_cam.fovY / 2);
+    const double n = std::max(1e-3, m_cam.distance * 0.01), t = n * std::tan(m_cam.fovY / 2);
+    vp.SetCameraLocation(m_cam.Eye());
+    vp.SetCameraDirection(m_cam.Dir());
+    vp.SetCameraUp(m_cam.Up());
+    vp.SetFrustum(-t * aspect, t * aspect, -t, t, n, m_cam.distance * 100);
+  } else {
+    vp.ChangeToParallelProjection(true);
+    vp.SetCameraLocation(m_cam.target - m_cam.Dir() * 1000.0 * m_cam.halfHeight);
+    vp.SetCameraDirection(m_cam.Dir());
+    vp.SetCameraUp(m_cam.Up());
+    const double h = m_cam.halfHeight;
+    vp.SetFrustum(-h * aspect, h * aspect, -h, h, 1e-3, 2000.0 * h);
+  }
+  vp.SetScreenPort(0, width(), height(), 0, 0, 0xff);
+  vp.SetViewportId(id);
+  v.SetTargetPoint(m_cam.target);
+  v.m_cplane = ON_3dmConstructionPlane(m_cam.CPlane());
+  v.m_name = ON_wString(KindName(m_cam.kind));
+  return v;
+}
+
+void Viewport::FromView(const ON_3dmView& v) {
+  const ON_Viewport& vp = v.m_vp;
+  ON_3dVector d = vp.CameraDirection();
+  if (!d.Unitize()) return;
+  ON_3dPoint tg = v.TargetPoint();
+  double l, r, b, t, n, f;
+  vp.GetFrustum(&l, &r, &b, &t, &n, &f);
+  if (!tg.IsValid()) tg = vp.CameraLocation() + d * (vp.IsPerspectiveProjection() ? (n + f) / 2 : 100.0);
+  m_cam.target = tg;
+  if (vp.IsParallelProjection()) {
+    // le viste piane di Kurva3D sono le sei standard: si cerca quella con la stessa direzione
+    const std::pair<ON_3dVector, Camera::Kind> std6[] = {
+        {ON_3dVector(0, 0, -1), Camera::Kind::Top}, {ON_3dVector(0, 1, 0), Camera::Kind::Front},
+        {ON_3dVector(-1, 0, 0), Camera::Kind::Right}, {ON_3dVector(0, 0, 1), Camera::Kind::Bottom},
+        {ON_3dVector(1, 0, 0), Camera::Kind::Left}, {ON_3dVector(0, -1, 0), Camera::Kind::Back}};
+    for (const auto& [dir, k] : std6)
+      if (dir * d > 0.9999) {
+        m_cam.kind = k;
+        m_cam.halfHeight = std::max(1e-6, (t - b) / 2);
+        goto cplane;
+      }
+  }
+  m_cam.kind = Camera::Kind::Perspective;
+  m_cam.pitch = std::asin(std::max(-1.0, std::min(1.0, -d.z)));
+  m_cam.yaw = std::atan2(-d.y, -d.x);
+  m_cam.distance = std::max(1e-6, vp.CameraLocation().DistanceTo(tg));
+  if (vp.IsPerspectiveProjection() && n > 0) m_cam.fovY = 2 * std::atan((t - b) / 2 / n);
+cplane:
+  {
+    Camera def = m_cam;
+    def.customCPlane = false;
+    const ON_Plane& p = v.m_cplane.m_plane;
+    const ON_Plane dp = def.CPlane();
+    m_cam.customCPlane = p.IsValid() && (p.origin.DistanceTo(dp.origin) > 1e-9 || p.xaxis * dp.xaxis < 1 - 1e-12 ||
+                                         p.yaxis * dp.yaxis < 1 - 1e-12);
+    if (m_cam.customCPlane) m_cam.cplane = p;
+  }
+  update();
+}
 
 
 namespace {
@@ -462,6 +532,16 @@ void Viewport::paintGL() {
   if (showGrid) DrawGrid();
   gl->glEnable(GL_DEPTH_TEST);
   gl->glDepthFunc(GL_LEQUAL);
+  // Piani di sezione attivi in questa vista (Rhino: visibile dove l'equazione <= 0;
+  // OpenGL tiene dove l'equazione >= 0, quindi si cambia segno)
+  int clips = 0;
+  for (const auto& c : m_scene.Clips()) {
+    if (clips >= 6 || std::find(c.views.begin(), c.views.end(), id) == c.views.end()) continue;
+    const double eq[4] = {-c.eq.x, -c.eq.y, -c.eq.z, -c.eq.d};
+    gl->glClipPlane(GL_CLIP_PLANE0 + clips, eq);
+    gl->glEnable(GL_CLIP_PLANE0 + clips);
+    clips++;
+  }
 
   // Superfici ombreggiate (Shaded), trasparenti (Ghosted) o trasparenti con spigoli sempre visibili (X-Ray)
   const bool shaded = mode != DisplayMode::Wireframe;
@@ -540,6 +620,7 @@ void Viewport::paintGL() {
         gl->glColor3ub(oc.red(), oc.green(), oc.blue());
       }
       gl->glLineWidth(obj.selected ? 2.0f : 1.0f);
+      if (obj.unclipped) for (int k = 0; k < clips; k++) gl->glDisable(GL_CLIP_PLANE0 + k);
       if (mode == DisplayMode::Wireframe || mode == DisplayMode::XRay || mode == DisplayMode::Ghosted) {
         // contorno apparente: spigoli dove una faccia guarda la camera e l'altra no
         const bool persp = m_cam.kind == Camera::Kind::Perspective;
@@ -574,6 +655,7 @@ void Viewport::paintGL() {
       gl->glBegin(GL_POINTS);
       for (const auto& p : obj.points) gl->glVertex3d(p.x, p.y, p.z);
       gl->glEnd();
+      if (obj.unclipped) for (int k = 0; k < clips; k++) gl->glEnable(GL_CLIP_PLANE0 + k);
     }
   }
 
@@ -630,6 +712,8 @@ void Viewport::paintGL() {
     }
     gl->glPopMatrix();
   }
+
+  for (int k = 0; k < clips; k++) gl->glDisable(GL_CLIP_PLANE0 + k);
 
   // Elastico dall'ultimo punto al cursore durante un comando
   const Settings& S = Shared();

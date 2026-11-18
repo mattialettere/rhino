@@ -19,6 +19,8 @@ struct Camera {
   double distance = 120.0;    // prospettiva: distanza occhio-bersaglio
   double yaw = -ON_PI / 4.0, pitch = 0.46;  // prospettiva: direzione dell'occhio
   double fovY = 30.0 * ON_PI / 180.0;
+  bool customCPlane = false;  // CPlane impostato con CPlane/NamedCPlane
+  ON_Plane cplane = ON_Plane::World_xy;
 
   ON_3dVector Dir() const;    // dall'occhio verso il bersaglio
   ON_3dVector Up() const;
@@ -40,6 +42,11 @@ class Viewport : public QOpenGLWidget {
 public:
   Viewport(Scene& scene, Camera::Kind kind, QWidget* parent = nullptr);
   Camera& Cam() { return m_cam; }
+  ON_UUID id = ON_nil_uuid;  // id della vista (piani di sezione, viste salvate nel .3dm)
+  QString Title() const;
+  // Vista come ON_3dmView del .3dm (camera, CPlane, nome) e ripristino da una vista salvata
+  ON_3dmView ToView() const;
+  void FromView(const ON_3dmView& v);
   // Modalita' di visualizzazione (sottoinsieme di quelle di Rhino 8)
   enum class DisplayMode { Wireframe, Shaded, Ghosted, XRay };
   DisplayMode mode = DisplayMode::Wireframe;
