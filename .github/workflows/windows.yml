@@ -75,6 +75,17 @@ jobs:
           Copy-Item README.md dist\
           Get-ChildItem dist
 
+      # Avvio reale di rhino-ui.exe dalla cartella dello zip: script, screenshot e uscita
+      - name: Prova dell'interfaccia
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath dist\rhino-ui.exe -ArgumentList '--script', "$PWD\tests\ui_smoke.txt", '--screenshot', "$PWD\dist\screenshot-avvio.png" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "rhino-ui.exe non si e' chiuso entro 2 minuti" }
+          Write-Host "Codice di uscita: $($p.ExitCode)"
+          if (-not (Test-Path dist\screenshot-avvio.png)) { throw "screenshot non creato: la finestra non si e' aperta" }
+          Get-Item dist\screenshot-avvio.png | Format-List Name, Length
+          if ((Get-Item dist\screenshot-avvio.png).Length -lt 20000) { throw "screenshot troppo piccolo" }
+
       - name: Pubblica lo zip
         if: always()
         uses: actions/upload-artifact@v4

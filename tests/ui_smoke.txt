@@ -1,0 +1,5 @@
+; prova di avvio dell'interfaccia (CI Windows): qualche oggetto e una quota
+Box 0,0,0 20,10 5
+Circle 40,5 6
+Dim 0,0 20,0 10,-6
+Text 0,15 "prova" Height=2
