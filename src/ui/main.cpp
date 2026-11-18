@@ -1,5 +1,5 @@
-// rhino-ui: finestra principale in stile Rhino 8.
-//   rhino-ui [file.3dm] [--script comandi.txt] [--screenshot out.png]
+// kurva3d: finestra principale in stile Rhino 8.
+//   kurva3d [file.3dm] [--script comandi.txt] [--screenshot out.png]
 #include "ui/MainWindow.h"
 #include <QApplication>
 #include <QFile>

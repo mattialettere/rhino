@@ -1,4 +1,4 @@
-# Rhinoceros CAD (nome di lavoro)
+# Kurva3D
 
 Applicazione CAD indipendente, per uso personale, che prende come riferimento
 **Rhinoceros 8 per Windows 64 bit** e punta alla piena compatibilità con i
@@ -27,7 +27,7 @@ pubblica proprio a questo scopo.
 | Linguaggio | C++20 | Lo stesso di openNURBS: nessuno strato di conversione, prestazioni da CAD |
 | Build | CMake ≥ 3.24 | Funziona con Visual Studio 2022 su Windows e con GCC/Clang |
 | Formato .3dm | openNURBS `v8.35.26251.13001` | Libreria ufficiale e open source di McNeel; scrive file Rhino 8 |
-| Interfaccia | Qt 6 (`rhino-ui`) | Finestre agganciabili, barre strumenti e riga di comando come Rhino |
+| Interfaccia | Qt 6 (`kurva3d`) | Finestre agganciabili, barre strumenti e riga di comando come Rhino |
 | Viewport | OpenGL 2.1 (pipeline fissa) | Quattro viste (Top, Perspective, Front, Right) come Rhino 8; funziona su ogni scheda video |
 | Geometria | openNURBS + OpenCASCADE 7.x | openNURBS valuta NURBS/B-rep/SubD; OpenCASCADE fa booleane, raccordi, offset, loft, sweep, split, mesh |
 
@@ -72,19 +72,19 @@ C:\vcpkg\vcpkg install qtbase:x64-windows opencascade:x64-windows
 cd G:\github\rhinoceros
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
 cmake --build build --config Release
-build\Release\rhino-ui.exe
+build\Release\kurva3d.exe
 ```
 
 In alternativa: Qt 6 dall'installer ufficiale (componente MSVC 2022 64-bit)
 e OpenCASCADE 7.x dall'installer del sito, passando a CMake
 `-DCMAKE_PREFIX_PATH="C:\Qt\6.x\msvc2022_64;C:\OpenCASCADE-7.x\occt"`.
 Se CMake non li trova lo dice nell'output e compila il resto.
-**Nota:** la build Windows di `rhino-ui` e del kernel non è ancora stata
+**Nota:** la build Windows di `kurva3d` e del kernel non è ancora stata
 provata (vedi D-023); la versione Linux è compilata e testata.
 
-## La finestra (rhino-ui)
+## La finestra (kurva3d)
 
-![rhino-ui](docs/screenshot-rhino-ui.png)
+![kurva3d](docs/screenshot-kurva3d.png)
 
 Disposizione come Rhino 8: menu in alto, cronologia e riga `Comando:`, barra
 dei comandi a sinistra, quattro viste (Top, Perspective, Front, Right),
@@ -102,7 +102,7 @@ interruttori Snap griglia, Orto, Osnap.
   da sinistra a destra selezioni a finestra, da destra a sinistra a intersezione.
 - Tasto destro trascinato: ruota (Perspective) o sposta la vista; Shift+destro
   sposta; Ctrl+destro o rotella: zoom. Doppio clic sul titolo ingrandisce la vista.
-- `rhino-ui file.3dm` apre un file; `--script comandi.txt` esegue uno script.
+- `kurva3d file.3dm` apre un file; `--script comandi.txt` esegue uno script.
 
 ## Modellare dalla console
 
@@ -130,3 +130,7 @@ build\Release\3dm-roundtrip.exe C:\percorso\modello.3dm C:\percorso\copia.3dm
 `3dm-roundtrip` esce con codice 0 solo se la copia, riletta, è uguale
 all'originale per tutto ciò che il confronto controlla (vedi
 `src/core/ModelCompare.h`).
+
+## Licenze di terze parti
+
+Kurva3D usa openNURBS (licenza permissiva di McNeel), Open CASCADE Technology (LGPL 2.1 con eccezione) e Qt 6 (LGPL 3). Elenco e testi completi in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) e nella cartella `licenses`, copiati anche nello zip di ogni versione. Rhinoceros e Rhino sono marchi di Robert McNeel & Associates; Kurva3D non è affiliato a McNeel.

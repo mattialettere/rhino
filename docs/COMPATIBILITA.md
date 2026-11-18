@@ -47,8 +47,8 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 
 | Area | Stato |
 |---|---|
-| Finestra principale, viewport | 🟠 Prima versione `rhino-ui` (4 viste, riga di comando, Livelli, Proprietà): provata solo su Linux, non ancora confrontata con Rhino 8. Differenze D-001, D-019…D-023 |
-| Riga comandi (sintassi delle macro) | 🟡 `rhino-ui` e `cad-console`: richiesta punti passo-passo, Invio/Spazio/Esc come Rhino |
+| Finestra principale, viewport | 🟠 Prima versione `kurva3d` (4 viste, riga di comando, Livelli, Proprietà): provata solo su Linux, non ancora confrontata con Rhino 8. Differenze D-001, D-019…D-023 |
+| Riga comandi (sintassi delle macro) | 🟡 `kurva3d` e `cad-console`: richiesta punti passo-passo, Invio/Spazio/Esc come Rhino |
 | Input col mouse | 🟠 Clic per i punti, elastico, osnap Fine/Medio/Centro/Vertice, snap griglia, orto, selezione a clic e finestra, selezione chiesta dal comando, clic sugli oggetti per Trim/Extend/Fillet/Shell (D-008, D-009, D-027) |
 | Comandi di disegno e modifica | 🟡 81 comandi su 301 censiti (22 con OpenCASCADE), testati in automatico ma non ancora confrontati con Rhino 8: vedi [COMANDI.md](COMANDI.md) |
 | Scorciatoie e alias | 🟠 Solo Ctrl+N/O/S/Z/Y/A, Canc, Esc, Invio/Spazio ripete l'ultimo comando |

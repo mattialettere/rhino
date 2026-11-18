@@ -1,5 +1,5 @@
 # Build Windows 64 bit: compila, esegue i test e pubblica uno zip pronto
-# (rhino-ui.exe con interfaccia grafica, cad-console.exe, strumenti .3dm).
+# (kurva3d.exe con interfaccia grafica, cad-console.exe, strumenti .3dm).
 name: Windows
 
 on:
@@ -66,21 +66,26 @@ jobs:
           Copy-Item build\Release\*.exe dist\ -ErrorAction SilentlyContinue
           Copy-Item build\Release\*.dll dist\ -ErrorAction SilentlyContinue
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" dist\ -ErrorAction SilentlyContinue
-          if (Test-Path dist\rhino-ui.exe) { windeployqt --release --no-translations dist\rhino-ui.exe }
+          if (Test-Path dist\kurva3d.exe) { windeployqt --release --no-translations dist\kurva3d.exe }
           # runtime di Visual C++ accanto all'exe: parte anche sui PC senza "VC++ Redistributable"
           foreach ($d in 'msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll') {
             if (Test-Path "C:\Windows\System32\$d") { Copy-Item "C:\Windows\System32\$d" dist\ }
           }
           Copy-Item examples dist\examples -Recurse
           Copy-Item README.md dist\
+          Copy-Item THIRD_PARTY_NOTICES.txt dist\
+          Copy-Item licenses dist\licenses -Recurse
+          # note di copyright delle librerie installate da vcpkg (OCCT, Qt e dipendenze)
+          New-Item -ItemType Directory -Force dist\licenses\vcpkg | Out-Null
+          Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\*\copyright" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName ("dist\licenses\vcpkg\" + $_.Directory.Name + ".txt") }
           Get-ChildItem dist
 
-      # Avvio reale di rhino-ui.exe dalla cartella dello zip: script, screenshot e uscita
+      # Avvio reale di kurva3d.exe dalla cartella dello zip: script, screenshot e uscita
       - name: Prova dell'interfaccia
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist\rhino-ui.exe -ArgumentList '--script', "$PWD\tests\ui_smoke.txt", '--screenshot', "$PWD\dist\screenshot-avvio.png" -PassThru
-          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "rhino-ui.exe non si e' chiuso entro 2 minuti" }
+          $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList '--script', "$PWD\tests\ui_smoke.txt", '--screenshot', "$PWD\dist\screenshot-avvio.png" -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "kurva3d.exe non si e' chiuso entro 2 minuti" }
           Write-Host "Codice di uscita: $($p.ExitCode)"
           if (-not (Test-Path dist\screenshot-avvio.png)) { throw "screenshot non creato: la finestra non si e' aperta" }
           Get-Item dist\screenshot-avvio.png | Format-List Name, Length
@@ -90,7 +95,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rhino-windows-x64
+          name: kurva3d-windows-x64
           path: dist
 
       # Checkpoint: quando il file RELEASE contiene una versione nuova (es. v0.1.0) e
@@ -111,5 +116,5 @@ jobs:
             gh release delete $tag --yes
           }
           $global:LASTEXITCODE = 0
-          Compress-Archive -Path dist\* -DestinationPath "rhino-windows-x64-$tag.zip"
-          gh release create $tag "rhino-windows-x64-$tag.zip" --target $env:GITHUB_SHA --title "Rhinoceros CAD $tag (Windows 64 bit)" --notes-file docs/RELEASE_NOTES.md
+          Compress-Archive -Path dist\* -DestinationPath "kurva3d-windows-x64-$tag.zip"
+          gh release create $tag "kurva3d-windows-x64-$tag.zip" --target $env:GITHUB_SHA --title "Kurva3D $tag (Windows 64 bit)" --notes-file docs/RELEASE_NOTES.md

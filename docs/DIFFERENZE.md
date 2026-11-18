@@ -5,7 +5,7 @@ Rhino 8, o non è ancora stato verificato. Ogni voce ha un codice stabile.
 
 | Codice | Area | Differenza | Impatto | Stato |
 |---|---|---|---|---|
-| D-001 | Generale | L'interfaccia `rhino-ui` riproduce solo l'essenziale di Rhino 8: menu, riga di comando in alto, 4 viste, barra laterale, pannelli Livelli e Proprietà, barra di stato. Mancano: barre strumenti a schede con icone, Gumball, pannelli Display/Materiali/Blocchi, menu contestuali, finestre Opzioni, layout di viste salvati | Alto per l'uso quotidiano | Aperta (prima versione 17/11/2026) |
+| D-001 | Generale | L'interfaccia `kurva3d` riproduce solo l'essenziale di Rhino 8: menu, riga di comando in alto, 4 viste, barra laterale, pannelli Livelli e Proprietà, barra di stato. Mancano: barre strumenti a schede con icone, Gumball, pannelli Display/Materiali/Blocchi, menu contestuali, finestre Opzioni, layout di viste salvati | Alto per l'uso quotidiano | Aperta (prima versione 17/11/2026) |
 | D-002 | File .3dm | I file prodotti non sono ancora stati aperti in Rhino 8 reale: la compatibilità è verificata solo tra noi e openNURBS | Da misurare | Aperta: servono file in `tests/rhino8_files/` |
 | D-003 | File antichi (Rhino 1-2) | Le bounding box in cache dei B-rep di Rhino 1-2 sono larghe; dopo il salvataggio vengono sostituite da quelle esatte. La geometria non cambia | Nessuno (miglioramento) | Accettata: il confronto usa la box ricalcolata |
 | D-004 | File Rhino 1 | In `v1_Soccer.3dm` 4 policurve su 1369 oggetti risultano diverse dopo il salvataggio, e ogni esecuzione ne segnala di diverse: probabile valore non inizializzato nella lettura dei file Rhino 1 dentro openNURBS | Basso (solo Rhino 1) | Da indagare |

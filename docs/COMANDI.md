@@ -8,7 +8,7 @@ Elenco dei comandi di creazione, modifica e modellazione di Rhino 8 per Windows,
 | ⬜ | Da fare: realizzabile con openNURBS |
 | 🧱 | Da fare: serve il motore geometrico (OpenCASCADE, ora integrato: si possono fare) |
 
-I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhino: si scrive il nome, Invio o Spazio, poi si cliccano i punti) oppure dalla console `cad-console` con la sintassi delle macro di Rhino, per esempio `_Box 0,0,0 10,10 10` oppure `_SelCrv _ExtrudeCrv _Solid=_Yes 10`. Le differenze note rispetto a Rhino 8 sono in [DIFFERENZE.md](DIFFERENZE.md).
+I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino: si scrive il nome, Invio o Spazio, poi si cliccano i punti) oppure dalla console `cad-console` con la sintassi delle macro di Rhino, per esempio `_Box 0,0,0 10,10 10` oppure `_SelCrv _ExtrudeCrv _Solid=_Yes 10`. Le differenze note rispetto a Rhino 8 sono in [DIFFERENZE.md](DIFFERENZE.md).
 
 ## Riepilogo
 

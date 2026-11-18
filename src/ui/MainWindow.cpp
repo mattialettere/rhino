@@ -38,7 +38,7 @@ namespace cad::ui {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), m_engine(m_doc, m_out), m_scene(m_engine) {
   m_engine.interactive = true;
-  setWindowTitle("Senza titolo - Rhinoceros CAD (personale)");
+  setWindowTitle("Senza titolo - Kurva3D");
   resize(1400, 900);
 
   // Area comandi in alto (come Rhino 8): cronologia + riga "Comando:"
@@ -161,7 +161,7 @@ MainWindow::MainWindow(QWidget* parent)
   BuildMenus();
   BuildSidebar();
   BuildStatusBar();
-  Log("Rhinoceros CAD (personale) - modello nuovo in millimetri. Scrivi un comando, ? per l'elenco.");
+  Log("Kurva3D - modello nuovo in millimetri. Scrivi un comando, ? per l'elenco.");
   AfterCommand();
 }
 
@@ -274,6 +274,29 @@ void MainWindow::BuildMenus() {
                          {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"}});
   addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"},
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
+  auto* help = menuBar()->addMenu("&?");
+  help->addAction("Elenco comandi", this, [this] { Submit("?"); });
+  help->addAction("Informazioni su Kurva3D", this, [this] { ShowAbout(); });
+}
+
+// Informazioni su Kurva3D: versione e librerie di terze parti con le loro licenze
+// (il testo completo e' in THIRD_PARTY_NOTICES.txt accanto all'eseguibile).
+void MainWindow::ShowAbout() {
+  QMessageBox box(this);
+  box.setWindowTitle("Informazioni su Kurva3D");
+  box.setTextFormat(Qt::RichText);
+  box.setText(QString("<h3>Kurva3D %1</h3>"
+      "<p>Modellatore 3D NURBS indipendente, compatibile con i file .3dm.</p>"
+      "<p><b>Librerie di terze parti</b></p><ul>"
+      "<li>openNURBS 8 (Robert McNeel &amp; Associates) - licenza openNURBS (permissiva, tipo MIT)</li>"
+      "<li>Open CASCADE Technology 7 - GNU LGPL 2.1 con eccezione aggiuntiva</li>"
+      "<li>Qt %2 (The Qt Company) - GNU LGPL 3</li></ul>"
+      "<p>Le librerie LGPL sono collegate dinamicamente (DLL) e si possono sostituire. "
+      "Testi completi delle licenze e indirizzi dei sorgenti: THIRD_PARTY_NOTICES.txt.</p>"
+      "<p>Rhinoceros e Rhino sono marchi di Robert McNeel &amp; Associates; "
+      "Kurva3D non e' affiliato a McNeel.</p>")
+      .arg(KURVA3D_VERSION).arg(qVersion()));
+  box.exec();
 }
 
 // Barre strumenti a schede sopra le viste, come Rhino 8 (pulsanti con testo:
@@ -617,6 +640,7 @@ void MainWindow::Submit(const QString& text) {
   }
   if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
   if (norm == "blockmanager") { ShowBlockManager(); return; }
+  if (norm == "about") { ShowAbout(); return; }
   if (norm == "properties" || (norm == "layer" && t.find(' ') == std::string::npos)) {
     const QString title = norm == "properties" ? "Proprietà" : "Livelli";
     for (auto* d : findChildren<QDockWidget*>())
@@ -684,7 +708,7 @@ void MainWindow::AfterCommand() {
   UpdatePrompt();
   RefreshPanels();
   QString title = m_engine.currentPath.empty() ? "Senza titolo" : QString::fromStdString(m_engine.currentPath);
-  setWindowTitle(title + " - Rhinoceros CAD (personale)");
+  setWindowTitle(title + " - Kurva3D");
   for (auto* v : m_views) v->update();
 }
 

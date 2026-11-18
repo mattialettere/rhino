@@ -92,7 +92,7 @@ void Document3dm::NewEmpty() {
   // Rhino 8 salva sempre almeno uno stile di quota; openNURBS ne aggiunge uno
   // in scrittura se manca, quindi lo creiamo subito per coerenza.
   m_model->AddDefaultDimensionStyle(nullptr, ON::LengthUnitSystem::Millimeters, 0.001);
-  m_model->m_properties.m_Application.m_application_name = L"Rhinoceros CAD (personale)";
+  m_model->m_properties.m_Application.m_application_name = L"Kurva3D";
 }
 
 std::vector<unsigned char> Document3dm::ToBuffer() const {

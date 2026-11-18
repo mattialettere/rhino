@@ -19,7 +19,7 @@ Alternative scartate:
 - *Scrivere un lettore .3dm da zero*: mesi di lavoro per ottenere quello che
   openNURBS già fa, con rischio di incompatibilità.
 
-## Interfaccia: Qt 6 (in uso dal 17/11/2026, eseguibile `rhino-ui`)
+## Interfaccia: Qt 6 (in uso dal 17/11/2026, eseguibile `kurva3d`)
 
 Permette di riprodurre la disposizione di Rhino 8: barra dei menu, riga
 comandi in alto con cronologia, barre strumenti a schede, pannelli agganciabili

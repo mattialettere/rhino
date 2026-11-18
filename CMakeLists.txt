@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(rhinoceros_cad VERSION 0.1.0 LANGUAGES C CXX)
+project(kurva3d VERSION 0.5.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,7 +79,7 @@ target_link_libraries(cad-console PRIVATE cadcore)
 # Interfaccia grafica (Qt 6, opzionale)
 find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets)
 if(Qt6_FOUND)
-  message(STATUS "Qt ${Qt6_VERSION}: interfaccia grafica rhino-ui attiva")
+  message(STATUS "Qt ${Qt6_VERSION}: interfaccia grafica kurva3d attiva")
   set(CMAKE_AUTOMOC ON)
   # Qt 6 su Windows aggiunge la macro WIN32 anche a 64 bit, ma openNURBS
   # si rifiuta di compilare con WIN32 definita in x64: la togliamo.
@@ -90,12 +90,13 @@ if(Qt6_FOUND)
       set_target_properties(Qt6::Platform PROPERTIES INTERFACE_COMPILE_DEFINITIONS "${_qt_defs}")
     endif()
   endif()
-  add_executable(rhino-ui WIN32
+  add_executable(kurva3d WIN32
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h)
-  target_link_libraries(rhino-ui PRIVATE cadcore Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+  target_compile_definitions(kurva3d PRIVATE KURVA3D_VERSION="${PROJECT_VERSION}")
+  target_link_libraries(kurva3d PRIVATE cadcore Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
   if(MSVC)
-    target_compile_options(rhino-ui PRIVATE /UWIN32)
+    target_compile_options(kurva3d PRIVATE /UWIN32)
   endif()
 else()
   message(WARNING "Qt 6 non trovato: l'interfaccia grafica non verra' compilata")

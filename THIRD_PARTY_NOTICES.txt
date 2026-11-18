@@ -1,0 +1,50 @@
+Kurva3D - Avvisi sulle componenti di terze parti / Third-party notices
+=====================================================================
+
+Kurva3D e' un programma indipendente. Usa le librerie elencate sotto, ognuna
+con la propria licenza. I testi completi sono nella cartella "licenses".
+
+Rhinoceros e Rhino sono marchi registrati di Robert McNeel & Associates.
+Kurva3D non e' affiliato, approvato o sponsorizzato da McNeel. Il formato
+.3dm si legge e scrive con openNURBS, che McNeel pubblica a questo scopo.
+
+1. openNURBS 8 (collegata staticamente)
+   Copyright (c) 1993-2018 Robert McNeel & Associates.
+   Licenza: openNURBS license (permissiva) - licenses/openNURBS-LICENSE.txt
+   Sorgente: https://github.com/mcneel/opennurbs
+   Include zlib (Copyright (C) 1995 Jean-loup Gailly and Mark Adler),
+   licenza zlib, riportata nello stesso file.
+   Sulle piattaforme dove openNURBS usa la sua copia di FreeType 2.6.3:
+   Portions of this software are copyright (C) 2016 The FreeType Project
+   (www.freetype.org). All rights reserved. (FreeType License)
+
+2. Open CASCADE Technology 7 (DLL, collegata dinamicamente)
+   Copyright (c) Open CASCADE SAS.
+   Kurva3D fa uso di funzionalita' fornite dal software Open CASCADE
+   Technology. This software makes use of or is based on facilities provided
+   by the Open CASCADE Technology software.
+   Licenza: GNU LGPL 2.1 con eccezione Open CASCADE 1.0 -
+   licenses/LGPL-2.1.txt e licenses/OCCT_LGPL_EXCEPTION.txt
+   Sorgente: https://github.com/Open-Cascade-SAS/OCCT
+   (versione usata per la build Windows: porta vcpkg "opencascade")
+
+3. Qt 6 (DLL, collegata dinamicamente)
+   Copyright (C) The Qt Company Ltd. and other contributors.
+   Licenza: GNU LGPL 3 - licenses/LGPL-3.txt (con licenses/GPL-3.txt, a cui
+   la LGPL 3 rimanda)
+   Sorgente: https://download.qt.io/official_releases/qt/ e
+   https://code.qt.io/
+
+4. Altre librerie installate da vcpkg insieme a OpenCASCADE e Qt
+   (per esempio FreeType, libpng, zlib, HarfBuzz): le note di copyright e le
+   licenze di ognuna sono nella cartella licenses/vcpkg, copiate
+   automaticamente al momento della compilazione.
+
+Sostituzione delle librerie LGPL: Open CASCADE e Qt sono DLL separate nella
+cartella del programma. Si possono sostituire con versioni compatibili,
+anche ricompilate dall'utente, senza modificare kurva3d.exe. Il codice
+sorgente di Kurva3D usato per costruire questa versione e' disponibile nel
+repository GitHub da cui proviene lo zip.
+
+Nessuna garanzia: le librerie sono fornite "cosi' come sono", senza alcuna
+garanzia, secondo i termini delle rispettive licenze.
