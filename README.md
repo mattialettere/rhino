@@ -82,6 +82,21 @@ Se CMake non li trova lo dice nell'output e compila il resto.
 **Nota:** la build Windows di `kurva3d` e del kernel non è ancora stata
 provata (vedi D-023); la versione Linux è compilata e testata.
 
+## Compilare su macOS
+
+```sh
+brew install qt opencascade ninja cmake
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix opencascade)"
+cmake --build build
+open build/kurva3d.app
+```
+
+La CI (`.github/workflows/build.yml`) crea `Kurva3D.app` autonoma con
+`macdeployqt`, la firma e la notarizza se nei Secrets del repository ci sono
+`MACOS_CERTIFICATE`, `MACOS_CERTIFICATE_PASSWORD`, `APPLE_ID`,
+`APPLE_APP_PASSWORD` e `APPLE_TEAM_ID`, e la mette in un dmg.
+
 ## La finestra (kurva3d)
 
 ![kurva3d](docs/screenshot-kurva3d.png)
