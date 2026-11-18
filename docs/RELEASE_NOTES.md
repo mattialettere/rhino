@@ -1,6 +1,6 @@
 ## Come provarlo
 
-**Mac**: questa versione è solo per Windows. L'ultima versione per Mac (macOS 15 o successivo, Apple Silicon e Intel) è la 0.6.0: i file `.dmg` sono nella release v0.6.0.
+**Mac** (macOS 15 o successivo): scarica il `.dmg` per il tuo Mac (`AppleSilicon` per M1/M2/M3/M4, `Intel` per i Mac Intel), aprilo e trascina Kurva3D in Applicazioni. I `.dmg` si aggiungono a questa release appena finisce la loro compilazione.
 
 **Windows**:
 
@@ -16,6 +16,15 @@ Non serve installare nulla: Qt, OpenCASCADE e il runtime di Visual C++ sono già
 - Tutti i 303 comandi di Rhino 8 inventariati, più 5 di mappatura delle texture (elenco in `docs/COMANDI.md`): curve, superfici, solidi e booleane (OpenCASCADE), trasformazioni, Trim/Extend/Fillet/Chamfer, blocchi e gruppi, quote e testi (Text, Dim, DimAligned, DimRotated, DimRadius, DimDiameter, DimAngle, Leader, Centermark), analisi.
 - Osnap (Fine, Vicino, Punto, Medio, Centro, Intersezione, Perpendicolare, Quadrante, Nodo, Vertice), viste Top/Front/Right/Perspective e le altre dal menu del titolo, modalità Wireframe/Shaded/Ghosted/X-Ray.
 - Pannello Proprietà modificabile (nome, livello, colore).
+- Novità della 0.9:
+  - **Scambio di file**: Import/Export STEP, IGES, STL, OBJ e DXF; **ViewCaptureToFile** e ViewCaptureToClipboard.
+  - **Viste**: piani di sezione (**ClippingPlane**), viste e piani di costruzione con nome (NamedView, NamedCPlane), **Snapshots**.
+  - **Tavole e stampa**: layout con dettagli, stampa e **PDF**.
+  - **Rendering**: viste Rendered e Raytraced e comando **Render** (motore di Kurva3D), luci, sole, cielo e piano di terra.
+  - **Script Python**: RunPythonScript, editor di script e una libreria compatibile con rhinoscriptsyntax (Python incluso nel programma).
+  - **Storia di costruzione** (History): le superfici create da Loft, ExtrudeCrv, Revolve, Sweep... si aggiornano quando si modificano le curve di partenza.
+  - **Editor a nodi** (NodeEditor, l'equivalente di Grasshopper): circa 70 componenti, anteprima nelle viste e Bake.
+  - **Collaborazione in rete locale** (menu Collabora): più computer lavorano insieme sullo stesso progetto, con ricerca automatica, codice a 6 cifre, chat e compiti per l'assistente AI di ciascun computer.
 - Novità della 0.8:
   - **Nuova grafica**: tema chiaro e scuro che segue Windows (Vista > Tema per sceglierlo), icone nuove, barra laterale a due colonne, riga di comando e pannelli rifiniti.
   - **Texture**: pannello Texture con le immagini di una cartella; si applicano agli oggetti selezionati o trascinandole su un oggetto. Mappature box, piana, cilindrica, sferica e superficie (comandi ApplyBoxMapping, ApplyPlanarMapping, ApplyCylindricalMapping, ApplySphericalMapping, ApplySurfaceMapping). L'immagine resta salvata nel file .3dm.
