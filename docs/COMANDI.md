@@ -14,24 +14,24 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 
 | Categoria | Fatti / totali |
 |---|---|
-| Punti | 3 / 9 |
+| Punti | 6 / 9 |
 | Curve: linee e polilinee | 2 / 11 |
-| Curve: forme | 7 / 19 |
+| Curve: forme | 13 / 19 |
 | Curve: forme libere | 6 / 18 |
-| Curve da oggetti | 7 / 14 |
+| Curve da oggetti | 8 / 14 |
 | Superfici | 9 / 29 |
-| Solidi | 14 / 24 |
+| Solidi | 17 / 24 |
 | SubD | 1 / 23 |
-| Mesh | 1 / 19 |
-| Trasformazioni | 9 / 30 |
-| Modifica | 16 / 34 |
-| Selezione | 11 / 19 |
+| Mesh | 7 / 19 |
+| Trasformazioni | 14 / 30 |
+| Modifica | 20 / 34 |
+| Selezione | 15 / 19 |
 | Blocchi | 3 / 6 |
-| Livelli e proprieta' | 2 / 11 |
-| Annotazioni | 9 / 14 |
-| Analisi | 8 / 15 |
+| Livelli e proprieta' | 9 / 12 |
+| Annotazioni | 11 / 14 |
+| Analisi | 10 / 15 |
 | File | 4 / 7 |
-| **Totale** | **112 / 302** |
+| **Totale** | **155 / 303** |
 
 ## Punti
 
@@ -39,12 +39,12 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 |---|---|
 | Point | ✔ |
 | Points | ✔ |
-| PointGrid | ⬜ |
+| PointGrid | ✔ |
 | DivideCrv | 🧱 |
 | Divide | ✔ |
 | Measure | 🧱 |
-| ExtractPt | ⬜ |
-| ExtractControlPoints | ⬜ |
+| ExtractPt | ✔ |
+| ExtractControlPoints | ✔ |
 | MarkCurvature | 🧱 |
 
 ## Curve: linee e polilinee
@@ -68,19 +68,19 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | Rectangle | ✔ |
-| Rectangle3Pt | ⬜ |
+| Rectangle3Pt | ✔ |
 | RoundedRectangle | ⬜ |
 | Polygon | ✔ |
-| PolygonStar | ⬜ |
-| PolygonEdge | ⬜ |
+| PolygonStar | ✔ |
+| PolygonEdge | ✔ |
 | Circle | ✔ |
-| Circle3Pt | ⬜ |
+| Circle3Pt | ✔ |
 | CircleTangent | 🧱 |
 | Arc | ✔ |
-| Arc3Pt | ⬜ |
+| Arc3Pt | ✔ |
 | ArcTangent | 🧱 |
 | Ellipse | ✔ |
-| EllipseDiameter | ⬜ |
+| EllipseDiameter | ✔ |
 | Parabola | ⬜ |
 | Hyperbola | ⬜ |
 | Spiral | ✔ |
@@ -118,7 +118,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Pull | 🧱 |
 | DupEdge | ✔ |
 | DupBorder | ✔ |
-| DupFaceBorder | ⬜ |
+| DupFaceBorder | ✔ |
 | Contour | ✔ |
 | Section | ✔ |
 | Silhouette | 🧱 |
@@ -173,11 +173,11 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Sphere3Pt | ⬜ |
 | Cylinder | ✔ |
 | Cone | ✔ |
-| TruncatedCone | ⬜ |
+| TruncatedCone | ✔ |
 | Torus | ✔ |
-| Ellipsoid | ⬜ |
+| Ellipsoid | ✔ |
 | Pyramid | ⬜ |
-| Tube | ⬜ |
+| Tube | ✔ |
 | Wedge | ⬜ |
 | Cap | ✔ |
 | BooleanUnion | ✔ |
@@ -225,12 +225,12 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Comando | Stato |
 |---|---|
 | Mesh | ✔ |
-| MeshBox | ⬜ |
-| MeshSphere | ⬜ |
-| MeshCylinder | ⬜ |
-| MeshCone | ⬜ |
-| MeshTorus | ⬜ |
-| MeshPlane | ⬜ |
+| MeshBox | ✔ |
+| MeshSphere | ✔ |
+| MeshCylinder | ✔ |
+| MeshCone | ✔ |
+| MeshTorus | ✔ |
+| MeshPlane | ✔ |
 | MeshPolyline | ⬜ |
 | MeshPatch | 🧱 |
 | QuadRemesh | 🧱 |
@@ -251,14 +251,14 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Move | ✔ |
 | Copy | ✔ |
 | Rotate | ✔ |
-| Rotate3D | ⬜ |
+| Rotate3D | ✔ |
 | Scale | ✔ |
-| Scale1D | ⬜ |
+| Scale1D | ✔ |
 | Scale2D | ✔ |
-| ScaleNU | ⬜ |
+| ScaleNU | ✔ |
 | Mirror | ✔ |
-| Orient | ⬜ |
-| Orient3Pt | ⬜ |
+| Orient | ✔ |
+| Orient3Pt | ✔ |
 | OrientOnSrf | 🧱 |
 | Array | ✔ |
 | ArrayLinear | ✔ |
@@ -292,7 +292,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | ExtendCrvOnSrf | 🧱 |
 | Flip | ✔ |
 | Dir | ⬜ |
-| Reverse | ⬜ |
+| Reverse | ✔ |
 | Group | ✔ |
 | Ungroup | ✔ |
 | Hide | ✔ |
@@ -301,7 +301,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Unlock | ✔ |
 | Undo | ✔ |
 | Redo | ✔ |
-| CloseCrv | ⬜ |
+| CloseCrv | ✔ |
 | Seam | 🧱 |
 | ChangeDegree | ✔ |
 | InsertKnot | ⬜ |
@@ -314,8 +314,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Match | 🧱 |
 | Fit | 🧱 |
 | ConvertToBezier | ⬜ |
-| Isolate | ⬜ |
-| Unisolate | ⬜ |
+| Isolate | ✔ |
+| Unisolate | ✔ |
 | Purge | ⬜ |
 
 ## Selezione
@@ -334,11 +334,11 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SelSubD | ✔ |
 | SelLayer | ✔ |
 | SelColor | ⬜ |
-| SelClosedCrv | ⬜ |
-| SelOpenCrv | ⬜ |
-| SelDup | ⬜ |
+| SelClosedCrv | ✔ |
+| SelOpenCrv | ✔ |
+| SelDup | ✔ |
 | SelSmall | ⬜ |
-| SelVisible | ⬜ |
+| SelVisible | ✔ |
 | Invert | ✔ |
 | SelectionFilter | ⬜ |
 
@@ -359,15 +359,16 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 |---|---|
 | Layer | ✔ |
 | ChangeLayer | ✔ |
-| CurrentLayer | ⬜ |
-| LayerOff | ⬜ |
-| LayerOn | ⬜ |
-| LayerLock | ⬜ |
-| LayerUnlock | ⬜ |
+| CurrentLayer | ✔ |
+| LayerOff | ✔ |
+| LayerOn | ✔ |
+| LayerLock | ✔ |
+| LayerUnlock | ✔ |
 | Properties | ⬜ |
-| SetObjectName | ⬜ |
+| SetObjectName | ✔ |
 | MatchProperties | ⬜ |
 | SetUserText | ⬜ |
+| SetObjectColor | ✔ |
 
 ## Annotazioni
 
@@ -384,8 +385,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Centermark | ✔ |
 | DimOrdinate | ⬜ |
 | Leader | ✔ |
-| Dot | ⬜ |
-| Hatch | 🧱 |
+| Dot | ✔ |
+| Hatch | ✔ |
 | DimStyle | ⬜ |
 
 ## Analisi
@@ -399,13 +400,13 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Volume | ✔ |
 | Angle | ✔ |
 | Radius | ✔ |
-| EvaluatePt | ⬜ |
+| EvaluatePt | ✔ |
 | BoundingBox | ✔ |
 | CurvatureGraph | 🧱 |
 | Zebra | 🧱 |
 | Draft | 🧱 |
 | ShowEdges | 🧱 |
-| Check | ⬜ |
+| Check | ✔ |
 | SelBadObjects | ⬜ |
 
 ## File

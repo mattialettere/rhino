@@ -3,6 +3,7 @@
 #include "kernel/OcctConvert.h"
 #endif
 #include <cmath>
+#include <memory>
 
 namespace cad::ui {
 
@@ -272,6 +273,63 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
     newCache[sig] = sm;
     AddShaded(d, sm);
     if (sm) AddSilhouetteCandidates(*sm, d);
+  } else if (const auto* dot = ON_TextDot::Cast(g)) {
+    AnnotationLabel L;
+    L.origin = dot->CenterPoint();
+    L.text = ToUtf8(dot->PrimaryText());
+    L.dot = true;
+    d.labels.push_back(L);
+    d.points.push_back(dot->CenterPoint());
+    d.snapPoints.push_back({dot->CenterPoint(), SnapKind::Point});
+  } else if (const auto* h = ON_Hatch::Cast(g)) {
+    // contorni; il riempimento (solo motivo pieno) e' una superficie piana con fori, in mesh
+    ON_SimpleArray<ON_Curve*> outer;
+    std::vector<ON_SimpleArray<ON_Curve*>> inner;
+    for (int i = 0; i < h->LoopCount(); i++) {
+      std::unique_ptr<ON_Curve> c(h->LoopCurve3d(i));
+      if (!c) continue;
+      std::vector<ON_3dPoint> w;
+      TessellateCurve(*c, w);
+      d.wires.push_back(std::move(w));
+      if (h->Loop(i)->Type() == ON_HatchLoop::ltOuter && outer.Count() == 0) outer.Append(c.release());
+      else { inner.emplace_back(); inner.back().Append(c.release()); }
+    }
+    const auto* pat = ON_HatchPattern::Cast(
+        m_engine.Model().ComponentFromIndex(ON_ModelComponent::Type::HatchPattern, h->PatternIndex()).ModelComponent());
+    const bool solid = !pat || h->PatternIndex() < 0 || pat->FillType() == ON_HatchPattern::HatchFillType::Solid;
+#ifdef CAD_WITH_OCCT
+    if (solid && outer.Count() == 1) {
+      auto it = m_meshCache.find(sig);
+      std::shared_ptr<ON_Mesh> hm;
+      if (it != m_meshCache.end()) hm = it->second;
+      else {
+        std::unique_ptr<ON_Brep> b(ON_BrepTrimmedPlane(h->Plane(), *outer[0]));
+        if (b) {
+          for (auto& in : inner) b->NewPlanarFaceLoop(0, ON_BrepLoop::inner, in, true);
+          ON_BoundingBox bb;
+          b->GetTightBoundingBox(bb);
+          hm.reset(occt::MeshShape(occt::BrepToShape(*b, m_engine.Tolerance()), std::max(bb.Diagonal().Length() / 400.0, 0.01), 0.3));
+        }
+      }
+      newCache[sig] = hm;
+      if (hm) {
+        // il riempimento si disegna come triangoli del colore dell'oggetto (anche in wireframe)
+        for (int fi = 0; fi < hm->m_F.Count(); fi++) {
+          const ON_MeshFace& f = hm->m_F[fi];
+          d.triangles.push_back(ON_3dPoint(hm->m_V[f.vi[0]]));
+          d.triangles.push_back(ON_3dPoint(hm->m_V[f.vi[1]]));
+          d.triangles.push_back(ON_3dPoint(hm->m_V[f.vi[2]]));
+          if (f.IsQuad()) {
+            d.triangles.push_back(ON_3dPoint(hm->m_V[f.vi[0]]));
+            d.triangles.push_back(ON_3dPoint(hm->m_V[f.vi[2]]));
+            d.triangles.push_back(ON_3dPoint(hm->m_V[f.vi[3]]));
+          }
+        }
+      }
+    }
+#endif
+    for (int i = 0; i < outer.Count(); i++) delete outer[i];
+    for (auto& in : inner) for (int i = 0; i < in.Count(); i++) delete in[i];
   } else if (const auto* an = ON_Annotation::Cast(g)) {
     AnnotationDisplay ad;
     BuildAnnotationDisplay(m_engine.Model(), *an, ad);

@@ -15,6 +15,7 @@ struct AnnotationLabel {
   double height = 1.0;     // altezza del testo nel mondo
   int halign = 0;          // 0 sinistra, 1 centro, 2 destra
   std::string text;        // UTF-8, righe separate da '\n'
+  bool dot = false;        // punto di testo: dimensione fissa sullo schermo, su fondo colorato
 };
 
 struct AnnotationDisplay {

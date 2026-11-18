@@ -161,6 +161,7 @@ void RegisterEditCommands(Engine& e);
 void RegisterDocumentCommands(Engine& e);
 void RegisterMoreCommands(Engine& e);
 void RegisterAnnotationCommands(Engine& e);
+void RegisterExtraCommands(Engine& e);
 #ifdef CAD_WITH_OCCT
 void RegisterKernelCommands(Engine& e);
 void RegisterCurveEditCommands(Engine& e);

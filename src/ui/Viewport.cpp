@@ -414,6 +414,25 @@ void Viewport::DrawLabels(QPainter& p) const {
     QColor c = obj.selected ? QColor(255, 255, 0) : obj.locked ? QColor(110, 110, 110)
                                                               : QColor(obj.color.Red(), obj.color.Green(), obj.color.Blue());
     for (const auto& L : obj.labels) {
+      if (L.dot) {  // punto di testo: riquadro pieno del colore dell'oggetto, testo bianco
+        double sx, sy;
+        if (!m_cam.Project(L.origin, W, H, sx, sy)) continue;
+        QFont df = p.font();
+        df.setPixelSize(12);
+        df.setBold(false);
+        const QFontMetrics fm(df);
+        const QString t = QString::fromUtf8(L.text.c_str());
+        const QRectF r(sx - fm.horizontalAdvance(t) / 2.0 - 4, sy - fm.height() / 2.0 - 2, fm.horizontalAdvance(t) + 8, fm.height() + 4);
+        p.save();
+        p.setFont(df);
+        p.setPen(Qt::NoPen);
+        p.setBrush(obj.selected ? QColor(255, 255, 0) : (c == QColor(0, 0, 0) ? QColor(0, 0, 0) : c));
+        p.drawRoundedRect(r, 3, 3);
+        p.setPen(obj.selected ? QColor(0, 0, 0) : QColor(255, 255, 255));
+        p.drawText(r, Qt::AlignCenter, t);
+        p.restore();
+        continue;
+      }
       const QStringList lines = QString::fromUtf8(L.text.c_str()).split('\n');
       for (int i = 0; i < lines.size(); i++) {
         const ON_3dPoint o = L.origin - L.ydir * (i * 1.6 * L.height);

@@ -619,6 +619,155 @@ int main(int argc, char** argv) {
     });
   }
 
+  // Altri comandi (CmdExtra)
+  {
+    std::printf("Altri comandi\n");
+    Case("Circle3Pt", "_Circle3Pt 10,0 0,10 -10,0", [](Ctx& c) {
+      const auto* a = ON_ArcCurve::Cast(c.Last());
+      CHECK(a && a->IsCircle() && Near(a->Radius(), 10.0, 1e-9) && NearPt(a->m_arc.Center(), ON_3dPoint::Origin, 1e-9));
+    });
+    Case("Arc3Pt", "_Arc3Pt 10,0 -10,0 0,10", [](Ctx& c) {
+      const auto* a = ON_ArcCurve::Cast(c.Last());
+      CHECK(a && Near(a->m_arc.AngleDegrees(), 180.0, 1e-9) && NearPt(a->PointAtStart(), ON_3dPoint(10, 0, 0), 1e-9));
+    });
+    Case("Rectangle3Pt", "_Rectangle3Pt 0,0 10,10 0,20", [](Ctx& c) {
+      const auto* p = ON_PolylineCurve::Cast(c.Last());
+      CHECK(p && p->PointCount() == 5 && p->IsClosed());
+      // larghezza = distanza di (0,20) dalla retta y=x
+      CHECK(p && Near(p->m_pline[2].DistanceTo(p->m_pline[1]), 20.0 / std::sqrt(2.0), 1e-9));
+    });
+    Case("PolygonEdge", "_PolygonEdge NumSides=6 0,0 10,0", [](Ctx& c) {
+      const auto* p = ON_PolylineCurve::Cast(c.Last());
+      CHECK(p && p->PointCount() == 7 && p->IsClosed() && Near(Len(p), 60.0, 0.05));
+    });
+    Case("PolygonStar", "_PolygonStar NumSides=5 0,0 10,0 4", [](Ctx& c) {
+      const auto* p = ON_PolylineCurve::Cast(c.Last());
+      CHECK(p && p->PointCount() == 11 && p->IsClosed());
+    });
+    Case("EllipseDiameter", "_EllipseDiameter -10,0 10,0 0,5", [](Ctx& c) {
+      ON_BoundingBox bb = c.BBox();
+      CHECK(Near(bb.m_max.x, 10.0, 1e-6) && Near(bb.m_max.y, 5.0, 1e-6));
+    });
+    Case("PointGrid", "_PointGrid 3 4 2 5 1,1", [](Ctx& c) {
+      CHECK(c.Objects().size() == 12);
+      CHECK(NearPt(c.BBox().m_max, ON_3dPoint(5, 16, 0), 1e-9));
+    });
+    Case("ExtractControlPoints", "_Curve 0,0 5,5 10,0 15,5 _Enter\n_SelAll _ExtractControlPoints", [](Ctx& c) {
+      int pts = 0;
+      for (auto* g : c.Objects()) if (ON_Point::Cast(g)) pts++;
+      CHECK(pts == 4);
+    });
+    Case("TruncatedCone", "_TruncatedCone 0,0,0 5 10 2", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsSolid());
+      CHECK(NearPt(c.BBox().m_max, ON_3dPoint(5, 5, 10), 1e-6));
+    });
+    Case("Ellipsoid", "_Ellipsoid 0,0,0 3 4 5", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsSolid());
+      CHECK(NearPt(c.BBox().m_max, ON_3dPoint(3, 4, 5), 1e-6));
+    });
+    Case("Tube", "_Tube 0,0,0 5 3 10", [](Ctx& c) {
+      const auto* x = ON_Extrusion::Cast(c.Last());
+      CHECK(x && x->ProfileCount() == 2 && x->IsCapped() == 3);
+      std::unique_ptr<ON_Brep> b(x ? x->BrepForm() : nullptr);
+      CHECK(b && b->IsSolid());
+    });
+    Case("MeshBox", "_MeshBox 0,0 10,5 3", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->FaceCount() == 6 && m->IsClosed());
+    });
+    Case("MeshSphere", "_MeshSphere 0,0,0 5", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsClosed() && m->IsManifold());
+      CHECK(Near(c.BBox().m_max.z, 5.0, 1e-5));
+    });
+    Case("MeshCylinder", "_MeshCylinder 0,0,0 5 10", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsClosed());
+    });
+    Case("MeshCone", "_MeshCone 0,0,0 5 10", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsClosed() && Near(c.BBox().m_max.z, 10.0, 1e-5));
+    });
+    Case("MeshTorus", "_MeshTorus 0,0,0 10 2", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->IsClosed() && Near(c.BBox().m_max.x, 12.0, 1e-5));
+    });
+    Case("MeshPlane", "_MeshPlane 0,0 4,3", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m && m->FaceCount() == 1);
+    });
+    Case("Reverse", "_Line 0,0 10,0\n_SelAll _Reverse", [](Ctx& c) {
+      CHECK(NearPt(ON_Curve::Cast(c.Last())->PointAtStart(), ON_3dPoint(10, 0, 0), 1e-12));
+    });
+    Case("CloseCrv", "_Polyline 0,0 10,0 10,10 _Enter\n_SelAll _CloseCrv", [](Ctx& c) {
+      const auto* cr = ON_Curve::Cast(c.Last());
+      CHECK(c.Objects().size() == 1 && cr && cr->IsClosed() && Near(Len(cr), 20 + std::sqrt(200.0), 0.05));
+    });
+    Case("Isolate_Unisolate", "_Line 0,0 1,0\n_Line 0,1 1,1\n_SelLast _Isolate\n_SelNone\n_Unisolate", [](Ctx& c) {
+      int hidden = 0;
+      for (auto& id : c.e.AllObjectIds(true))
+        if (c.e.Object(id)->Attributes(nullptr)->Mode() == ON::object_mode::hidden_object) hidden++;
+      CHECK(hidden == 0 && c.e.AllObjectIds(false).size() == 2);
+    });
+    Case("Isolate", "_Line 0,0 1,0\n_Line 0,1 1,1\n_SelLast _Isolate", [](Ctx& c) {
+      CHECK(c.e.AllObjectIds(false).size() == 1 && c.e.AllObjectIds(true).size() == 2);
+    });
+    Case("DupFaceBorder", "_Box 0,0,0 10,10 10\n_SelAll _DupFaceBorder", [](Ctx& c) {
+      int closed = 0;
+      for (auto* g : c.Objects()) if (auto* cr = ON_Curve::Cast(g); cr && cr->IsClosed() && Near(Len(cr), 40.0, 0.05)) closed++;
+      CHECK(closed == 6);
+    });
+    Case("SelClosedCrv", "_Circle 0,0 3\n_Line 0,0 5,5\n_SelClosedCrv _Delete", [](Ctx& c) {
+      CHECK(c.Objects().size() == 1 && ON_LineCurve::Cast(c.Last()));
+    });
+    Case("SelDup", "_Line 0,0 5,5\n_Line 0,0 5,5\n_Line 0,0 6,5\n_SelDup _Delete", [](Ctx& c) {
+      CHECK(c.Objects().size() == 2);
+    });
+    Case("LayerOff_On", "_-Layer _New Muri\n_-Layer _Current Muri\n_Line 0,0 1,1\n_-Layer _Current Default\n_SelAll _LayerOff\n_LayerOn Muri", [](Ctx& c) {
+      int vis = 0;
+      ONX_ModelComponentIterator it(c.doc.Model(), ON_ModelComponent::Type::Layer);
+      for (const ON_ModelComponent* m = it.FirstComponent(); m; m = it.NextComponent()) if (ON_Layer::Cast(m)->IsVisible()) vis++;
+      CHECK(vis == 2);
+    });
+    Case("LayerOff", "_-Layer _New Muri\n_-Layer _Current Muri\n_Line 0,0 1,1\n_-Layer _Current Default\n_SelAll _LayerOff", [](Ctx& c) {
+      int off = 0;
+      ONX_ModelComponentIterator it(c.doc.Model(), ON_ModelComponent::Type::Layer);
+      for (const ON_ModelComponent* m = it.FirstComponent(); m; m = it.NextComponent()) if (!ON_Layer::Cast(m)->IsVisible()) off++;
+      CHECK(off == 1);
+    });
+    Case("Rotate3D", "_Line 0,0,0 10,0,0\n_SelAll _Rotate3D 0,0,0 0,1,0 90", [](Ctx& c) {
+      CHECK(NearPt(ON_Curve::Cast(c.Last())->PointAtEnd(), ON_3dPoint(0, 0, -10), 1e-9));
+    });
+    Case("Scale1D", "_Line 0,0 10,10\n_SelAll _Scale1D 0,0 2 1,0", [](Ctx& c) {
+      CHECK(NearPt(ON_Curve::Cast(c.Last())->PointAtEnd(), ON_3dPoint(20, 10, 0), 1e-9));
+    });
+    Case("ScaleNU", "_Line 0,0,0 1,1,1\n_SelAll _ScaleNU 0,0,0 2 3 4", [](Ctx& c) {
+      CHECK(NearPt(ON_Curve::Cast(c.Last())->PointAtEnd(), ON_3dPoint(2, 3, 4), 1e-9));
+    });
+    Case("Orient", "_Line 0,0 10,0\n_SelAll _Orient 0,0 10,0 5,5 5,15", [](Ctx& c) {
+      const auto* cr = ON_Curve::Cast(c.Last());
+      CHECK(NearPt(cr->PointAtStart(), ON_3dPoint(5, 5, 0), 1e-9) && NearPt(cr->PointAtEnd(), ON_3dPoint(5, 15, 0), 1e-9));
+    });
+    Case("Orient_Scale", "_Line 0,0 10,0\n_SelAll _Orient Scale=Yes 0,0 10,0 0,0 0,20", [](Ctx& c) {
+      CHECK(NearPt(ON_Curve::Cast(c.Last())->PointAtEnd(), ON_3dPoint(0, 20, 0), 1e-9));
+    });
+    Case("Orient3Pt", "_Line 0,0 10,0\n_SelAll _Orient3Pt 0,0 10,0 0,10 0,0,5 0,10,5 -10,0,5", [](Ctx& c) {
+      CHECK(NearPt(ON_Curve::Cast(c.Last())->PointAtEnd(), ON_3dPoint(0, 10, 5), 1e-9));
+    });
+    Case("Dot", "_Dot 3,4 \"A1\"", [](Ctx& c) {
+      const auto* d = ON_TextDot::Cast(c.Last());
+      CHECK(d && ToUtf8(d->PrimaryText()) == "A1" && NearPt(d->CenterPoint(), ON_3dPoint(3, 4, 0)));
+    });
+    Case("Hatch", "_Rectangle 0,0 10,10\n_Circle 5,5 2\n_SelAll _Hatch", [](Ctx& c) {
+      const ON_Hatch* h = nullptr;
+      for (auto* g : c.Objects()) if (auto* x = ON_Hatch::Cast(g)) h = x;
+      CHECK(h && h->LoopCount() == 2);
+    });
+    Case("EvaluatePt", "_EvaluatePt 1,2,3", [](Ctx& c) { CHECK(c.log.str().find("1,2,3") != std::string::npos); });
+  }
+
   // Modalita' interattiva: il comando resta in attesa finche' mancano dati.
   {
     std::printf("Interactive\n");
