@@ -145,6 +145,10 @@ Le schede sotto le viste (**Modello**, **Pagina 1**, ...) mostrano le tavole com
 
 Modalita' di visualizzazione **Renderizzato** (colori dei materiali, luci del modello, ombre sul piano di terra) e **Raytraced** (immagine che si affina da sola, calcolata in un thread mentre si lavora), dal menu del titolo della vista o con `SetDisplayMode`. **Render > Rendering** apre la finestra di rendering con il salvataggio in PNG/JPG; da script: `Render Width=1920 Height=1080 Samples=256 File="render.png"`. Luci: `PointLight`, `DirectionalLight`, `SpotLight`, `RectangularLight`; `Sun On Azimuth=135 Altitude=40`, `Skylight`, `GroundPlane`. `SetMaterial Color=200,40,40 Gloss=0.8` assegna un materiale semplice (vetro: `Transparency=0.95 IOR=1.5`).
 
+## Storia di costruzione
+
+Il pulsante **Registra storia** nella barra di stato (o `History Record=Yes`) fa ricordare ai comandi che lo supportano (Loft, ExtrudeCrv, Revolve, Sweep, Pipe, Offset, Array, Mirror, ...) gli oggetti di partenza: se poi si sposta o si modifica una curva di partenza, la superficie creata si ricalcola da sola, come in Rhino 8. `SelChildren`/`SelParents` selezionano figli e ingressi, `HistoryPurge` toglie la storia. Modificare a mano un oggetto figlio interrompe la sua storia.
+
 ## Script Python
 
 Menu **Script > Editor di script** (o il comando `ScriptEditor`): scrivi uno script e premi **Esegui** (F5); l'output di `print` va nella cronologia dei comandi. Gli script usano `import rhinoscriptsyntax as rs` con le stesse funzioni di Rhino 8 (per esempio `rs.AddCircle(rs.WorldXYPlane(), 5)`, `rs.AddBox(...)`, `rs.MoveObject(id, (10, 0, 0))`, `rs.BooleanUnion(ids)`, `rs.Command("_Line 0,0,0 10,0,0")`). Da riga di comando o nelle macro: `RunPythonScript "script.py"` oppure `-RunPythonScript (codice)`. Il Python 3.12 e' incluso nella versione Windows; le differenze rispetto a Rhino sono in [DIFFERENZE](docs/DIFFERENZE.md) (D-064).

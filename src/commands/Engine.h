@@ -33,6 +33,7 @@ public:
   // significa "aspetto altro input", non "Invio".
   explicit TokenStream(const std::string& script, bool appendFinalEnter = true);
   size_t Pos() const { return m_pos; }
+  std::string Join(size_t from, size_t to) const;  // token [from, to) come testo da rieseguire
   // Ricompone i token da "from" in poi (per tenere in sospeso un comando).
   std::string JoinFrom(size_t from) const;
   bool AtEnd() const { return m_pos >= m_tokens.size(); }
@@ -73,6 +74,15 @@ public:
   // Se un comando fallisce dopo aver modificato il modello (es. errore in uno script Python)
   // le modifiche gia' fatte restano, come in Rhino.
   bool keepChangesOnFailure = false;
+  // Storia di costruzione (History): Record = i comandi che la supportano registrano
+  // ingressi e parametri; Update = se un ingresso cambia gli oggetti creati si ricalcolano;
+  // Lock = gli oggetti figli non si possono modificare a mano senza interrompere la storia.
+  bool recordHistory = false;
+  bool historyUpdate = true;
+  bool historyLock = false;
+  static bool SupportsHistory(const std::string& commandName);
+  // Ricalcola gli oggetti con storia i cui ingressi sono cambiati (dopo ogni comando).
+  void UpdateHistory();
   bool NeedsInput() const { return m_needsInput; }
   // Che tipo di input aspetta il comando in sospeso:
   //  Point   = un punto (clic sul piano di costruzione, con osnap)
@@ -208,6 +218,10 @@ private:
   std::vector<ON_UUID> m_selectionOrder, m_prevSelection;
   std::vector<ON_UUID> m_lastCreated, m_previousCreated;
   bool m_collectingCreated = false;
+  bool m_silent = false;  // aggiornamento della storia: niente "Comando: ..." nella cronologia
+  void RecordHistory(const std::string& command, const std::string& args, const std::vector<ON_UUID>& inputs,
+                     const std::vector<std::string>& inputHashes);
+  std::vector<std::string> HashObjects(const std::vector<ON_UUID>& ids) const;
   int m_commandDepth = 0;
   std::vector<std::vector<unsigned char>> m_undo, m_redo;
   std::string m_lastError;
@@ -237,6 +251,7 @@ void RegisterViewCommands(Engine& e);
 void RegisterLayoutCommands(Engine& e);
 void RegisterRenderCommands(Engine& e);
 void RegisterPythonCommands(Engine& e);
+void RegisterHistoryCommands(Engine& e);
 // PDF della tavola attiva o della vista (opzioni come Print)
 bool ExportPdf(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti

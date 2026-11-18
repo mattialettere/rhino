@@ -36,7 +36,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Viste e sezioni | 7 / 7 |
 | Tavole e stampa | 5 / 5 |
 | Script | 2 / 2 |
-| **Totale** | **333 / 333** |
+| Storia | 5 / 5 |
+| **Totale** | **338 / 338** |
 
 ## Punti
 
@@ -483,5 +484,17 @@ Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale sem
 | RunPythonScript | ✔ (Python 3 con un sottoinsieme di rhinoscriptsyntax; anche codice in linea `-RunPythonScript (codice)`; D-064) |
 | ScriptEditor | ✔ (editor con evidenziazione, Apri/Salva, Esegui F5; senza debugger, D-064) |
 
+## Storia
 
-Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (Grasshopper e la cronologia di costruzione restano fuori per ora).
+| Comando | Stato |
+|---|---|
+| History | ✔ (Record, Update, Lock; pulsante "Registra storia" nella barra di stato; D-065) |
+| HistoryPurge | ✔ |
+| SelChildren | ✔ |
+| SelParents | ✔ |
+| SelObjectsWithHistory | ✔ |
+
+Comandi che registrano la storia: Loft, ExtrudeCrv, ExtrudeSrf, ExtrudeCrvToPoint, ExtrudeCrvAlongCrv, ExtrudeCrvTapered, Revolve, RailRevolve, Sweep1, Sweep2, Pipe, Offset, OffsetSrf, PlanarSrf, EdgeSrf, NetworkSrf, Patch, Array, ArrayLinear, ArrayPolar, ArrayCrv, Mirror, Project, Pull, DupEdge, DupBorder, Contour, Intersect, Silhouette, BlendCrv, BlendSrf, FilletSrf, ExtractIsocurve, Smash, Twist, Bend, Taper, Flow (questi ultimi solo quando creano copie).
+
+
+Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (Grasshopper resta fuori per ora).

@@ -60,6 +60,17 @@ TokenStream::TokenStream(const std::string& script, bool appendFinalEnter) {
   if (!m_tokens.empty() && m_tokens.back() != "_Enter") m_tokens.push_back("_Enter");
 }
 
+std::string TokenStream::Join(size_t from, size_t to) const {
+  std::string out;
+  for (size_t i = from; i < to && i < m_tokens.size(); i++) {
+    if (!out.empty()) out += ' ';
+    const std::string& t = m_tokens[i];
+    if (t.empty() || t.find_first_of(" \t;") != std::string::npos) out += '"' + t + '"';
+    else out += t;
+  }
+  return out;
+}
+
 std::string TokenStream::JoinFrom(size_t from) const {
   std::string out;
   for (size_t i = from; i < m_tokens.size(); i++) {
@@ -109,6 +120,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterLayoutCommands(*this);
   RegisterRenderCommands(*this);
   RegisterPythonCommands(*this);
+  RegisterHistoryCommands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
@@ -177,7 +189,7 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   auto it = m_commands.find(NormalizeName(name));
   if (it == m_commands.end()) return Fail("Comando sconosciuto: \"" + name + "\"");
   const CommandInfo& cmd = it->second;
-  if (!interactive) m_out << "Comando: " << cmd.name << "\n";
+  if (!interactive && !m_silent) m_out << "Comando: " << cmd.name << "\n";
   // Comandi annidati (es. rs.Command da uno script): un solo passo di annullamento,
   // quello del comando esterno; gli oggetti creati si sommano a quelli dell'esterno.
   const bool nested = m_commandDepth > 0;
@@ -187,6 +199,12 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   if (nested) outerCreated = m_lastCreated;
   const bool outerCollecting = m_collectingCreated;
   if (!nested) keepChangesOnFailure = false;
+  // storia: ingressi (selezione) e parametri del comando
+  const bool wantHistory = !nested && recordHistory && cmd.modifiesModel && SupportsHistory(cmd.name);
+  const size_t argStart = ts.Pos();
+  std::vector<ON_UUID> histInputs;
+  std::vector<std::string> histHashes;
+  if (wantHistory) { histInputs = Selection(); histHashes = HashObjects(histInputs); }
   m_lastCreated.clear();
   m_collectingCreated = true;
   m_commandDepth++;
@@ -200,6 +218,15 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
     m_lastCreated = std::move(outerCreated);
     return ok;
   }
+  if (ok && cmd.modifiesModel) {
+    if (wantHistory && !histInputs.empty() && !m_lastCreated.empty())
+      RecordHistory(cmd.name, ts.Join(argStart, ts.Pos()), histInputs, histHashes);
+    if (historyUpdate) {
+      m_commandDepth++;
+      UpdateHistory();
+      m_commandDepth--;
+    }
+  }
   if ((ok || keepChangesOnFailure) && cmd.modifiesModel) {
     m_undo.push_back(std::move(before));
     m_redo.clear();
@@ -211,7 +238,7 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   }
   if (ok) {
     m_lastCommandName = cmd.name;
-    if (interactive) m_out << "Comando: " << cmd.name << "\n";
+    if (interactive && !m_silent) m_out << "Comando: " << cmd.name << "\n";
   }
   return ok;
 }

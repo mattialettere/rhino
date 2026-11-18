@@ -882,6 +882,13 @@ void MainWindow::BuildStatusBar() {
   toggle("Orto", S.ortho);
   toggle("Gumball", S.gumball);
   toggle("Osnap", S.osnap);
+  // Registra storia (History Record): i comandi che la supportano ricordano gli ingressi
+  m_historyBtn = new QToolButton;
+  m_historyBtn->setText("Registra storia");
+  m_historyBtn->setToolTip("Storia di costruzione: gli oggetti creati si aggiornano quando cambiano gli ingressi (History)");
+  m_historyBtn->setCheckable(true);
+  connect(m_historyBtn, &QToolButton::toggled, this, [this](bool on) { m_engine.recordHistory = on; });
+  statusBar()->addPermanentWidget(m_historyBtn);
   auto* filt = new QToolButton;
   filt->setText("Filtro");
   filt->setToolTip("Filtro di selezione (SelectionFilter)");
@@ -1185,6 +1192,10 @@ void MainWindow::UpdatePrompt() {
 }
 
 void MainWindow::AfterCommand() {
+  if (m_historyBtn && m_historyBtn->isChecked() != m_engine.recordHistory) {
+    const QSignalBlocker block(m_historyBtn);
+    m_historyBtn->setChecked(m_engine.recordHistory);
+  }
   m_scene.Rebuild();
   if (!ON_UuidIsNil(m_engine.activeLayoutId)) m_layoutView->Refresh();
   UpdatePrompt();

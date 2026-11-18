@@ -102,6 +102,7 @@ private:
   LayoutView* m_layoutView = nullptr;
   bool m_tabsUpdating = false;
   TexturePanel* m_textures = nullptr;
+  QToolButton* m_historyBtn = nullptr;
   std::vector<std::pair<QAction*, QString>> m_iconActions;  // azioni con icona del tema
 };
 

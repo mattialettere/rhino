@@ -2283,6 +2283,65 @@ int main(int argc, char** argv) {
     CHECK(!ai::LicenseAllowed("llama3.1") && !ai::LicenseAllowed("gemma") && !ai::LicenseAllowed("other"));
   }
 
+  {
+    std::printf("Storia\n");
+    Ctx c;
+    CHECK(c.e.Run("_History Record=Yes\n_Circle 0,0,0 5\n_Circle 0,0,10 3\n_SelAll _Loft\n_SelNone"));
+    std::vector<ON_UUID> circles;
+    ON_UUID loft = ON_nil_uuid;
+    for (const auto& id : c.e.AllObjectIds(true)) {
+      const auto* g = c.e.Object(id)->Geometry(nullptr);
+      if (ON_Curve::Cast(g)) circles.push_back(id);
+      else loft = id;
+    }
+    CHECK(circles.size() == 2 && ON_UuidIsNotNil(loft));
+    ON_wString rec;
+    CHECK(c.e.Model().GetDocumentUserString(L"Kurva3D.History", rec) && rec.Length() > 0);
+    auto height = [&](const ON_UUID& id) {
+      ON_BoundingBox b;
+      c.e.Object(id)->Geometry(nullptr)->GetTightBoundingBox(b);
+      return b.m_max.z - b.m_min.z;
+    };
+    CHECK(Near(height(loft), 10, 1e-6));
+    // l'ingresso si sposta: il loft si ricalcola (stesso id) e Annulla torna indietro in un passo
+    c.e.Select(circles[1]);
+    CHECK(c.e.Run("_Move 0,0,0 0,0,5\n_SelNone"));
+    CHECK(c.e.Object(loft) && Near(height(loft), 15, 1e-6));
+    CHECK(c.e.Run("_Undo") && Near(height(loft), 10, 1e-6));
+    CHECK(c.e.Run("_Redo") && Near(height(loft), 15, 1e-6));
+    // a cascata: un'estrusione del bordo del loft... qui un secondo loft che usa il primo cerchio
+    // e una copia: SelChildren / SelParents
+    c.e.ClearSelection();
+    c.e.Select(circles[0]);
+    CHECK(c.e.Run("_SelChildren"));
+    CHECK(c.e.IsSelected(loft));
+    c.e.ClearSelection();
+    c.e.Select(loft);
+    CHECK(c.e.Run("_SelParents") && c.e.IsSelected(circles[0]) && c.e.IsSelected(circles[1]));
+    // salvataggio e riapertura: la storia resta e funziona ancora
+    const std::string f = g_outDir + "/storia.3dm";
+    CHECK(c.doc.Save(f));
+    Ctx d;
+    CHECK(d.doc.Load(f));
+    d.e.Select(circles[0]);
+    CHECK(d.e.Run("_Scale 0,0,0 2\n_SelNone"));
+    { ON_BoundingBox b; d.e.Object(loft)->Geometry(nullptr)->GetTightBoundingBox(b); CHECK(Near(b.m_max.x, 10, 1e-3)); }
+    // modificare a mano il figlio interrompe la storia
+    d.e.Select(loft);
+    CHECK(d.e.Run("_Move 0,0,0 100,0,0\n_SelNone"));
+    ON_wString after;
+    CHECK(!d.e.Model().GetDocumentUserString(L"Kurva3D.History", after) || after.IsEmpty());
+    d.e.Select(circles[1]);
+    CHECK(d.e.Run("_Move 0,0,0 0,0,5\n_SelNone"));
+    { ON_BoundingBox b; d.e.Object(loft)->Geometry(nullptr)->GetTightBoundingBox(b); CHECK(Near(b.m_min.x, 90, 1e-3)); }
+    // senza Record niente storia; HistoryPurge la toglie
+    Ctx e3;
+    CHECK(e3.e.Run("_Line 0,0 10,0\n_SelAll _ExtrudeCrv 5\n_SelNone"));
+    CHECK(!e3.e.Model().GetDocumentUserString(L"Kurva3D.History", after));
+    CHECK(e3.e.Run("_History Record=Yes\n_Line 0,20 10,20\n_SelLast _ExtrudeCrv 5\n_SelNone _SelObjectsWithHistory"));
+    CHECK(e3.e.Selection().size() == 1);
+    CHECK(e3.e.Run("_HistoryPurge All") && !e3.e.Model().GetDocumentUserString(L"Kurva3D.History", after));
+  }
 #ifdef CAD_WITH_PYTHON
   {
     std::printf("Python\n");
