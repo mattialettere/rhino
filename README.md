@@ -118,6 +118,23 @@ interruttori Snap griglia, Orto, Osnap.
 - Tasto destro trascinato: ruota (Perspective) o sposta la vista; Shift+destro
   sposta; Ctrl+destro o rotella: zoom. Doppio clic sul titolo ingrandisce la vista.
 - `kurva3d file.3dm` apre un file; `--script comandi.txt` esegue uno script.
+- **Vista > Tema**: Automatico (segue il chiaro/scuro di Windows), Chiaro o Scuro.
+
+## Assistente AI
+
+Menu **AI > Assistente AI**: descrivi a parole cosa disegnare (per esempio
+"un tavolo 120x80 alto 75 con quattro gambe"). Un modello linguistico che gira
+sul tuo computer (llama.cpp, nessun dato inviato in rete) scrive uno script di
+comandi Kurva3D; il programma lo prova su una copia del documento, lo fa
+correggere al modello se non funziona e lo mostra. **Anteprima** crea gli
+oggetti, **Conferma** li tiene (un solo Annulla li toglie), **Scarta** li
+rimuove. Lo script si puo' modificare a mano prima dell'anteprima.
+
+Al primo uso **Modello...** controlla memoria e scheda video e propone il
+modello adatto (Qwen3 da 1,7B a 32B, licenza Apache 2.0); il download da
+Hugging Face mostra l'avanzamento e verifica licenza e SHA-256. I modelli
+stanno in `%LOCALAPPDATA%\Kurva3D\models`. llama.cpp e' nella cartella
+`llama` accanto a `kurva3d.exe` (usa la scheda video con Vulkan se c'e').
 
 ## Modellare dalla console
 

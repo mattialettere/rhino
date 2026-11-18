@@ -224,6 +224,43 @@ void Dot(QPainter& p, const QColor& c, double x, double y, double r = 1.6) {
 
 const std::map<QString, Draw>& Icons() {
   static const std::map<QString, Draw> m = {
+      {"new", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         p.setPen(k); p.drawPolygon(QPolygonF{{6, 3}, {14, 3}, {18, 7}, {18, 21}, {6, 21}});
+         p.drawPolyline(QPolygonF{{14, 3}, {14, 7}, {18, 7}});
+         p.setPen(a); p.drawLine(QPointF(12, 11), QPointF(12, 17)); p.drawLine(QPointF(9, 14), QPointF(15, 14)); }},
+      {"undo", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         QPainterPath c; c.moveTo(6, 10); c.lineTo(14, 10); c.cubicTo(22, 10, 22, 20, 14, 20); c.lineTo(9, 20);
+         p.setPen(k); p.drawPath(c); p.setPen(a); p.drawPolyline(QPolygonF{{10, 6}, {6, 10}, {10, 14}}); }},
+      {"redo", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         QPainterPath c; c.moveTo(18, 10); c.lineTo(10, 10); c.cubicTo(2, 10, 2, 20, 10, 20); c.lineTo(15, 20);
+         p.setPen(k); p.drawPath(c); p.setPen(a); p.drawPolyline(QPolygonF{{14, 6}, {18, 10}, {14, 14}}); }},
+      {"selall", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         QPen d = k; d.setStyle(Qt::DashLine); d.setWidthF(1.2); p.setPen(d); p.drawRect(QRectF(3, 3, 18, 18));
+         p.setPen(a); p.drawRect(QRectF(7, 7, 5, 5)); p.drawEllipse(QPointF(15, 15), 3, 3); }},
+      {"zoom", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         p.setPen(k); p.drawEllipse(QPointF(10, 10), 6, 6); p.drawLine(QPointF(14.5, 14.5), QPointF(20, 20));
+         p.setPen(a); p.drawLine(QPointF(10, 7), QPointF(10, 13)); p.drawLine(QPointF(7, 10), QPointF(13, 10)); }},
+      {"what", [](QPainter& p, const QPen& k, const QPen& a, const QColor& af) {
+         p.setPen(k); p.drawEllipse(QPointF(12, 12), 9, 9);
+         p.setPen(a); p.drawLine(QPointF(12, 11), QPointF(12, 17)); Dot(p, af, 12, 7.5, 1.4); }},
+      {"layer", [](QPainter& p, const QPen& k, const QPen& a, const QColor& af) {
+         QColor f = af; f.setAlpha(70);
+         p.setPen(k); p.drawPolygon(QPolygonF{{12, 12}, {21, 16}, {12, 20}, {3, 16}});
+         p.setPen(a); p.setBrush(f); p.drawPolygon(QPolygonF{{12, 4}, {21, 8}, {12, 12}, {3, 8}}); }},
+      {"hide", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         QPainterPath e; e.moveTo(3, 12); e.quadTo(12, 3, 21, 12); e.quadTo(12, 21, 3, 12);
+         p.setPen(k); p.drawPath(e); p.drawEllipse(QPointF(12, 12), 2.8, 2.8);
+         p.setPen(a); p.drawLine(QPointF(4, 20), QPointF(20, 4)); }},
+      {"show", [](QPainter& p, const QPen& k, const QPen&, const QColor& af) {
+         QPainterPath e; e.moveTo(3, 12); e.quadTo(12, 3, 21, 12); e.quadTo(12, 21, 3, 12);
+         p.setPen(k); p.drawPath(e); Dot(p, af, 12, 12, 3); }},
+      {"lock", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         p.setPen(k); p.drawRoundedRect(QRectF(5, 11, 14, 10), 2, 2);
+         p.setPen(a); p.drawArc(QRectF(8, 4, 8, 12), 0, 180 * 16); p.drawLine(QPointF(8, 10), QPointF(8, 11));
+         p.drawLine(QPointF(16, 10), QPointF(16, 11)); }},
+      {"unlock", [](QPainter& p, const QPen& k, const QPen& a, const QColor&) {
+         p.setPen(k); p.drawRoundedRect(QRectF(5, 11, 14, 10), 2, 2);
+         p.setPen(a); p.drawArc(QRectF(13, 3, 8, 12), 0, 180 * 16); p.drawLine(QPointF(21, 9), QPointF(21, 11)); }},
       {"line", [](QPainter& p, const QPen& k, const QPen& a, const QColor& af) {
          p.setPen(k); p.drawLine(QPointF(4, 20), QPointF(20, 4));
          Dot(p, af, 4, 20, 2.2); Dot(p, af, 20, 4, 2.2); (void)a; }},
