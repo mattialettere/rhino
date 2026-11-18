@@ -7,6 +7,7 @@
 #include "commands/Grips.h"
 #include "commands/Materials.h"
 #include "commands/Exchange.h"
+#include "print/Page.h"
 #include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
 #include <cmath>
@@ -2067,6 +2068,102 @@ int main(int argc, char** argv) {
     CHECK(!bare.e.Run("_CPlane World Top"));
     CHECK(!bare.e.Run("_NamedView Save X"));
     CHECK(bare.e.Run("_ClippingPlane 0,0,0 1,1,0"));
+  }
+  {
+    std::printf("Tavole_e_PDF\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/tavole";
+    fs::create_directories(dir);
+    Ctx c;
+    CHECK(c.e.Run("_Box 0,0,0 40,30 20\n_Sphere 80,0,10 10\n_Text 0,-20,0 \"Pianta\" Height=5"));
+    const size_t modelObjs = c.e.AllObjectIds(true).size();
+    CHECK(c.e.Run("_Layout \"Tavola 1\" Size=A3 Orientation=Landscape Details=4"));
+    const int li = FindLayout(c.e.Model(), "Tavola 1");
+    CHECK(li >= 0);
+    if (li >= 0) {
+      const auto& v = c.e.Model().m_settings.m_views[li];
+      CHECK(Near(v.m_page_settings.m_width_mm, 420) && Near(v.m_page_settings.m_height_mm, 297));
+      CHECK(c.e.activeLayoutId == v.m_vp.ViewportId());
+    }
+    // nello spazio della tavola ci sono solo i 4 dettagli
+    auto ids = c.e.AllObjectIds(true);
+    int det = 0;
+    for (const auto& id : ids) if (ON_DetailView::Cast(c.e.Object(id)->Geometry(nullptr))) det++;
+    CHECK(ids.size() == 4 && det == 4);
+    // oggetti disegnati nella tavola: spazio pagina
+    CHECK(c.e.Run("_Rectangle 5,5 415,292\n_Text 330,12,0 \"Kurva3D - Tavola 1\" Height=4"));
+    CHECK(c.e.AllObjectIds(true).size() == 6);
+    CHECK(c.e.ObjectIdsInSpace(ON_nil_uuid, true).size() == modelObjs);
+    // scala di un dettaglio
+    CHECK(c.e.Run("_SelNone"));
+    for (const auto& id : c.e.AllObjectIds(true))
+      if (auto* d = ON_DetailView::Cast(c.e.Object(id)->Geometry(nullptr)); d && d->m_view.m_vp.IsParallelProjection()) {
+        c.e.Select(id);
+        break;
+      }
+    CHECK(c.e.Run("_Detail Scale 1:5"));
+    {
+      const auto sel = c.e.Selection();
+      const auto* d = sel.empty() ? nullptr : ON_DetailView::Cast(c.e.Object(sel[0])->Geometry(nullptr));
+      CHECK(d && Near(d->m_page_per_model_ratio, 0.2));
+      if (d) {
+        double l, r, b, t, n, f;
+        d->m_view.m_vp.GetFrustum(&l, &r, &b, &t, &n, &f);
+        const ON_BoundingBox bb = d->m_boundary.BoundingBox();
+        CHECK(Near(r - l, (bb.m_max.x - bb.m_min.x) * 5, 1e-6));
+      }
+    }
+    CHECK(c.e.Run("_Detail Add 20,20 120,100 Projection=Front"));
+    CHECK(c.e.AllObjectIds(true).size() == 7);
+    // seconda tavola copiata, poi tutte in un PDF
+    CHECK(c.e.Run("_CopyLayout \"Tavola 2\""));
+    CHECK(c.e.AllObjectIds(true).size() == 7 && FindLayout(c.e.Model(), "Tavola 2") >= 0);
+    const std::string pdf = dir + "/tavole.pdf";
+    CHECK(c.e.Run("_Print Destination=PDF File=\"" + pdf + "\" View=All"));
+    {
+      std::ifstream f(pdf, std::ios::binary);
+      std::string data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+      CHECK(data.rfind("%PDF-1.4", 0) == 0 && data.find("%%EOF") != std::string::npos);
+      CHECK(data.find("/Count 2") != std::string::npos);
+      CHECK(data.find("/Subtype /Image") != std::string::npos);  // dettaglio prospettico ombreggiato
+      CHECK(data.find("/MediaBox [0 0 1190.551 841.890]") != std::string::npos);
+    }
+    // composizione: linee dentro il foglio, testo della tavola presente
+    {
+      PageDrawing pg;
+      CHECK(ComposeLayout(c.e, FindLayout(c.e.Model(), "Tavola 1"), PrintOptions(), pg));
+      bool inside = !pg.lines.empty();
+      for (const auto& l : pg.lines)
+        for (const auto& p : l.pts) if (p.x < -1e-6 || p.y < -1e-6 || p.x > 420 + 1e-6 || p.y > 297 + 1e-6) inside = false;
+      CHECK(inside);
+      bool title = false;
+      for (const auto& t : pg.texts) if (t.text == "Kurva3D - Tavola 1" && std::fabs(t.heightMm - 4) < 1e-6) title = true;
+      CHECK(title);
+    }
+    // vista del modello su A4, in bianco e nero
+    CHECK(c.e.Run("_Layouts Activate Model\n_Print File=\"" + dir + "/vista.pdf\" View=Top Size=A4 Color=BlackWhite"));
+    CHECK(fs::file_size(dir + "/vista.pdf") > 500);
+    CHECK(c.e.AllObjectIds(true).size() == modelObjs);
+    // annulla la creazione: la tavola attiva sparisce e si torna al modello
+    CHECK(c.e.Run("_Layouts Activate \"Tavola 2\"\n_Layouts Rename \"Tavola 2\" Dettagli\n_Layouts Delete Dettagli"));
+    CHECK(FindLayout(c.e.Model(), "Dettagli") < 0 && ON_UuidIsNil(c.e.activeLayoutId));
+    CHECK(!c.e.Run("_Detail Add 0,0 10,10"));
+    CHECK(!c.e.Run("_Print Destination=PDF"));
+    CHECK(!c.e.Run("_Layout X Size=B7"));
+    // salvataggio: tavole, dettagli e oggetti di pagina nel .3dm
+    const std::string path = dir + "/tavole.3dm";
+    CHECK(c.doc.Save(path));
+    Document3dm back;
+    CHECK(back.Load(path));
+    CHECK(LayoutIndices(back.Model()).size() == 1);
+    int pageObjs = 0, dets = 0;
+    { ONX_ModelComponentIterator it(back.Model(), ON_ModelComponent::Type::ModelGeometry);
+      for (auto* m = it.FirstComponent(); m; m = it.NextComponent())
+        if (auto* g = ON_ModelGeometryComponent::Cast(m); g && g->Attributes(nullptr)->m_space == ON::page_space) {
+          pageObjs++;
+          if (ON_DetailView::Cast(g->Geometry(nullptr))) dets++;
+        } }
+    CHECK(pageObjs == 7 && dets == 5);
   }
   {
     std::printf("AI_lettura_risposta\n");

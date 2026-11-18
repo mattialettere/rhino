@@ -131,6 +131,8 @@ bool CmdNew(Engine& e, TokenStream&) {
   e.Doc().NewEmpty();
   e.ClearSelection();
   e.currentPath.clear();
+  e.activeLayoutId = ON_nil_uuid;
+  if (e.layoutsChanged) e.layoutsChanged();
   return true;
 }
 
@@ -143,12 +145,15 @@ bool CmdOpen(Engine& e, TokenStream& ts) {
     e.Doc().NewEmpty();
     e.ClearSelection();
     e.currentPath.clear();
+    e.activeLayoutId = ON_nil_uuid;
     if (!ImportExchange(e, *path, {})) return false;
     e.ClearSelection();
     return true;
   }
   if (!e.Doc().Load(*path, &log)) return e.Fail("impossibile aprire " + *path);
   e.ClearSelection();
+  e.activeLayoutId = ON_nil_uuid;
+  if (e.layoutsChanged) e.layoutsChanged();
   e.currentPath = *path;
   e.Out() << "  Aperto " << *path << "\n";
   return true;

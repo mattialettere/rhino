@@ -84,6 +84,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterMaterialCommands(*this);
   RegisterExchangeCommands(*this);
   RegisterViewCommands(*this);
+  RegisterLayoutCommands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
@@ -286,6 +287,10 @@ ON_UUID Engine::AddObject(ON_Object* geometry, const ON_3dmObjectAttributes* att
     const ON_ModelComponent* layer = m.ComponentFromId(ON_ModelComponent::Type::Layer, layerId).ModelComponent();
     a->m_layer_index = layer ? layer->Index() : 0;
   }
+  if (!attrs && !ON_UuidIsNil(activeLayoutId)) {
+    a->m_space = ON::page_space;
+    a->m_viewport_id = activeLayoutId;
+  }
   a->m_uuid = ON_CreateId();
   ON_ModelComponentReference ref = m.AddManagedModelGeometryComponent(geometry, a, true);
   const ON_ModelComponent* c = ref.ModelComponent();
@@ -333,7 +338,12 @@ bool Engine::DeleteObject(const ON_UUID& id) {
 }
 
 std::vector<ON_UUID> Engine::AllObjectIds(bool includeHidden) const {
+  return ObjectIdsInSpace(activeLayoutId, includeHidden);
+}
+
+std::vector<ON_UUID> Engine::ObjectIdsInSpace(const ON_UUID& layoutId, bool includeHidden) const {
   std::vector<ON_UUID> ids;
+  const bool page = !ON_UuidIsNil(layoutId);
   ONX_ModelComponentIterator it(m_doc.Model(), ON_ModelComponent::Type::ModelGeometry);
   for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent()) {
     const auto* mgc = ON_ModelGeometryComponent::Cast(c);
@@ -342,6 +352,8 @@ std::vector<ON_UUID> Engine::AllObjectIds(bool includeHidden) const {
     if (!a) continue;
     if (a->IsInstanceDefinitionObject()) continue;  // oggetti dentro i blocchi
     if (!includeHidden && a->Mode() == ON::object_mode::hidden_object) continue;
+    if (page != (a->m_space == ON::page_space)) continue;
+    if (page && a->m_viewport_id != layoutId) continue;
     ids.push_back(a->m_uuid);
   }
   return ids;
@@ -380,6 +392,7 @@ bool Engine::Undo() {
   m_redo.push_back(m_doc.ToBuffer());
   if (!m_doc.FromBuffer(m_undo.back())) return Fail("ripristino non riuscito");
   m_undo.pop_back();
+  CheckActiveLayout();
   return true;
 }
 
@@ -394,6 +407,7 @@ bool Engine::RestoreUndo(size_t depth) {
   m_undo.resize(depth);
   m_redo.clear();
   ClearSelection();
+  CheckActiveLayout();
   return true;
 }
 
@@ -402,7 +416,17 @@ bool Engine::Redo() {
   m_undo.push_back(m_doc.ToBuffer());
   if (!m_doc.FromBuffer(m_redo.back())) return Fail("ripristino non riuscito");
   m_redo.pop_back();
+  CheckActiveLayout();
   return true;
+}
+
+void Engine::CheckActiveLayout() {
+  if (ON_UuidIsNil(activeLayoutId)) return;
+  const auto& views = Model().m_settings.m_views;
+  for (int i = 0; i < views.Count(); i++)
+    if (views[i].m_view_type == ON::view_type::page_view_type && views[i].m_vp.ViewportId() == activeLayoutId) return;
+  activeLayoutId = ON_nil_uuid;
+  if (layoutsChanged) layoutsChanged();
 }
 
 }  // namespace cad

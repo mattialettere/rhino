@@ -1,5 +1,6 @@
 #pragma once
 #include "commands/Engine.h"
+#include "print/Page.h"
 #include "ui/Scene.h"
 #include "ui/Theme.h"
 #include "ui/Viewport.h"
@@ -18,11 +19,14 @@ class QGridLayout;
 class QToolButton;
 class QComboBox;
 class QPushButton;
+class QStackedWidget;
+class QTabBar;
 
 namespace cad::ui {
 
 class AiPanel;
 class TexturePanel;
+class LayoutView;
 
 class MainWindow : public QMainWindow {
   Q_OBJECT
@@ -52,6 +56,9 @@ private:
   bool ApplyTextureToSelection(const QString& file);
   bool CaptureView(const QString& path, int width, int height, bool grid);
   bool AdoptFileViews();
+  void RebuildLayoutTabs();
+  void NewLayoutDialog();
+  bool PrintPages(const std::vector<PageDrawing>& pages);
   void SetTheme(ThemeMode m);
   void RefreshThemeIcons();
   QWidget* BuildToolTabs();
@@ -90,6 +97,10 @@ private:
   Viewport* m_maximized = nullptr;
   Viewport* m_active = nullptr;
   AiPanel* m_ai = nullptr;
+  QStackedWidget* m_stack = nullptr;
+  QTabBar* m_layoutTabs = nullptr;
+  LayoutView* m_layoutView = nullptr;
+  bool m_tabsUpdating = false;
   TexturePanel* m_textures = nullptr;
   std::vector<std::pair<QAction*, QString>> m_iconActions;  // azioni con icona del tema
 };

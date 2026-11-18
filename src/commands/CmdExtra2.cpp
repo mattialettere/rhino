@@ -991,6 +991,7 @@ bool CmdImport(Engine& e, TokenStream& ts) {
     const ON_3dmObjectAttributes* a = mg ? mg->Attributes(nullptr) : nullptr;
     if (!g || !a) continue;
     if (ON_InstanceRef::Cast(g)) { skipped++; continue; }  // i blocchi richiedono le definizioni
+    if (a->m_space == ON::page_space) continue;            // oggetti delle tavole dell'altro file
     ON_3dmObjectAttributes at = *a;
     at.m_layer_index = MatchLayer(e.Model(), src.Model(), a->m_layer_index);
     at.m_material_index = -1;

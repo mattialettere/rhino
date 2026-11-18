@@ -246,6 +246,10 @@ ON_3dmView Viewport::ToView() const {
   v.SetTargetPoint(m_cam.target);
   v.m_cplane = ON_3dmConstructionPlane(m_cam.CPlane());
   v.m_name = ON_wString(KindName(m_cam.kind));
+  v.m_display_mode_id = mode == DisplayMode::Shaded ? ON_StandardDisplayModeId::Shaded
+                        : mode == DisplayMode::Ghosted ? ON_StandardDisplayModeId::Ghosted
+                        : mode == DisplayMode::XRay ? ON_StandardDisplayModeId::XrayShade
+                                                    : ON_StandardDisplayModeId::Wireframe;
   return v;
 }
 

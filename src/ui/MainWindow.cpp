@@ -2,7 +2,13 @@
 #include "ui/AiPanel.h"
 #include "ui/TexturePanel.h"
 #include "ui/Theme.h"
+#include "ui/LayoutView.h"
 #include <QActionGroup>
+#include <QPrintDialog>
+#include <QPrinter>
+#include <QStackedWidget>
+#include <QStandardPaths>
+#include <QTabBar>
 #include <QStyleHints>
 #include <QGuiApplication>
 #include <QAbstractItemView>
@@ -55,6 +61,8 @@ namespace cad::ui {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), m_engine(m_doc, m_out), m_scene(m_engine) {
   m_engine.interactive = true;
+  m_scene.fixedSpace = true;  // le viste mostrano sempre il modello; le tavole hanno la loro scheda
+  Scene::textureCacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation).toStdString() + "/textures";
   // Heightfield: immagini in qualsiasi formato letto da Qt (PNG, JPG, BMP...)
   m_engine.imageLoader = [](const std::string& path, int& w, int& h, std::vector<double>& gray) {
     QImage img(QString::fromStdString(path));
@@ -81,10 +89,18 @@ MainWindow::MainWindow(QWidget* parent)
     return true;
   };
   m_engine.beforeSave = [this] {
+    // viste delle finestre al posto di quelle lette dal file; le tavole restano
     auto& views = m_engine.Model().m_settings.m_views;
+    ON_ClassArray<ON_3dmView> pages;
+    for (int i = 0; i < views.Count(); i++)
+      if (views[i].m_view_type == ON::view_type::page_view_type) pages.Append(views[i]);
     views.Empty();
     for (auto* v : m_views) views.Append(v->ToView());
+    for (int i = 0; i < pages.Count(); i++) views.Append(pages[i]);
   };
+  // Tavole: schede sotto le viste; stampa con la finestra di stampa del sistema
+  m_engine.layoutsChanged = [this] { RebuildLayoutTabs(); };
+  m_engine.printPages = [this](const std::vector<PageDrawing>& pages) { return PrintPages(pages); };
   m_engine.viewCapture = [this](const std::string& path, int w, int h, bool grid) {
     return CaptureView(QString::fromStdString(path), w, h, grid);
   };
@@ -180,7 +196,40 @@ MainWindow::MainWindow(QWidget* parent)
       m_coords->setText(QString("x %1   y %2   z %3").arg(p.x, 0, 'f', 3).arg(p.y, 0, 'f', 3).arg(p.z, 0, 'f', 3));
     });
   }
-  vbox->addWidget(views, 1);
+  // viste del modello e tavole, con le schede in basso come in Rhino 8
+  m_stack = new QStackedWidget;
+  m_stack->addWidget(views);
+  m_layoutView = new LayoutView(m_engine, m_scene);
+  m_stack->addWidget(m_layoutView);
+  connect(m_layoutView, &LayoutView::PointPicked, this, &MainWindow::OnPointPicked);
+  connect(m_layoutView, &LayoutView::ObjectsClicked, this, &MainWindow::OnObjectsClicked);
+  connect(m_layoutView, &LayoutView::MouseWorld, this, [this](ON_3dPoint p) {
+    m_coords->setText(QString("x %1   y %2 mm (tavola)").arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2));
+  });
+  vbox->addWidget(m_stack, 1);
+  m_layoutTabs = new QTabBar;
+  m_layoutTabs->setDrawBase(false);
+  m_layoutTabs->setExpanding(false);
+  m_layoutTabs->setObjectName("layoutTabs");
+  connect(m_layoutTabs, &QTabBar::currentChanged, this, [this](int i) {
+    if (m_tabsUpdating || i < 0) return;
+    const QString name = i == 0 ? QString("Model") : m_layoutTabs->tabText(i);
+    Submit("_Layouts Activate \"" + name + "\"");
+  });
+  {
+    auto* row = new QHBoxLayout;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->addWidget(m_layoutTabs);
+    auto* add = new QToolButton;
+    add->setText("+");
+    add->setToolTip("Nuova tavola (Layout)");
+    add->setAutoRaise(true);
+    connect(add, &QToolButton::clicked, this, [this] { NewLayoutDialog(); });
+    row->addWidget(add);
+    row->addStretch(1);
+    vbox->addLayout(row);
+  }
+  RebuildLayoutTabs();
   {
     const char* ids[4] = {"4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f01", "4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f02",
                           "4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f03", "4b0f1a10-6c21-4d7e-9a3e-0d1c2b3a4f04"};
@@ -347,6 +396,13 @@ void MainWindow::BuildMenus() {
     }
     Submit("_Export \"" + p + "\"");
   });
+  file->addAction("Stampa...", this, [this] { Submit("_Print"); });
+  file->addAction("Esporta PDF...", this, [this] {
+    QString p = QFileDialog::getSaveFileName(this, "Esporta PDF (tavola o vista attiva)", QString(), "PDF (*.pdf)");
+    if (p.isEmpty()) return;
+    if (!p.endsWith(".pdf", Qt::CaseInsensitive)) p += ".pdf";
+    Submit("_Print Destination=PDF File=\"" + p + "\"");
+  });
   file->addAction("Salva vista come immagine...", this, [this] {
     QString p = QFileDialog::getSaveFileName(this, "Salva vista come immagine", QString(), "Immagine PNG (*.png);;Immagine JPEG (*.jpg)");
     if (!p.isEmpty()) Submit("_ViewCaptureToFile \"" + p + "\"");
@@ -417,6 +473,19 @@ void MainWindow::BuildMenus() {
         {{"Nuovo piano di sezione", "_ClippingPlane"}, {"Attiva nella vista", "_EnableClippingPlane"},
          {"Attiva in tutte le viste", "_EnableClippingPlane All"}, {"Disattiva nella vista", "_DisableClippingPlane"},
          {"Disattiva in tutte le viste", "_DisableClippingPlane All"}});
+    {
+      auto* lm = view->addMenu("Tavole (layout)");
+      lm->addAction("Nuova tavola...", this, [this] { NewLayoutDialog(); });
+      sub(lm, {{"Copia tavola attiva", "_CopyLayout"}, {"Aggiungi dettaglio", "_Detail Add"},
+               {"Scala del dettaglio", "_Detail Scale"}, {"Vista del dettaglio", "_Detail Projection"},
+               {"Dettaglio ombreggiato / wireframe", "_Detail DisplayMode"}, {"Inquadra tutto nel dettaglio", "_Detail ZoomExtents"},
+               {"Elenco tavole", "_Layouts List"}});
+      lm->addAction("Elimina tavola attiva", this, [this] {
+        const int li = FindLayout(m_engine.Model(), m_engine.activeLayoutId);
+        if (li < 0) return;
+        Submit("_Layouts Delete \"" + QString::fromStdString(ToUtf8(m_engine.Model().m_settings.m_views[li].m_name)) + "\"");
+      });
+    }
     sub(view->addMenu("Istantanee"),
         {{"Salva istantanea", "_Snapshots Save"}, {"Ripristina istantanea", "_Snapshots Restore"},
          {"Elimina istantanea", "_Snapshots Delete"}, {"Elenco", "_Snapshots List"}});
@@ -1053,6 +1122,7 @@ void MainWindow::UpdatePrompt() {
 
 void MainWindow::AfterCommand() {
   m_scene.Rebuild();
+  if (!ON_UuidIsNil(m_engine.activeLayoutId)) m_layoutView->Refresh();
   UpdatePrompt();
   RefreshPanels();
   QString title = m_engine.currentPath.empty() ? "Senza titolo" : QString::fromStdString(m_engine.currentPath);
@@ -1216,6 +1286,84 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
     }
   }
   return QMainWindow::eventFilter(o, e);
+}
+
+}  // namespace cad::ui
+
+namespace cad::ui {
+
+void MainWindow::RebuildLayoutTabs() {
+  m_tabsUpdating = true;
+  while (m_layoutTabs->count()) m_layoutTabs->removeTab(0);
+  m_layoutTabs->addTab("Modello");
+  int current = 0;
+  const ONX_Model& m = m_engine.Model();
+  for (int li : LayoutIndices(m)) {
+    const auto& v = m.m_settings.m_views[li];
+    const int t = m_layoutTabs->addTab(QString::fromStdString(ToUtf8(v.m_name)));
+    if (v.m_vp.ViewportId() == m_engine.activeLayoutId) current = t;
+  }
+  m_layoutTabs->setCurrentIndex(current);
+  m_tabsUpdating = false;
+  if (current > 0) {
+    m_layoutView->SetLayout(m_engine.activeLayoutId);
+    m_stack->setCurrentIndex(1);
+  } else {
+    m_stack->setCurrentIndex(0);
+  }
+}
+
+void MainWindow::NewLayoutDialog() {
+  QDialog d(this);
+  d.setWindowTitle("Nuova tavola");
+  auto* form = new QFormLayout(&d);
+  auto* name = new QLineEdit;
+  for (int i = 1;; i++) {
+    const std::string n = "Pagina " + std::to_string(i);
+    if (FindLayout(m_engine.Model(), n) < 0) { name->setText(QString::fromStdString(n)); break; }
+  }
+  auto* size = new QComboBox;
+  size->addItems({"A4", "A3", "A2", "A1", "A0", "Letter", "Tabloid"});
+  auto* orient = new QComboBox;
+  orient->addItems({"Orizzontale", "Verticale"});
+  auto* details = new QComboBox;
+  details->addItems({"1", "4", "0"});
+  form->addRow("Nome", name);
+  form->addRow("Formato", size);
+  form->addRow("Orientamento", orient);
+  form->addRow("Dettagli iniziali", details);
+  auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  connect(bb, &QDialogButtonBox::accepted, &d, &QDialog::accept);
+  connect(bb, &QDialogButtonBox::rejected, &d, &QDialog::reject);
+  form->addRow(bb);
+  if (d.exec() != QDialog::Accepted || name->text().trimmed().isEmpty()) return;
+  Submit(QString("_Layout \"%1\" Size=%2 Orientation=%3 Details=%4")
+             .arg(name->text().trimmed(), size->currentText(), orient->currentIndex() ? "Portrait" : "Landscape",
+                  details->currentText()));
+}
+
+bool MainWindow::PrintPages(const std::vector<PageDrawing>& pages) {
+  if (pages.empty()) return false;
+  QPrinter printer(QPrinter::HighResolution);
+  printer.setPageSize(QPageSize(QSizeF(pages[0].widthMm, pages[0].heightMm), QPageSize::Millimeter));
+  printer.setPageOrientation(QPageLayout::Portrait);
+  printer.setFullPage(true);
+  QPrintDialog dlg(&printer, this);
+  dlg.setWindowTitle("Stampa");
+  if (dlg.exec() != QDialog::Accepted) return false;
+  QPainter p;
+  if (!p.begin(&printer)) return false;
+  for (size_t i = 0; i < pages.size(); i++) {
+    if (i) {
+      printer.setPageSize(QPageSize(QSizeF(pages[i].widthMm, pages[i].heightMm), QPageSize::Millimeter));
+      printer.newPage();
+    }
+    const QRectF r = printer.pageLayout().fullRectPixels(printer.resolution());
+    const double s = std::min(r.width() / pages[i].widthMm, r.height() / pages[i].heightMm);
+    PaintPage(p, pages[i], s, 0, 0);
+  }
+  p.end();
+  return true;
 }
 
 }  // namespace cad::ui

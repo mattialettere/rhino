@@ -33,7 +33,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | File | 9 / 9 |
 | Rendering (texture) | 5 / 5 |
 | Viste e sezioni | 7 / 7 |
-| **Totale** | **317 / 317** |
+| Tavole e stampa | 5 / 5 |
+| **Totale** | **322 / 322** |
 
 ## Punti
 
@@ -448,6 +449,16 @@ Comandi in più di Kurva3D (non sono di Rhino 8): **ApplyTexture** (materiale co
 | EnableClippingPlane | ✔ |
 | DisableClippingPlane | ✔ |
 | Snapshots | ✔ (formato non compatibile con Rhino, D-061) |
+
+## Tavole e stampa
+
+| Comando | Stato |
+|---|---|
+| Layout | ✔ (Size, Orientation, Width, Height, Details=0/1/4) |
+| CopyLayout | ✔ |
+| Layouts | ✔ (da riga di comando: List, Activate, Rename, Delete; in Rhino e' un pannello) |
+| Detail | ✔ (Add, Scale, Projection, ZoomExtents, DisplayMode; D-062) |
+| Print | ✔ (stampante o PDF; D-062) |
 
 
 Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (rendering, layout, scripting, Grasshopper restano fuori per ora).

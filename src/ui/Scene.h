@@ -54,6 +54,12 @@ struct ClipPlane {
 class Scene {
 public:
   explicit Scene(Engine& e) : m_engine(e) {}
+  // Spazio mostrato: se fixedSpace, sempre "space" (nil = modello, altrimenti una tavola);
+  // altrimenti lo spazio attivo del motore.
+  bool fixedSpace = false;
+  ON_UUID space = ON_nil_uuid;
+  // Cartella dove estrarre le immagini incorporate delle texture
+  static std::string textureCacheDir;
   // Ricostruisce (con cache delle mesh) dopo ogni comando.
   void Rebuild();
   void RefreshSelection();

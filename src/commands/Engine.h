@@ -113,7 +113,10 @@ public:
   const ON_ModelGeometryComponent* Object(const ON_UUID& id) const;
   ON_Geometry* EditableGeometry(const ON_UUID& id);
   ON_3dmObjectAttributes* EditableAttributes(const ON_UUID& id);
+  // Oggetti dello spazio attivo: il modello, o la tavola attiva (activeLayoutId).
   std::vector<ON_UUID> AllObjectIds(bool includeHidden = false) const;
+  // Oggetti di uno spazio: nil = modello, altrimenti l'id della tavola.
+  std::vector<ON_UUID> ObjectIdsInSpace(const ON_UUID& layoutId, bool includeHidden = false) const;
 
   // --- selezione ---
   // Oggetti selezionati ancora esistenti, nell'ordine in cui sono stati
@@ -143,6 +146,8 @@ public:
   size_t UndoDepth() const { return m_undo.size(); }
   void SquashUndo(size_t depth);
   bool RestoreUndo(size_t depth);
+  // Dopo annulla/apertura: se la tavola attiva non esiste piu' si torna al modello.
+  void CheckActiveLayout();
 
   // --- messaggi ---
   std::ostream& Out() { return m_out; }
@@ -170,6 +175,11 @@ public:
   std::function<bool(const ON_Plane*)> setActiveCPlane;
   std::function<void()> beforeSave;         // l'interfaccia scrive le viste correnti nel modello
   ON_UUID activeViewportId = ON_nil_uuid;   // vista attiva (piani di sezione)
+  // Tavola attiva (Layout): nil = spazio del modello. I nuovi oggetti vanno nello spazio attivo.
+  ON_UUID activeLayoutId = ON_nil_uuid;
+  std::function<void()> layoutsChanged;     // l'interfaccia aggiorna le schede delle tavole
+  // Stampa su stampante (dalla finestra): pagine gia' composte
+  std::function<bool(const std::vector<struct PageDrawing>&)> printPages;
   std::vector<ON_UUID> viewportIds;         // tutte le viste della finestra
   // ViewCaptureToFile/ToClipboard: immagine della vista attiva (percorso vuoto = appunti);
   // larghezza e altezza 0 = come la vista
@@ -215,6 +225,9 @@ void RegisterExtra6Commands(Engine& e);
 void RegisterMaterialCommands(Engine& e);
 void RegisterExchangeCommands(Engine& e);
 void RegisterViewCommands(Engine& e);
+void RegisterLayoutCommands(Engine& e);
+// PDF della tavola attiva o della vista (opzioni come Print)
+bool ExportPdf(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti
 int UpdateCageCaptives(Engine& e, const ON_UUID& cageId);
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.

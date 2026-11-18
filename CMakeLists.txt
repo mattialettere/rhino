@@ -41,6 +41,9 @@ add_library(cadcore STATIC
   src/commands/CmdMaterial.cpp src/commands/Materials.h
   src/commands/Exchange.cpp src/commands/Exchange.h
   src/commands/CmdViews.cpp
+  src/commands/CmdLayout.cpp
+  src/print/Page.cpp src/print/Page.h src/print/Pdf.cpp
+  src/ui/Scene.cpp src/ui/Scene.h
   src/commands/CmdExtra2.cpp
   src/commands/Grips.cpp
   src/commands/CmdExtra3.cpp
@@ -88,6 +91,9 @@ if(MSVC)
   # sorgenti in UTF-8 (testi italiani, simboli); file grandi di OpenCASCADE
   target_compile_options(cadcore PUBLIC /utf-8 /bigobj)
   target_link_libraries(cadcore PUBLIC opennurbsStatic)
+  if(TARGET zlib)
+    target_link_libraries(cadcore PUBLIC zlib)  # PDF compressi (Pdf.cpp)
+  endif()
 elseif(APPLE)
   # il linker di Apple risolve i riferimenti incrociati tra librerie statiche da solo
   target_link_libraries(cadcore PUBLIC opennurbsStatic zlib)
@@ -107,7 +113,7 @@ add_executable(cad-console tools/cad-console/main.cpp)
 target_link_libraries(cad-console PRIVATE cadcore)
 
 # Interfaccia grafica (Qt 6, opzionale)
-find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets Network)
+find_package(Qt6 QUIET COMPONENTS Widgets OpenGL OpenGLWidgets Network PrintSupport)
 if(Qt6_FOUND)
   message(STATUS "Qt ${Qt6_VERSION}: interfaccia grafica kurva3d attiva")
   set(CMAKE_AUTOMOC ON)
@@ -146,7 +152,7 @@ if(Qt6_FOUND)
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
     src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
-    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/Scene.cpp src/ui/Scene.h
+    src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h
     src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})
   if(APPLE)
     # versione minima di macOS: quella delle librerie Homebrew con cui si compila
@@ -157,7 +163,7 @@ if(Qt6_FOUND)
   endif()
   target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_PUBLISHER="${KURVA3D_PUBLISHER}">)
   target_compile_definitions(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:KURVA3D_VERSION="${PROJECT_VERSION}">)
-  target_link_libraries(kurva3d PRIVATE cadcore kurva3d-ai Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets)
+  target_link_libraries(kurva3d PRIVATE cadcore kurva3d-ai Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::PrintSupport)
   if(MSVC)
     target_compile_options(kurva3d PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/UWIN32>)
   endif()

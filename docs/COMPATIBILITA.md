@@ -41,6 +41,7 @@ Tutti i file di Rhino 6, 7 e 8 risultano identici.
 | Piani di sezione (clipping) | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | Da file Rhino 8. Creati da ClippingPlane (0.10): piano, estensione, viste in cui sono attivi; salvataggio e rilettura testati; **direzione del taglio non ancora confrontata con Rhino 8 reale** (D-061) |
 | Luci | 🟡 | 🟡 | 🟡 | ⬜ | bytes serializzati | |
 | Viste con nome, unità, tolleranza | 🟡 | 🟡 | 🟡 | ⬜ | numero viste, unità, tolleranza assoluta | Contenuto delle viste non confrontato. NamedView e NamedCPlane (0.10) scrivono nelle stesse tabelle di Rhino (m_named_views, m_named_cplanes): nome, camera e piano testati in salvataggio e rilettura. Le viste delle finestre si salvano nel file e si rileggono all'apertura (viste con lo stesso nome) |
+| Tavole e dettagli (layout) | 🟡 | 🟡 | 🟡 | ⬜ | numero di tavole, oggetti nello spazio pagina | Create da Layout/Detail (0.11): vista di tipo pagina con dimensioni in mm, ON_DetailView con vista, scala e bordo, oggetti con spazio pagina e id della tavola; salvataggio e rilettura testati (test "Tavole_e_PDF"); **da aprire in Rhino 8 reale** |
 | Istantanee (Snapshots) | 🔴 | 🔴 | 🔴 | ⬜ | — | Formato proprio di Kurva3D in una stringa del documento: Rhino non le vede e Kurva3D non legge quelle di Rhino (D-061) |
 | Mappature delle texture | 🟡 | 🟡 | 🟡 | ⬜ | tipo di mappatura, canale dell'oggetto | Create da ApplyTexture e Apply*Mapping (0.8) |
 | Testo utente (attributi), cronologia, file incorporati | ⬜ | ⬜ | ⬜ | ⬜ | non confrontati | Da aggiungere al confronto |

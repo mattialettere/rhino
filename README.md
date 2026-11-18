@@ -133,6 +133,10 @@ Width=, Height=, DrawGrid=No) salva la vista attiva in PNG o JPG.
 
 Menu **Vista**: piano di costruzione della vista attiva (`CPlane`), viste e piani con nome (`NamedView`, `NamedCPlane`, salvati nel .3dm come in Rhino), piani di sezione (`ClippingPlane` disegna un rettangolo sul piano di costruzione e taglia la vista attiva; `EnableClippingPlane`/`DisableClippingPlane` con `All` per tutte le viste) e istantanee (`Snapshots`: vista, livelli e stato degli oggetti). Le viste delle finestre vengono salvate nel file e ritrovate alla riapertura.
 
+## Tavole, stampa e PDF
+
+Le schede sotto le viste (**Modello**, **Pagina 1**, ...) mostrano le tavole come in Rhino 8; il **+** crea una tavola (formato A4-A0, orientamento, 1 o 4 dettagli). Nella tavola si disegna in millimetri sul foglio (cornici, testi); `Detail Add` aggiunge un dettaglio, `Detail Scale 1:50` lo mette in scala. **File > Stampa...** usa la stampante di sistema, **File > Esporta PDF...** scrive un PDF vettoriale (le viste ombreggiate sono immagini). Da riga di comando: `Print Destination=PDF File="tavole.pdf" View=All`.
+
 ## Texture
 
 Pannello **Texture** (a destra, o menu **Render > Pannello Texture**): mostra le

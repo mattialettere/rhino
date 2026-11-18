@@ -2,7 +2,6 @@
 #ifdef CAD_WITH_OCCT
 #include "core/SubDLimit.h"
 #include "commands/Materials.h"
-#include <QStandardPaths>
 #include "kernel/OcctConvert.h"
 #endif
 #include <cmath>
@@ -398,12 +397,14 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
   }
 }
 
+std::string Scene::textureCacheDir;
+
 void Scene::Rebuild() {
   m_objects.clear();
   m_clips.clear();
   std::map<std::string, std::shared_ptr<ON_Mesh>> newCache;
   ONX_Model& model = m_engine.Model();
-  for (const auto& id : m_engine.AllObjectIds(false)) {
+  for (const auto& id : fixedSpace ? m_engine.ObjectIdsInSpace(space) : m_engine.AllObjectIds(false)) {
     const auto* o = m_engine.Object(id);
     const ON_Geometry* g = o->Geometry(nullptr);
     const ON_3dmObjectAttributes* a = o->Attributes(nullptr);
@@ -425,6 +426,15 @@ void Scene::Rebuild() {
     if (const auto* sd = ON_SubD::Cast(g)) sig += "|" + std::string(static_cast<const char*>(sd->GeometryHash().ToUTF8String(false)));
     else sig += "|" + std::to_string(g->DataCRC(0));
 
+    if (const auto* dv = ON_DetailView::Cast(g)) {
+      // dettaglio di una tavola: il bordo (il contenuto lo disegna la tavola)
+      std::vector<ON_3dPoint> w;
+      TessellateCurve(dv->m_boundary, w);
+      for (const auto& q : w) d.snapPoints.push_back({q, SnapKind::End});
+      d.wires.push_back(w);
+      m_objects.push_back(std::move(d));
+      continue;
+    }
     if (const auto* cp = ON_ClippingPlaneSurface::Cast(g)) {
       // piano di sezione: rettangolo con la freccia della direzione di vista (lato visibile)
       const ON_Plane& pl = cp->m_clipping_plane.m_plane;
@@ -468,9 +478,7 @@ void Scene::Rebuild() {
 void Scene::ApplyTexture(const ON_3dmObjectAttributes& a, DisplayObject& d) {
   ObjectTexture t;
   if (!GetObjectTexture(m_engine.Model(), a, t)) return;
-  static const std::string cache =
-      QStandardPaths::writableLocation(QStandardPaths::CacheLocation).toStdString() + "/textures";
-  d.texture = ResolveTextureFile(m_engine.Model(), t.file, cache);
+  d.texture = ResolveTextureFile(m_engine.Model(), t.file, textureCacheDir);
   if (d.texture.empty()) return;
   d.diffuse = t.diffuse;
   const ON_Mesh& m = *d.shaded;
