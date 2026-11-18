@@ -1,11 +1,18 @@
-# Compilazione di Kurva3D per Windows 64 bit e macOS (Apple Silicon e Intel):
-# compila, esegue i test, prova l'interfaccia, crea zip/installer/dmg e, se il
-# file RELEASE contiene una versione nuova, pubblica la Release con tutti i file.
+# Compilazione di Kurva3D: Windows 64 bit a ogni push; macOS (Apple Silicon e
+# Intel) solo a mano (Actions -> Build -> Run workflow, "mac" attivo), quando
+# il titolare decide di convertire la versione piu' avanzata.
+# Se il file RELEASE contiene una versione nuova si crea la Release; se esiste
+# gia' e si e' compilato anche per Mac, i dmg si aggiungono alla Release.
 name: Build
 
 on:
   push:
   workflow_dispatch:
+    inputs:
+      mac:
+        description: "Compila anche per Mac e allega i dmg alla release del file RELEASE"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # per pubblicare la Release (file RELEASE)
@@ -128,6 +135,7 @@ jobs:
           path: dist
 
   macos:
+    if: github.event_name == 'workflow_dispatch' && inputs.mac
     strategy:
       fail-fast: false
       matrix:
@@ -248,7 +256,9 @@ jobs:
   # Le versioni gia' pubblicate non vengono toccate.
   release:
     needs: [windows, macos]
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      always() && github.ref == 'refs/heads/main' && needs.windows.result == 'success' &&
+      (needs.macos.result == 'success' || needs.macos.result == 'skipped')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -259,13 +269,23 @@ jobs:
           path: art
       - name: Release (versione nel file RELEASE)
         run: |
+          shopt -s nullglob
           tag=$(head -1 RELEASE | tr -d '[:space:]')
           [ -n "$tag" ] || exit 0
+          dmgs=(art/kurva3d-mac-*/out/*.dmg)
           if draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null); then
-            if [ "$draft" != "true" ]; then echo "Release $tag gia' presente"; exit 0; fi
+            if [ "$draft" != "true" ]; then
+              if [ ${#dmgs[@]} -gt 0 ]; then
+                gh release upload "$tag" "${dmgs[@]}" --clobber
+                echo "dmg aggiunti alla release $tag"
+              else
+                echo "Release $tag gia' presente"
+              fi
+              exit 0
+            fi
             gh release delete "$tag" --yes   # bozza rimasta da un'esecuzione interrotta
           fi
           (cd art/kurva3d-windows-x64 && zip -qr "$GITHUB_WORKSPACE/kurva3d-windows-x64-$tag.zip" .)
-          files=("kurva3d-windows-x64-$tag.zip" art/kurva3d-setup/Kurva3D-Setup-*.exe art/kurva3d-mac-*/out/*.dmg)
+          files=("kurva3d-windows-x64-$tag.zip" art/kurva3d-setup/Kurva3D-Setup-*.exe "${dmgs[@]}")
           ls -la "${files[@]}"
-          gh release create "$tag" "${files[@]}" --target "$GITHUB_SHA" --title "Kurva3D $tag (Windows e macOS)" --notes-file docs/RELEASE_NOTES.md
+          gh release create "$tag" "${files[@]}" --target "$GITHUB_SHA" --title "Kurva3D $tag" --notes-file docs/RELEASE_NOTES.md
