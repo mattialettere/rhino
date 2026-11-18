@@ -11,6 +11,7 @@
 #include <BRepOffsetAPI_MakeFilling.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepPrimAPI_MakeWedge.hxx>
+#include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRep_Tool.hxx>
 #include <GeomFill_BSplineCurves.hxx>
 #include <TopExp_Explorer.hxx>
@@ -360,6 +361,34 @@ bool CmdWedge(Engine& e, TokenStream& ts) {
   if (!br) return e.Fail("cuneo: conversione non riuscita");
   return Created(e, e.AddObject(br), "cuneo");
 }
+
+// MergeAllFaces: unisce le facce adiacenti che stanno sulla stessa superficie.
+bool CmdMergeAllFaces(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("MergeAllFaces", "seleziona le polisuperfici, poi Invio");
+  if (sel.empty()) return false;
+  int n = 0, before = 0, after = 0;
+  for (const auto& id : sel) {
+    std::unique_ptr<ON_Brep> holder;
+    const ON_Geometry* g = Geo(e, id);
+    const ON_Brep* b = ON_Brep::Cast(g);
+    if (!b && g && g->HasBrepForm()) { holder.reset(g->BrepForm()); b = holder.get(); }
+    if (!b) continue;
+    try {
+      ShapeUpgrade_UnifySameDomain u(occt::BrepToShape(*b, e.Tolerance()), Standard_True, Standard_True, Standard_True);
+      u.Build();
+      ON_Brep* nb = occt::ShapeToBrep(u.Shape(), e.Tolerance());
+      if (!nb) continue;
+      before += b->m_F.Count();
+      after += nb->m_F.Count();
+      e.ReplaceObject(id, nb);
+      n++;
+    } catch (...) {
+    }
+  }
+  if (!n) return e.Fail("nessuna polisuperficie modificata");
+  e.Out() << "  Facce: " << before << " -> " << after << "\n";
+  return true;
+}
 #endif
 
 }  // namespace
@@ -382,6 +411,7 @@ void RegisterSurfaceMoreCommands(Engine& e) {
   reg("Patch", "Superfici", "Superficie che passa per curve e punti", CmdPatch);
   reg("Pyramid", "Solidi", "Piramide (NumSides=, centro, vertice, altezza)", CmdPyramid);
   reg("Wedge", "Solidi", "Cuneo (due angoli, altezza)", CmdWedge);
+  reg("MergeAllFaces", "Solidi", "Unisce le facce complanari o sulla stessa superficie", CmdMergeAllFaces);
 #endif
 }
 

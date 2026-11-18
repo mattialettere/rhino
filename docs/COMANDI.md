@@ -18,20 +18,20 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Curve: linee e polilinee | 6 / 11 |
 | Curve: forme | 16 / 19 |
 | Curve: forme libere | 8 / 18 |
-| Curve da oggetti | 9 / 14 |
+| Curve da oggetti | 11 / 14 |
 | Superfici | 18 / 29 |
-| Solidi | 21 / 24 |
+| Solidi | 22 / 24 |
 | SubD | 6 / 23 |
 | Mesh | 10 / 19 |
 | Trasformazioni | 17 / 30 |
 | Modifica | 24 / 34 |
-| Selezione | 17 / 19 |
+| Selezione | 18 / 19 |
 | Blocchi | 3 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 11 / 14 |
 | Analisi | 10 / 15 |
-| File | 4 / 7 |
-| **Totale** | **197 / 303** |
+| File | 7 / 7 |
+| **Totale** | **204 / 303** |
 
 ## Punti
 
@@ -124,8 +124,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Silhouette | 🧱 |
 | Intersect | ✔ |
 | CreateUVCrv | ✔ |
-| ExtractIsocurve | ⬜ |
-| ExtractWireframe | ⬜ |
+| ExtractIsocurve | ✔ |
+| ExtractWireframe | ✔ |
 | ProjectToCPlane | ✔ |
 | Make2D | 🧱 |
 
@@ -187,7 +187,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | FilletEdge | ✔ |
 | ChamferEdge | ✔ |
 | Shell | ✔ |
-| MergeAllFaces | ⬜ |
+| MergeAllFaces | ✔ |
 | MoveFace | 🧱 |
 | ExtractSrf | ✔ |
 | Slab | 🧱 |
@@ -325,7 +325,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | SelAll | ✔ |
 | SelNone | ✔ |
 | SelLast | ✔ |
-| SelPrev | ⬜ |
+| SelPrev | ✔ |
 | SelCrv | ✔ |
 | SelPt | ✔ |
 | SelSrf | ✔ |
@@ -417,8 +417,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Open | ✔ |
 | Save | ✔ |
 | SaveAs | ✔ |
-| Import | ⬜ |
-| Export | ⬜ |
-| IncrementalSave | ⬜ |
+| Import | ✔ |
+| Export | ✔ |
+| IncrementalSave | ✔ |
 
 Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (rendering, layout, scripting, Grasshopper restano fuori per ora).

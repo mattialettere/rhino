@@ -120,7 +120,13 @@ public:
   void Select(const ON_UUID& id) { if (m_selection.insert(id).second) m_selectionOrder.push_back(id); }
   void Deselect(const ON_UUID& id);
   bool IsSelected(const ON_UUID& id) const { return m_selection.count(id) > 0; }
-  void ClearSelection() { m_selection.clear(); m_selectionOrder.clear(); }
+  void ClearSelection() {
+    if (!m_selectionOrder.empty()) m_prevSelection = m_selectionOrder;
+    m_selection.clear();
+    m_selectionOrder.clear();
+  }
+  // Ultima selezione non vuota prima dell'attuale (SelPrev).
+  const std::vector<ON_UUID>& PreviousSelection() const { return m_prevSelection; }
   // Oggetti creati dall'ultimo comando che ha creato qualcosa (per SelLast).
   const std::vector<ON_UUID>& LastCreated() const { return m_previousCreated; }
   // Oggetti selezionati. Se non ce ne sono: in modalita' interattiva il comando
@@ -146,7 +152,7 @@ private:
   std::ostream& m_out;
   std::map<std::string, CommandInfo> m_commands;  // chiave: nome normalizzato
   std::set<ON_UUID, UuidLess> m_selection;
-  std::vector<ON_UUID> m_selectionOrder;
+  std::vector<ON_UUID> m_selectionOrder, m_prevSelection;
   std::vector<ON_UUID> m_lastCreated, m_previousCreated;
   bool m_collectingCreated = false;
   std::vector<std::vector<unsigned char>> m_undo, m_redo;

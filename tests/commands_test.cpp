@@ -983,6 +983,31 @@ int main(int argc, char** argv) {
     Case("PointsOff", "_Line 0,0 1,1\n_SelAll _PointsOn\n_PointsOff", [](Ctx& c) {
       CHECK(c.e.pointsOn.empty());
     });
+    Case("Export_Import", "-_Layer _New Rosso\n_CurrentLayer Rosso\n_Circle 0,0 5\n_Line 0,0 9,9\n_SelNone _SelCrv", [](Ctx& c) {
+      const std::string f = g_outDir + "/export_test.3dm";
+      std::remove(f.c_str());
+      c.e.ClearSelection();
+      c.e.Select(c.e.AllObjectIds().front());
+      CHECK(c.e.Run("_Export \"" + f + "\""));
+      Ctx d;
+      CHECK(d.e.Run("_Import \"" + f + "\""));
+      CHECK(d.Objects().size() == 1 && ON_ArcCurve::Cast(d.Last()));
+      const auto* a = d.e.Object(d.e.AllObjectIds().front())->Attributes(nullptr);
+      const auto* l = a ? ON_Layer::Cast(d.e.Model().LayerFromIndex(a->m_layer_index).ModelComponent()) : nullptr;
+      CHECK(l && ON_wString::EqualOrdinal(l->Name(), L"Rosso", true));
+    });
+    Case("IncrementalSave", "_Point 0,0", [](Ctx& c) {
+      const std::string base = g_outDir + "/incr";
+      std::remove((base + " 001.3dm").c_str());
+      std::remove((base + " 002.3dm").c_str());
+      c.e.currentPath = base + ".3dm";
+      CHECK(c.e.Run("_IncrementalSave"));
+      CHECK(c.e.Run("_IncrementalSave"));
+      CHECK(c.e.currentPath == base + " 002.3dm");
+    });
+    Case("SelPrev", "_Point 0,0\n_Point 1,1\n_SelAll\n_SelNone\n_SelPrev", [](Ctx& c) {
+      CHECK(c.e.Selection().size() == 2);
+    });
     Case("Purge", "-_Layer _New A\n-_Layer _New B\n_CurrentLayer B\n_Point 0,0\n_Purge", [](Ctx& c) {
       CHECK(c.log.str().find("Eliminati") != std::string::npos);
       int layers = 0;
@@ -1042,6 +1067,41 @@ int main(int argc, char** argv) {
       CHECK(ON_Brep::Cast(c.Last()) && ON_Brep::Cast(c.Last())->IsSolid());
       // base quadrata di diagonale 2*sqrt(50) -> lato 10, area 100
       CHECK(Near(num(c, "Volume = "), 100.0 * 6.0 / 3.0, 1e-3));
+    });
+    Case("MergeAllFaces", "_Box 0,0,0 10,10 10\n_Box 10,0,0 20,10 10\n_SelAll _BooleanUnion\n_SelAll _MergeAllFaces\n_SelAll _Volume", [&](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->m_F.Count() == 6 && b->IsSolid());
+      CHECK(Near(num(c, "Volume = "), 2000.0, 1e-6));
+    });
+    Case("ExtractWireframe", "_Sphere 0,0,0 5\n_SelAll _ExtractWireframe", [](Ctx& c) {
+      int curves = 0;
+      for (auto* g : c.Objects()) if (ON_Curve::Cast(g)) curves++;
+      CHECK(curves > 4);
+    });
+    Case("ExtractIsocurve", "_Plane 0,0 10,10\n_SelAll _ExtractIsocurve Direction=Both 3,4,0 _Enter", [](Ctx& c) {
+      std::vector<const ON_Curve*> cs;
+      for (auto* g : c.Objects()) if (auto* cv = ON_Curve::Cast(g)) cs.push_back(cv);
+      CHECK(cs.size() == 2);
+      bool hasU = false, hasV = false;
+      for (auto* cv : cs) {
+        if (NearPt(cv->PointAtStart(), ON_3dPoint(0, 4, 0), 1e-6) && NearPt(cv->PointAtEnd(), ON_3dPoint(10, 4, 0), 1e-6)) hasU = true;
+        if (NearPt(cv->PointAtStart(), ON_3dPoint(3, 0, 0), 1e-6) && NearPt(cv->PointAtEnd(), ON_3dPoint(3, 10, 0), 1e-6)) hasV = true;
+      }
+      CHECK(hasU && hasV);
+    });
+    Case("ExtractIsocurve_tagliata", "_Box 0,0,0 10,10 10\n_Cylinder 5,5,-1 2 12\n_SelAll _BooleanDifference\n_SelAll _ExtractIsocurve Direction=U 5,1,10 _Enter", [](Ctx& c) {
+      // la linea y=1 sulla faccia superiore non tocca il foro: un solo pezzo lungo 10
+      double L = 0;
+      int n = 0;
+      for (auto* g : c.Objects()) if (auto* cv = ON_Curve::Cast(g)) { L += Len(cv); n++; }
+      CHECK(n == 1 && Near(L, 10.0, 1e-3));
+    });
+    Case("ExtractIsocurve_foro", "_Box 0,0,0 10,10 10\n_Cylinder 5,5,-1 2 12\n_SelAll _BooleanDifference\n_SelAll _ExtractIsocurve Direction=U 1,5,10 _Enter", [](Ctx& c) {
+      // la linea y=5 attraversa il foro di raggio 2: due pezzi lunghi 3
+      double L = 0;
+      int n = 0;
+      for (auto* g : c.Objects()) if (auto* cv = ON_Curve::Cast(g)) { L += Len(cv); n++; }
+      CHECK(n == 2 && Near(L, 6.0, 1e-3));
     });
     Case("Wedge", "_Wedge 0,0,0 10,4 3\n_SelAll _Volume", [&](Ctx& c) {
       CHECK(Near(num(c, "Volume = "), 10.0 * 4.0 * 3.0 / 2.0, 1e-6));

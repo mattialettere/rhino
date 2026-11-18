@@ -10,6 +10,8 @@
 #include "core/SubDLimit.h"
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <set>
@@ -924,6 +926,318 @@ bool CmdGripMove(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// --- File ------------------------------------------------------------------------
+// Livello con lo stesso nome nel modello di destinazione (creato se manca).
+int MatchLayer(ONX_Model& dst, const ONX_Model& src, int srcIndex) {
+  const auto* sl = ON_Layer::Cast(src.LayerFromIndex(srcIndex).ModelComponent());
+  if (!sl) return 0;
+  ONX_ModelComponentIterator it(dst, ON_ModelComponent::Type::Layer);
+  for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent())
+    if (const auto* l = ON_Layer::Cast(c); l && ON_wString::EqualOrdinal(l->Name(), sl->Name(), true)) return l->Index();
+  return dst.AddLayer(static_cast<const wchar_t*>(sl->Name()), sl->Color());
+}
+
+// Import: aggiunge al modello gli oggetti di un altro file .3dm (livelli per nome).
+bool CmdImport(Engine& e, TokenStream& ts) {
+  auto path = e.ReadString(ts, "file da importare");
+  if (!path) return false;
+  Document3dm src;
+  if (!src.Load(Unquote(*path))) return e.Fail("impossibile aprire " + Unquote(*path));
+  e.ClearSelection();
+  int n = 0, skipped = 0;
+  ONX_ModelComponentIterator it(src.Model(), ON_ModelComponent::Type::ModelGeometry);
+  for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent()) {
+    const auto* mg = ON_ModelGeometryComponent::Cast(c);
+    const ON_Geometry* g = mg ? mg->Geometry(nullptr) : nullptr;
+    const ON_3dmObjectAttributes* a = mg ? mg->Attributes(nullptr) : nullptr;
+    if (!g || !a) continue;
+    if (ON_InstanceRef::Cast(g)) { skipped++; continue; }  // i blocchi richiedono le definizioni
+    ON_3dmObjectAttributes at = *a;
+    at.m_layer_index = MatchLayer(e.Model(), src.Model(), a->m_layer_index);
+    at.m_material_index = -1;
+    at.SetMaterialSource(ON::material_from_layer);
+    at.m_linetype_index = -1;
+    at.SetLinetypeSource(ON::linetype_from_layer);
+    at.RemoveFromAllGroups();
+    const ON_UUID id = e.AddObject(g->Duplicate(), &at);
+    if (!ON_UuidIsNil(id)) { e.Select(id); n++; }
+  }
+  e.Out() << "  Importati " << n << " oggetti";
+  if (skipped) e.Out() << " (" << skipped << " blocchi non importati)";
+  e.Out() << "\n";
+  return n > 0 || e.Fail("nessun oggetto importato");
+}
+
+// Export (Esporta selezione): salva gli oggetti selezionati in un nuovo file Rhino 8.
+bool CmdExport(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("Export", "seleziona gli oggetti da esportare, poi Invio");
+  if (sel.empty()) return false;
+  auto path = e.ReadString(ts, "nome del file");
+  if (!path) return false;
+  Document3dm out;
+  out.NewEmpty();
+  out.Model().m_settings.m_ModelUnitsAndTolerances = e.Model().m_settings.m_ModelUnitsAndTolerances;
+  int n = 0;
+  for (const auto& id : sel) {
+    const ON_Geometry* g = Geo(e, id);
+    if (!g || ON_InstanceRef::Cast(g)) continue;
+    ON_3dmObjectAttributes at = AttrsOf(e, id);
+    at.m_layer_index = MatchLayer(out.Model(), e.Model(), at.m_layer_index);
+    at.m_material_index = -1;
+    at.SetMaterialSource(ON::material_from_layer);
+    at.m_linetype_index = -1;
+    at.SetLinetypeSource(ON::linetype_from_layer);
+    at.RemoveFromAllGroups();
+    auto* a = new ON_3dmObjectAttributes(at);
+    if (!out.Model().AddManagedModelGeometryComponent(g->Duplicate(), a, true).IsEmpty()) n++;
+  }
+  if (!n) return e.Fail("nessun oggetto esportabile");
+  if (!out.Save(Unquote(*path), kRhino8ArchiveVersion)) return e.Fail("impossibile salvare " + Unquote(*path));
+  e.Out() << "  Esportati " << n << " oggetti in " << Unquote(*path) << " (formato Rhino 8)\n";
+  return true;
+}
+
+// IncrementalSave: salva "nome 001.3dm", "nome 002.3dm"... accanto al file corrente.
+bool CmdIncrementalSave(Engine& e, TokenStream& ts) {
+  std::string base = e.currentPath;
+  if (base.empty()) {
+    auto p = e.ReadString(ts, "nome del file");
+    if (!p) return false;
+    base = Unquote(*p);
+  }
+  if (base.size() > 4 && (base.substr(base.size() - 4) == ".3dm" || base.substr(base.size() - 4) == ".3DM")) base.resize(base.size() - 4);
+  // toglie un eventuale " 001" gia' presente
+  if (base.size() > 4 && base[base.size() - 4] == ' ' && std::all_of(base.end() - 3, base.end(), ::isdigit)) base.resize(base.size() - 4);
+  std::string path;
+  for (int k = 1; k < 1000; k++) {
+    char num[8];
+    std::snprintf(num, sizeof num, " %03d", k);
+    path = base + num + ".3dm";
+    if (FILE* f = std::fopen(path.c_str(), "rb")) { std::fclose(f); continue; }
+    break;
+  }
+  if (!e.Doc().Save(path, kRhino8ArchiveVersion)) return e.Fail("impossibile salvare " + path);
+  e.currentPath = path;
+  e.Out() << "  Salvato " << path << " (formato Rhino 8)\n";
+  return true;
+}
+
+// SelPrev: riseleziona gli oggetti dell'ultima selezione non vuota (prima di quella attuale).
+bool CmdSelPrev(Engine& e, TokenStream&) {
+  int n = 0;
+  for (const auto& id : e.PreviousSelection())
+    if (e.Object(id) && !e.IsSelected(id)) { e.Select(id); n++; }
+  e.Out() << "  Selezionati " << n << " oggetti\n";
+  return true;
+}
+
+// --- Isocurve ----------------------------------------------------------------------
+struct TrimRegion {
+  std::vector<std::vector<ON_2dPoint>> loops;
+  bool Inside(double u, double v) const {
+    if (loops.empty()) return true;
+    bool in = false;
+    for (const auto& poly : loops)
+      for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+        if (((poly[i].y > v) != (poly[j].y > v)) &&
+            (u < (poly[j].x - poly[i].x) * (v - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+          in = !in;
+    return in;
+  }
+};
+
+TrimRegion RegionOf(const ON_Brep& b, const ON_BrepFace& f) {
+  TrimRegion r;
+  for (int li = 0; li < f.m_li.Count(); li++) {
+    const ON_BrepLoop& L = b.m_L[f.m_li[li]];
+    std::vector<ON_2dPoint> poly;
+    for (int k = 0; k < L.m_ti.Count(); k++) {
+      const ON_BrepTrim& t = b.m_T[L.m_ti[k]];
+      const ON_Interval dom = t.Domain();
+      const int n = 64;
+      for (int j = 0; j < n; j++) {
+        const ON_3dPoint q = t.PointAt(dom.ParameterAt(double(j) / n));
+        poly.push_back(ON_2dPoint(q.x, q.y));
+      }
+    }
+    if (poly.size() >= 3) r.loops.push_back(std::move(poly));
+  }
+  return r;
+}
+
+// Isocurve della faccia a parametro costante c nella direzione dir (0: u costante),
+// tagliata ai bordi della faccia.
+void TrimmedIsocurves(const ON_Surface& srf, const TrimRegion& reg, int dir, double c, std::vector<ON_Curve*>& out) {
+  // ON_Surface::IsoCurve(dir, c): dir=0 -> curva in u con v=c; qui dir indica il parametro costante
+  const int isoDir = dir == 0 ? 1 : 0;
+  std::unique_ptr<ON_Curve> iso(srf.IsoCurve(isoDir, c));
+  if (!iso) return;
+  const ON_Interval other = srf.Domain(1 - dir);
+  auto in = [&](double t) { return dir == 0 ? reg.Inside(c, t) : reg.Inside(t, c); };
+  auto edge = [&](double a, double b) {  // bisezione sul passaggio dentro/fuori
+    const bool ia = in(a);
+    for (int k = 0; k < 40; k++) { const double m = 0.5 * (a + b); if (in(m) == ia) a = m; else b = m; }
+    return 0.5 * (a + b);
+  };
+  const int n = 256;
+  double start = 0;
+  bool inside = false;
+  double prev = other[0];
+  for (int j = 0; j <= n; j++) {
+    const double t = other.ParameterAt(double(j) / n);
+    const bool cur = in(t);
+    if (j == 0) { inside = cur; start = t; prev = t; continue; }
+    if (cur != inside) {
+      const double x = edge(prev, t);
+      if (inside && start <= other[0] && x >= other[1] - 1e-6 * other.Length()) {  // tutta l'isocurva
+        out.push_back(iso.release());
+        return;
+      }
+      if (inside && x - start > 1e-9 * other.Length()) {
+        ON_Curve* piece = iso->DuplicateCurve();
+        if (piece->Trim(ON_Interval(start, x))) out.push_back(piece); else delete piece;
+      }
+      inside = cur;
+      start = x;
+    }
+    prev = t;
+  }
+  if (inside && other[1] - start > 1e-9 * other.Length()) {
+    if (start <= other[0]) { out.push_back(iso.release()); return; }  // tutta l'isocurva (anche chiusa)
+    ON_Curve* piece = iso->DuplicateCurve();
+    if (piece->Trim(ON_Interval(start, other[1]))) out.push_back(piece); else delete piece;
+  }
+}
+
+const ON_Brep* BrepOfGeometry(const ON_Geometry* g, std::unique_ptr<ON_Brep>& holder) {
+  if (const auto* b = ON_Brep::Cast(g)) return b;
+  if (g && g->HasBrepForm()) { holder.reset(g->BrepForm()); return holder.get(); }
+  return nullptr;
+}
+
+// ExtractWireframe: spigoli e isocurve delle superfici selezionate come curve.
+bool CmdExtractWireframe(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("ExtractWireframe", "seleziona superfici o polisuperfici, poi Invio");
+  if (sel.empty()) return false;
+  std::vector<ON_UUID> created;
+  for (const auto& id : sel) {
+    std::unique_ptr<ON_Brep> holder;
+    const ON_Brep* b = BrepOfGeometry(Geo(e, id), holder);
+    if (!b) continue;
+    for (int ei = 0; ei < b->m_E.Count(); ei++)
+      if (const ON_Curve* c = b->m_E[ei].EdgeCurveOf()) {
+        ON_Curve* d = c->DuplicateCurve();
+        if (b->m_E[ei].ProxyCurveIsReversed()) d->Reverse();
+        d->Trim(b->m_E[ei].Domain());
+        created.push_back(e.AddObject(d));
+      }
+    for (int fi = 0; fi < b->m_F.Count(); fi++) {
+      const ON_Surface* srf = b->m_F[fi].SurfaceOf();
+      if (!srf) continue;
+      const TrimRegion reg = RegionOf(*b, b->m_F[fi]);
+      ON_NurbsSurface ns;
+      const bool hasNurb = srf->GetNurbForm(ns) > 0;
+      for (int dir = 0; dir < 2; dir++) {
+        // nodi interni della forma NURBS (una sfera ha 4 campate in u anche se la
+        // superficie di rivoluzione ne ha una), riportati ai parametri della superficie
+        std::vector<double> params;
+        if (hasNurb && ns.SpanCount(dir) >= 2) {
+          std::vector<double> sv(ns.SpanCount(dir) + 1);
+          ns.GetSpanVector(dir, sv.data());
+          const double mid = ns.Domain(1 - dir).Mid();
+          for (size_t k = 1; k + 1 < sv.size(); k++) {
+            double s0 = 0, t0 = 0;
+            const double nu = dir == 0 ? sv[k] : mid, nv = dir == 0 ? mid : sv[k];
+            if (!srf->GetSurfaceParameterFromNurbFormParameter(nu, nv, &s0, &t0)) { s0 = nu; t0 = nv; }
+            params.push_back(dir == 0 ? s0 : t0);
+          }
+        } else if (srf->SpanCount(dir) >= 2) {
+          std::vector<double> sv(srf->SpanCount(dir) + 1);
+          srf->GetSpanVector(dir, sv.data());
+          params.assign(sv.begin() + 1, sv.end() - 1);
+        }
+        if (params.empty() || params.size() > 64) continue;
+        const size_t step = std::max<size_t>(1, params.size() / 16);
+        for (size_t k = 0; k < params.size(); k += step) {
+          std::vector<ON_Curve*> pieces;
+          TrimmedIsocurves(*srf, reg, dir, params[k], pieces);
+          for (auto* pc : pieces) created.push_back(e.AddObject(pc));
+        }
+      }
+    }
+  }
+  if (created.empty()) return e.Fail("nessuna curva estratta");
+  e.ClearSelection();
+  for (const auto& id : created) e.Select(id);
+  e.Out() << "  Estratte " << created.size() << " curve\n";
+  return true;
+}
+
+// Punto (u,v) della faccia piu' vicino a p: griglia e poi Newton.
+bool ClosestFacePoint(const ON_BrepFace& f, const ON_3dPoint& p, double& u, double& v, double& dist) {
+  const ON_Surface* s = f.SurfaceOf();
+  if (!s) return false;
+  const ON_Interval du = s->Domain(0), dv = s->Domain(1);
+  dist = 1e300;
+  const int n = 40;
+  for (int i = 0; i <= n; i++)
+    for (int j = 0; j <= n; j++) {
+      const double a = du.ParameterAt(double(i) / n), b = dv.ParameterAt(double(j) / n);
+      const double d = s->PointAt(a, b).DistanceTo(p);
+      if (d < dist) { dist = d; u = a; v = b; }
+    }
+  for (int it = 0; it < 30; it++) {
+    ON_3dPoint P;
+    ON_3dVector Su, Sv;
+    if (!s->Ev1Der(u, v, P, Su, Sv)) break;
+    const ON_3dVector r = P - p;
+    const double a11 = Su * Su, a12 = Su * Sv, a22 = Sv * Sv, b1 = -(r * Su), b2 = -(r * Sv);
+    const double det = a11 * a22 - a12 * a12;
+    if (std::fabs(det) < 1e-30) break;
+    const double dU = (b1 * a22 - b2 * a12) / det, dV = (a11 * b2 - a12 * b1) / det;
+    u = std::clamp(u + dU, du[0], du[1]);
+    v = std::clamp(v + dV, dv[0], dv[1]);
+    if (std::fabs(dU) < 1e-14 * (1 + du.Length()) && std::fabs(dV) < 1e-14 * (1 + dv.Length())) break;
+  }
+  dist = s->PointAt(u, v).DistanceTo(p);
+  return true;
+}
+
+// ExtractIsocurve: Direction=U|V|Both, poi il punto sulla superficie.
+bool CmdExtractIsocurve(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("ExtractIsocurve", "seleziona la superficie, poi Invio");
+  if (sel.empty()) return false;
+  opts.merge(e.ReadOptions(ts));
+  const std::string dirOpt = opts.count("direction") ? opts["direction"] : "u";
+  std::unique_ptr<ON_Brep> holder;
+  const ON_Brep* b = BrepOfGeometry(Geo(e, sel.front()), holder);
+  if (!b) return e.Fail("serve una superficie");
+  std::vector<ON_UUID> created;
+  do {
+    auto p = e.ReadPick(ts, "punto sulla superficie (Invio per finire)");
+    if (!p) return false;
+    int best = -1;
+    double bu = 0, bv = 0, bd = 1e300;
+    for (int fi = 0; fi < b->m_F.Count(); fi++) {
+      double u, v, d;
+      if (ClosestFacePoint(b->m_F[fi], *p, u, v, d) && d < bd) { bd = d; bu = u; bv = v; best = fi; }
+    }
+    if (best < 0) return e.Fail("punto non sulla superficie");
+    const ON_Surface* srf = b->m_F[best].SurfaceOf();
+    const TrimRegion reg = RegionOf(*b, b->m_F[best]);
+    std::vector<ON_Curve*> pieces;
+    // Direction=U: curva lungo u (v costante), come Rhino
+    if (dirOpt == "u" || dirOpt == "both") TrimmedIsocurves(*srf, reg, 1, bv, pieces);
+    if (dirOpt == "v" || dirOpt == "both") TrimmedIsocurves(*srf, reg, 0, bu, pieces);
+    for (auto* pc : pieces) created.push_back(e.AddObject(pc));
+  } while (e.MoreInput(ts));
+  e.SkipEnter(ts);
+  if (created.empty()) return e.Fail("nessuna isocurva estratta");
+  e.Out() << "  Estratte " << created.size() << " isocurve\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterExtra2Commands(Engine& e) {
@@ -962,6 +1276,12 @@ void RegisterExtra2Commands(Engine& e) {
   reg("SetUserText", "Proprieta'", "Imposta il testo utente", CmdSetUserText);
   reg("GetUserText", "Proprieta'", "Mostra il testo utente", CmdGetUserText, false);
   reg("Purge", "File", "Elimina livelli e blocchi non usati", CmdPurge);
+  reg("Import", "File", "Importa gli oggetti di un file .3dm", CmdImport);
+  reg("Export", "File", "Esporta gli oggetti selezionati in un file .3dm (Rhino 8)", CmdExport, false);
+  reg("IncrementalSave", "File", "Salva con numero progressivo", CmdIncrementalSave, false);
+  reg("SelPrev", "Selezione", "Riseleziona la selezione precedente", CmdSelPrev, false);
+  reg("ExtractWireframe", "Curve", "Estrae spigoli e isocurve come curve", CmdExtractWireframe);
+  reg("ExtractIsocurve", "Curve", "Estrae l'isocurva per un punto (Direction=U, V, Both)", CmdExtractIsocurve);
   reg("PointsOn", "Modifica", "Mostra i punti di controllo (F10)", CmdPointsOn, false);
   reg("PointsOff", "Modifica", "Nasconde i punti di controllo (F11)", CmdPointsOff, false);
   reg("GripMove", "Interno", "Sposta un punto di controllo (trascinamento nella vista)", CmdGripMove);
