@@ -170,7 +170,8 @@ jobs:
           # nessuna libreria deve restare collegata a Homebrew
           bad=0
           while IFS= read -r f; do
-            if otool -L "$f" 2>/dev/null | tail -n +2 | grep -E "/opt/homebrew|/usr/local" ; then echo "^ in $f"; bad=1; fi
+            # (la prima riga di una dylib e' il suo nome di installazione: non conta)
+            if otool -L "$f" 2>/dev/null | tail -n +2 | grep -v "/$(basename "$f") (" | grep -E "/opt/homebrew|/usr/local" ; then echo "^ in $f"; bad=1; fi
           done < <(find dist/Kurva3D.app -type f \( -perm -111 -o -name "*.dylib" \))
           if [ $bad -ne 0 ]; then echo "librerie esterne non incluse"; exit 1; fi
           du -sh dist/Kurva3D.app
