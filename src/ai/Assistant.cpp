@@ -209,11 +209,11 @@ _BooleanUnion
 ```
 
 Example: "un tavolo rotondo con una gamba centrale a cilindro e la base larga"
-(top diameter 900 from z=720 to 750, column from z=50 to 725, wide base on the floor)
+(top diameter 900 from z=720 to 750, column from z=50 to 725, wide flat base disc on the floor)
 ```kurva
 _Cylinder 0,0,720 450 30 => Top
 _Cylinder 0,0,50 40 675 => Column
-_TruncatedCone 0,0,0 250 60 60 => Base
+_Cylinder 0,0,0 250 55 => Base
 _SelNone
 _SelName Top Column Base
 _BooleanUnion
