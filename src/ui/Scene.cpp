@@ -406,7 +406,7 @@ void Scene::Rebuild() {
     AddGeometry(g, d, sig, newCache, 0);
     if (m_engine.pointsOn.count(id)) {
       GripSet gs;
-      if (GetGrips(g, gs)) { d.grips = std::move(gs.grips); d.cage = std::move(gs.cage); }
+      if (GetGrips(g, gs, m_engine.editPointsOn.count(id) > 0)) { d.grips = std::move(gs.grips); d.cage = std::move(gs.cage); }
     }
     m_objects.push_back(std::move(d));
   }

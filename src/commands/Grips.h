@@ -17,7 +17,9 @@ struct GripSet {
 };
 
 // false se l'oggetto non ha punti di controllo modificabili.
-bool GetGrips(const ON_Geometry* g, GripSet& out);
+// editPoints = punti di modifica delle curve (EditPtOn): stanno sulla curva,
+// ai parametri di Greville; hanno j = -2.
+bool GetGrips(const ON_Geometry* g, GripSet& out, bool editPoints = false);
 bool SupportsGrips(const ON_Geometry* g);
 
 // Nuova geometria con il punto (i,j) portato in p; nullptr se non riesce.

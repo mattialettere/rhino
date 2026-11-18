@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(kurva3d VERSION 0.6.0 LANGUAGES C CXX)
+project(kurva3d VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,7 @@ add_library(cadcore STATIC
   src/commands/CmdExtra3.cpp
   src/commands/CmdExtra4.cpp
   src/commands/CmdExtra5.cpp
+  src/commands/CmdExtra6.cpp
   src/commands/Deform.cpp
   src/commands/Deform.h
   src/commands/Grips.h)
@@ -52,7 +53,7 @@ target_include_directories(cadcore PUBLIC src)
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
   message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: comandi del motore geometrico attivi")
-  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp)
+  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp)
   target_include_directories(cadcore PUBLIC ${OpenCASCADE_INCLUDE_DIR})
   target_link_libraries(cadcore PUBLIC TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo
     TKTopAlgo TKPrim TKBO TKShHealing TKBool TKFillet TKOffset TKMesh TKHLR)

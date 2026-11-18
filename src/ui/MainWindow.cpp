@@ -33,6 +33,10 @@
 #include <QInputDialog>
 #include <QTableWidget>
 #include <QVBoxLayout>
+#include <QFont>
+#include <QFontMetricsF>
+#include <QImage>
+#include <QPainterPath>
 #include <set>
 
 namespace cad::ui {
@@ -40,6 +44,52 @@ namespace cad::ui {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), m_engine(m_doc, m_out), m_scene(m_engine) {
   m_engine.interactive = true;
+  // Heightfield: immagini in qualsiasi formato letto da Qt (PNG, JPG, BMP...)
+  m_engine.imageLoader = [](const std::string& path, int& w, int& h, std::vector<double>& gray) {
+    QImage img(QString::fromStdString(path));
+    if (img.isNull()) return false;
+    img = img.convertToFormat(QImage::Format_Grayscale8);
+    w = img.width();
+    h = img.height();
+    gray.assign((size_t)w * h, 0.0);
+    for (int y = 0; y < h; y++) {
+      const uchar* row = img.constScanLine(y);
+      for (int x = 0; x < w; x++) gray[(size_t)y * w + x] = row[x] / 255.0;
+    }
+    return true;
+  };
+  // TextObject: contorni dei caratteri di sistema; l'altezza e' quella delle maiuscole
+  m_engine.textOutliner = [](const std::string& text, const std::string& family, double height,
+                             std::vector<std::vector<std::vector<ON_3dPoint>>>& contours) {
+    QFont font(QString::fromStdString(family));
+    font.setPixelSize(1000);
+    QPainterPath path;
+    path.addText(0, 0, font, QString::fromStdString(text));
+    double cap = QFontMetricsF(font).capHeight();
+    if (cap <= 0) cap = 700;
+    const double k = height / cap;
+    auto pt = [&](const QPointF& q) { return ON_3dPoint(q.x() * k, -q.y() * k, 0); };
+    std::vector<std::vector<ON_3dPoint>>* cur = nullptr;
+    ON_3dPoint last;
+    for (int i = 0; i < path.elementCount(); i++) {
+      const auto el = path.elementAt(i);
+      if (el.isMoveTo()) {
+        contours.emplace_back();
+        cur = &contours.back();
+        last = pt(el);
+      } else if (el.isLineTo() && cur) {
+        cur->push_back({last, pt(el)});
+        last = pt(el);
+      } else if (el.isCurveTo() && cur && i + 2 < path.elementCount()) {
+        const ON_3dPoint c1 = pt(el), c2 = pt(path.elementAt(i + 1)), end = pt(path.elementAt(i + 2));
+        cur->push_back({last, c1, c2, end});
+        last = end;
+        i += 2;
+      }
+    }
+    std::erase_if(contours, [](const auto& c) { return c.empty(); });
+    return !contours.empty();
+  };
   setWindowTitle("Senza titolo - Kurva3D");
   resize(1400, 900);
 
@@ -232,7 +282,7 @@ void MainWindow::BuildMenus() {
   };
   addCmds("&Curve", {{"Punto", "_Point"}, {"Linea", "_Line"}, {"Polilinea", "_Polyline"}, {"Rettangolo", "_Rectangle"},
                      {"Poligono", "_Polygon"}, {"Cerchio", "_Circle"}, {"Arco", "_Arc"}, {"Ellisse", "_Ellipse"},
-                     {"Curva per punti di controllo", "_Curve"}, {"Curva interpolata", "_InterpCrv"},
+                     {"Curva per punti di controllo", "_Curve"}, {"Curva interpolata", "_InterpCrv"}, {"Curva a maniglie", "_HandleCurve"}, {"Schizzo (Sketch)", "_Sketch"},
                      {"Offset curva", "_Offset"}, {"Raccordo curve", "_Fillet"}, {"Smusso curve", "_Chamfer"},
                      {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"},
                      {"Dividi in punti", "_Divide"}, {"Ricostruisci", "_Rebuild"}, {"Cambia grado", "_ChangeDegree"},
@@ -246,7 +296,7 @@ void MainWindow::BuildMenus() {
                          {"Da 2, 3 o 4 curve di bordo", "_EdgeSrf"}, {"Patch", "_Patch"},
                          {"Piano da 3 punti", "_Plane3Pt"}, {"Piano verticale", "_PlaneVertical"},
                          {"Estrudi fino a un punto", "_ExtrudeCrvToPoint"}, {"Estrudi lungo una curva", "_ExtrudeCrvAlongCrv"},
-                         {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}, {"Raccordo tra superfici", "_FilletSrf"}, {"Smusso tra superfici", "_ChamferSrf"}, {"Raccordo con tangenza (BlendSrf)", "_BlendSrf"}, {"Sviluppa (UnrollSrf)", "_UnrollSrf"}, {"Appiattisci (Smash)", "_Smash"}, {"Converti in NURBS", "_ToNURBS"}});
+                         {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}, {"Raccordo tra superfici", "_FilletSrf"}, {"Smusso tra superfici", "_ChamferSrf"}, {"Raccordo con tangenza (BlendSrf)", "_BlendSrf"}, {"Sviluppa (UnrollSrf)", "_UnrollSrf"}, {"Appiattisci (Smash)", "_Smash"}, {"Converti in NURBS", "_ToNURBS"}, {"Adatta bordo (MatchSrf)", "_MatchSrf"}, {"Loft sviluppabile (DevLoft)", "_DevLoft"}, {"Da immagine (Heightfield)", "_Heightfield"}, {"Punti di modifica (EditPtOn)", "_EditPtOn"}});
   addCmds("S&olidi", {{"Parallelepipedo", "_Box"}, {"Sfera", "_Sphere"}, {"Sfera da 3 punti", "_Sphere3Pt"}, {"Box da 3 punti", "_Box3Pt"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
                       {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Piramide", "_Pyramid"}, {"Cuneo", "_Wedge"}, {"Lastra (Slab)", "_Slab"}, {"Sposta faccia", "_MoveFace"},
                       {"Tronco di cono", "_TruncatedCone"}, {"Ellissoide", "_Ellipsoid"}, {"Unione booleana", "_BooleanUnion"},
@@ -255,7 +305,7 @@ void MainWindow::BuildMenus() {
                       {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}});
   addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}, {"Sfera SubD", "_SubDSphere"}, {"Cilindro SubD", "_SubDCylinder"}, {"Cono SubD", "_SubDCone"}, {"Converti in SubD", "_ToSubD"},
                     {"Toro SubD", "_SubDTorus"}, {"Piano SubD", "_SubDPlane"}, {"SubD da mesh", "_SubDFromMesh"},
-                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}});
+                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}, {"Rifletti (Reflect)", "_Reflect"}, {"Sweep SubD", "_SubDSweep"}, {"Estrudi faccia SubD", "_SubDExtrude"}, {"Ponte (Bridge)", "_Bridge"}, {"Inserisci anello di spigoli", "_InsertEdge"}, {"Cuci (Stitch)", "_Stitch"}, {"Aggiungi faccia (Append)", "_Append"}, {"Quad remesh", "_QuadRemesh"}});
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano mesh", "_MeshPlane"}, {"Box mesh", "_MeshBox"},
                     {"Sfera mesh", "_MeshSphere"}, {"Cilindro mesh", "_MeshCylinder"}, {"Cono mesh", "_MeshCone"},
                     {"Toro mesh", "_MeshTorus"}, {"Mesh da polilinea", "_MeshPolyline"},
@@ -263,7 +313,7 @@ void MainWindow::BuildMenus() {
   addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
                       {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
                       {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
-                      {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}});
+                      {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}, {"Stile di quota (DimStyle)", "_DimStyle"}, {"Testo in curve (TextObject)", "_TextObject"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
                          {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Scorri lungo curva (Flow)", "_Flow"}, {"Scorri su superficie", "_FlowAlongSrf"}, {"Orienta su superficie", "_OrientOnSrf"},
@@ -274,7 +324,7 @@ void MainWindow::BuildMenus() {
                          {"Angolo di sformo", "_DraftAngleAnalysis"}, {"Angolo di sformo spento", "_DraftAngleAnalysisOff"},
                          {"Grafico di curvatura", "_CurvatureGraph"}, {"Grafico di curvatura spento", "_CurvatureGraphOff"},
                          {"Spigoli nudi", "_ShowEdges"}, {"Spigoli nudi spenti", "_ShowEdgesOff"}});
-  addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"},
+  addCmds("&Blocchi", {{"Crea blocco", "_Block"}, {"Inserisci blocco", "_Insert"}, {"Esplodi blocco", "_ExplodeBlock"}, {"Sostituisci blocco", "_ReplaceBlock"}, {"Rinomina blocco", "_RenameBlock"}, {"Gestione blocchi", "_BlockManager"}, {"Modifica blocco (BlockEdit)", "_BlockEdit"},
                        {"Raggruppa", "_Group"}, {"Separa gruppo", "_Ungroup"}});
   auto* help = menuBar()->addMenu("&?");
   help->addAction("Elenco comandi", this, [this] { Submit("?"); });
@@ -622,6 +672,13 @@ void MainWindow::Submit(const QString& text) {
       Log(l);
     }
     return;
+  }
+  // Heightfield senza argomenti: come Rhino, il file immagine si sceglie da una finestra
+  if (m_pending.empty() && NormalizeName(t) == "heightfield") {
+    const QString f = QFileDialog::getOpenFileName(this, "Immagine per Heightfield", QString(),
+                                                   "Immagini (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.pgm);;Tutti i file (*)");
+    if (f.isEmpty()) return;
+    t = "_Heightfield \"" + f.toStdString() + "\"";
   }
   // Come Rhino: un nome di comando incompleto viene completato con il primo comando che inizia cosi'
   if (m_pending.empty() && !t.empty() && t.find(' ') == std::string::npos && t.find(',') == std::string::npos) {

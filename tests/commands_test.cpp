@@ -11,6 +11,7 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <sstream>
 
@@ -1601,6 +1602,124 @@ int main(int argc, char** argv) {
   Case("ToNURBS", "_Cylinder 0,0,0 5 10\n_SelAll _ToNURBS", [](Ctx& c) {
     CHECK(ON_Brep::Cast(c.Last()) != nullptr);
   });
+
+  // --- v0.7 ---
+  Case("HandleCurve", "_HandleCurve 0,0 3,0 10,0 13,0 _Enter", [](Ctx& c) {
+    const auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->CVCount() == 4 && Near(Len(n), 10.0, 1e-6));
+  });
+  Case("HandleCurve_tangenza", "_HandleCurve 0,0 0,5 10,0 13,3 20,0 20,-5 _Enter", [](Ctx& c) {
+    const auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->CVCount() == 7);
+    if (n) {
+      ON_3dVector t0 = n->TangentAt(n->Domain().ParameterAt(0.5 - 1e-7)), t1 = n->TangentAt(n->Domain().ParameterAt(0.5 + 1e-7));
+      CHECK(t0 * t1 > 0.9999);
+      CHECK(NearPt(n->PointAt(n->Domain().ParameterAt(0.5)), ON_3dPoint(10, 0, 0), 1e-9));
+    }
+  });
+  Case("Reflect", "_SubDBox 0,0,0 10,10 10\n_SelAll _Reflect Axis=X Origin=0", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 10);
+    const ON_BoundingBox b = c.BBox();
+    CHECK(Near(b.m_min.x, -10.0, 1e-6) && Near(b.m_max.x, 10.0, 1e-6));
+  });
+  Case("SubDExtrude", "_SubDBox 0,0,0 10,10 10\n_SubDExtrude 5,5,10 5", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 10);
+    CHECK(Near(c.BBox().m_max.z, 15.0, 1.0));
+  });
+  Case("InsertEdge", "_SubDBox 0,0,0 10,10 10\n_InsertEdge 5,0,0", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 10);
+  });
+  Case("Stitch", "_SubDPlane 0,0 10,10\n_SubDPlane 10,0 20,10\n_SelAll _Stitch", [](Ctx& c) {
+    CHECK(c.Objects().size() == 1);
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 2 && s->VertexCount() == 6);
+  });
+  Case("Append", "_SubDPlane 0,0 10,10\n_Append 10,0,0 15,0,0 15,10,0 10,10,0 _Enter", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 2 && s->VertexCount() == 6);
+  });
+  Case("Bridge", "_SubDPlane 0,0 10,10\n_SubDPlane 0,0,10 10,10,10\n_Bridge Segments=2 0,5,0 0,5,10", [](Ctx& c) {
+    CHECK(c.Objects().size() == 1);
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 10);
+  });
+  Case("SubDSweep", "_Line 0,0,0 0,0,20\n_Circle 0,0,0 3\n_SelAll _SubDSweep", [](Ctx& c) {
+    const ON_SubD* s = nullptr;
+    for (auto* g : c.Objects()) if (auto* x = ON_SubD::Cast(g)) s = x;
+    CHECK(s && s->FaceCount() > 8);
+    if (s) {
+      const ON_BoundingBox b = s->BoundingBox();
+      CHECK(b.m_max.z > 15 && b.m_max.x < 3.5);
+    }
+  });
+  Case("EditPtOn", "_Curve 0,0 3,5 7,-2 10,0 _Enter\n_SelAll _EditPtOn", [](Ctx& c) {
+    CHECK(c.e.editPointsOn.size() == 1);
+  });
+  Case("DimStyle", "_DimStyle Name=\"Mio Stile\" TextHeight=3.5 Precision=1\n_Dim 0,0 40,5 20,-8", [](Ctx& c) {
+    const ON_DimStyle& ds = *ON_DimStyle::FromModelComponentRef(c.e.Model().CurrentDimensionStyle(), &ON_DimStyle::Default);
+    CHECK(ON_wString(ds.Name()) == L"Mio Stile");
+    CHECK(Near(ds.TextHeight(), 3.5));
+    CHECK(ds.LengthResolution() == 1);
+  });
+  {
+    const std::string pgm = g_outDir + "/heightfield.pgm";
+    std::ofstream(pgm) << "P2\n2 2\n255\n255 255\n0 0\n";
+    Case("Heightfield", "_Heightfield \"" + pgm + "\" 0,0,0 10,10,0 4 PointCount=5x5", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->m_F.Count() == 1);
+      const ON_BoundingBox bb = c.BBox();
+      CHECK(Near(bb.m_max.z, 4.0, 1e-6) && Near(bb.m_min.z, 0.0, 1e-6));
+      if (b) {
+        // la riga in alto dell'immagine (bianca) sta a y=10
+        const ON_Surface* s = b->m_S[0];
+        ON_3dPoint top = s->PointAt(s->Domain(0).Mid(), s->Domain(1)[1]);
+        ON_3dPoint bottom = s->PointAt(s->Domain(0).Mid(), s->Domain(1)[0]);
+        if (top.y < bottom.y) std::swap(top, bottom);
+        CHECK(top.z > bottom.z);
+      }
+    });
+  }
+  Case("TextObject_senza_finestra", "_TextObject \"A\" 0,0,0", [](Ctx&) {}, false);
+  Case("BlockEdit", "_Box 0,0,0 2,2 2\n_SelAll _Block Name=B 0,0,0\n_SelAll _Move 0,0,0 10,0,0\n_SelAll _BlockEdit\n_Move 0,0,0 0,0,5\n_BlockEdit", [](Ctx& c) {
+    CHECK(c.Objects().size() == 1);
+    CHECK(ON_InstanceRef::Cast(c.Last()) != nullptr);
+    const ON_BoundingBox b = c.BBox();
+    CHECK(Near(b.m_min.x, 10.0, 1e-6) && Near(b.m_min.z, 5.0, 1e-6) && Near(b.m_max.z, 7.0, 1e-6));
+  });
+#ifdef CAD_WITH_OCCT
+  Case("Sketch", "_Sketch 0,0 1,1 2,1.5 3,1 4,0 5,-1 _Enter", [](Ctx& c) {
+    const auto* cv = ON_Curve::Cast(c.Last());
+    CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-3) && NearPt(cv->PointAtEnd(), ON_3dPoint(5, -1, 0), 1e-3));
+  });
+  Case("DevLoft", "_Curve 0,0 3,5 7,-2 10,0 _Enter\n_Curve 0,10,3 4,12,4 10,10,2 _Enter\n_SelAll _DevLoft", [](Ctx& c) {
+    const auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->m_F.Count() == 1);
+    if (b) {
+      // gli angoli della superficie sono gli estremi delle due curve
+      const ON_Surface* sf = b->m_S[0];
+      const ON_Interval du = sf->Domain(0), dv = sf->Domain(1);
+      const ON_3dPoint want[4] = {ON_3dPoint(0, 0, 0), ON_3dPoint(10, 0, 0), ON_3dPoint(0, 10, 3), ON_3dPoint(10, 10, 2)};
+      for (const auto& w : want) {
+        bool found = false;
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) found = found || NearPt(sf->PointAt(du[i], dv[j]), w, 1e-6);
+        CHECK(found);
+      }
+    }
+  });
+  Case("QuadRemesh", "_Plane 0,0,0 10,10\n_SelAll _QuadRemesh TargetQuadCount=100", [](Ctx& c) {
+    const auto* m = ON_Mesh::Cast(c.Last());
+    CHECK(m && m->QuadCount() == m->FaceCount() && m->FaceCount() == 100);
+  });
+  Case("MatchSrf", "_Plane 0,0,0 10,10\n_PlaneVertical 12,0,0 12,10,0 10\n_MatchSrf Continuity=Position 10,5,0 12,5,0", [](Ctx& c) {
+    const ON_Brep* moved = nullptr;
+    for (auto* g : c.Objects()) if (auto* b = ON_Brep::Cast(g)) { ON_BoundingBox bb; b->GetTightBoundingBox(bb); if (bb.m_max.z < 1e-6) moved = b; }
+    CHECK(moved != nullptr);
+    if (moved) { ON_BoundingBox bb; moved->GetTightBoundingBox(bb); CHECK(Near(bb.m_max.x, 12.0, 1e-3)); }
+  });
+#endif
 
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);

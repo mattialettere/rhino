@@ -145,6 +145,17 @@ public:
   std::string currentPath;   // percorso del file aperto/salvato
   // Oggetti con i punti di controllo visibili (PointsOn / PointsOff)
   std::set<ON_UUID, UuidLess> pointsOn;
+  // EditPtOn: curve che mostrano i punti di modifica (sulla curva) invece dei punti di controllo
+  std::set<ON_UUID, UuidLess> editPointsOn;
+  // BlockEdit in corso: definizione modificata, trasformazione dell'istanza, copie in modifica
+  ON_UUID blockEditDef = ON_nil_uuid;
+  ON_Xform blockEditXform = ON_Xform::IdentityTransformation;
+  std::vector<ON_UUID> blockEditObjects;
+  // Servizi forniti dall'interfaccia grafica (Qt): immagini in toni di grigio (0..1)
+  // e contorni dei caratteri (ogni contorno: tratti di 2 punti = linea, 4 = Bezier cubica).
+  std::function<bool(const std::string& path, int& w, int& h, std::vector<double>& gray)> imageLoader;
+  std::function<bool(const std::string& text, const std::string& font, double height,
+                     std::vector<std::vector<std::vector<ON_3dPoint>>>& contours)> textOutliner;
   // SubDDisplayToggle: SubD mostrati come gabbia piatta invece che lisci
   bool subdFlat = false;
   ON_3dPoint lastPoint = ON_3dPoint::Origin;
@@ -178,6 +189,7 @@ void RegisterExtra2Commands(Engine& e);
 void RegisterExtra3Commands(Engine& e);
 void RegisterExtra4Commands(Engine& e);
 void RegisterExtra5Commands(Engine& e);
+void RegisterExtra6Commands(Engine& e);
 // Mesh a griglia da una funzione (u,v) in [0,1]x[0,1]; closedU/V uniscono i bordi.
 ON_Mesh* GridMesh(int nu, int nv, bool closedU, const std::function<ON_3dPoint(double, double)>& f, bool closedV = false);
 #ifdef CAD_WITH_OCCT
@@ -187,6 +199,7 @@ void RegisterSurfaceMoreCommands(Engine& e);
 void RegisterSurface3Commands(Engine& e);
 void RegisterKernel4Commands(Engine& e);
 void RegisterKernel5Commands(Engine& e);
+void RegisterKernel6Commands(Engine& e);
 #endif
 
 // Utilita' geometriche condivise

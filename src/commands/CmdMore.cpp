@@ -595,6 +595,86 @@ bool CmdRenameBlock(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// BlockEdit: modifica di un blocco. La prima volta si sceglie un'istanza: gli oggetti
+// della definizione compaiono come copie modificabili (selezionate) al posto
+// dell'istanza. Si modificano con i comandi normali, poi BlockEdit di nuovo
+// conclude: la definizione prende le copie e tutte le istanze si aggiornano.
+bool CmdBlockEdit(Engine& e, TokenStream& ts) {
+  ONX_Model& m = e.Model();
+  if (!ON_UuidIsNil(e.blockEditDef)) {
+    const auto* idef = ON_InstanceDefinition::Cast(m.ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, e.blockEditDef).ModelComponent());
+    if (!idef) { e.blockEditDef = ON_nil_uuid; e.blockEditObjects.clear(); return e.Fail("blocco non piu' presente"); }
+    ON_Xform inv = e.blockEditXform;
+    if (!inv.Invert()) return e.Fail("trasformazione dell'istanza non invertibile");
+    // vecchi oggetti della definizione via, nuovi dalle copie
+    const ON_SimpleArray<ON_UUID> old = idef->InstanceGeometryIdList();
+    ON_SimpleArray<ON_UUID> members;
+    for (const auto& id : e.blockEditObjects) {
+      const ON_Geometry* g = Geo(e, id);
+      if (!g) continue;
+      ON_Geometry* copy = static_cast<ON_Geometry*>(g->Duplicate());
+      copy->Transform(inv);
+      ON_3dmObjectAttributes a = AttrsOf(e, id);
+      a.SetMode(ON::object_mode::idef_object);
+      members.Append(e.AddObject(copy, &a));
+      e.DeleteObject(id);
+    }
+    if (members.Count() == 0) return e.Fail("il blocco resterebbe vuoto: annulla o aggiungi oggetti");
+    for (int i = 0; i < old.Count(); i++) e.DeleteObject(old[i]);
+    auto* nd = new ON_InstanceDefinition(*idef);
+    const ON_UUID did = idef->Id();
+    m.RemoveModelComponent(ON_ModelComponent::Type::InstanceDefinition, did);
+    nd->SetId(did);
+    nd->SetInstanceGeometryIdList(members);
+    nd->SetBoundingBox(BlockBox(e, *nd));
+    const auto* def = ON_InstanceDefinition::Cast(m.AddManagedModelComponent(nd, false).ModelComponent());
+    if (!def) return e.Fail("blocco non aggiornato");
+    // riquadri delle istanze
+    for (const auto& id : e.AllObjectIds(true)) {
+      const auto* ir = ON_InstanceRef::Cast(Geo(e, id));
+      if (!ir || ON_UuidCompare(ir->m_instance_definition_uuid, did) != 0) continue;
+      auto* nr = new ON_InstanceRef(*ir);
+      ON_BoundingBox bb = BlockBox(e, *def);
+      if (bb.IsValid()) { bb.Transform(nr->m_xform); nr->m_bbox = bb; }
+      e.ReplaceObject(id, nr);
+    }
+    e.blockEditDef = ON_nil_uuid;
+    e.blockEditObjects.clear();
+    e.ClearSelection();
+    e.Out() << "  Blocco \"" << ToUtf8(def->Name()) << "\" aggiornato con " << members.Count() << " oggetti\n";
+    return true;
+  }
+  auto sel = e.RequireSelection("BlockEdit", "seleziona l'istanza del blocco da modificare");
+  if (sel.empty()) return false;
+  (void)ts;
+  const ON_InstanceRef* ir = nullptr;
+  ON_UUID iid;
+  for (const auto& id : sel) if ((ir = ON_InstanceRef::Cast(Geo(e, id)))) { iid = id; break; }
+  if (!ir) return e.Fail("seleziona un'istanza di blocco");
+  const auto* idef = ON_InstanceDefinition::Cast(m.ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, ir->m_instance_definition_uuid).ModelComponent());
+  if (!idef) return e.Fail("definizione del blocco mancante");
+  e.blockEditDef = idef->Id();
+  e.blockEditXform = ir->m_xform;
+  e.blockEditObjects.clear();
+  e.ClearSelection();
+  const auto& ids = idef->InstanceGeometryIdList();
+  for (int i = 0; i < ids.Count(); i++) {
+    const auto* o = ON_ModelGeometryComponent::Cast(m.ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[i]).ModelComponent());
+    const ON_Geometry* g = o ? o->Geometry(nullptr) : nullptr;
+    if (!g) continue;
+    ON_Geometry* copy = static_cast<ON_Geometry*>(g->Duplicate());
+    copy->Transform(ir->m_xform);
+    ON_3dmObjectAttributes a = *o->Attributes(&ON_3dmObjectAttributes::DefaultAttributes);
+    a.SetMode(ON::object_mode::normal_object);
+    const ON_UUID nid = e.AddObject(copy, &a);
+    e.blockEditObjects.push_back(nid);
+    e.Select(nid);
+  }
+  e.Out() << "  Modifica del blocco \"" << ToUtf8(idef->Name()) << "\": " << e.blockEditObjects.size()
+          << " oggetti. Al termine scrivi di nuovo BlockEdit\n";
+  return true;
+}
+
 bool CmdExplodeBlock(Engine& e, TokenStream&) {
   auto sel = e.RequireSelection("ExplodeBlock", "seleziona le istanze di blocco, poi Invio");
   if (sel.empty()) return false;
@@ -654,6 +734,7 @@ void RegisterMoreCommands(Engine& e) {
   reg("Ungroup", "Modifica", "Separa gli oggetti dai gruppi", CmdUngroup);
   reg("Block", "Blocchi", "Crea una definizione di blocco dagli oggetti selezionati (Name=)", CmdBlock);
   reg("Insert", "Blocchi", "Inserisce un blocco (nome, punto, scala, rotazione)", CmdInsert);
+  reg("BlockEdit", "Blocchi", "Modifica un blocco sul posto (di nuovo BlockEdit per concludere)", CmdBlockEdit);
   reg("ExplodeBlock", "Blocchi", "Trasforma le istanze di blocco in oggetti normali", CmdExplodeBlock);
   reg("ReplaceBlock", "Blocchi", "Le istanze selezionate usano un altro blocco", CmdReplaceBlock);
   reg("RenameBlock", "Blocchi", "Rinomina un blocco", CmdRenameBlock);

@@ -931,6 +931,7 @@ bool CmdPointsOn(Engine& e, TokenStream&) {
 bool CmdPointsOff(Engine& e, TokenStream&) {
   const size_t n = e.pointsOn.size();
   e.pointsOn.clear();
+  e.editPointsOn.clear();
   e.Out() << "  Punti di controllo disattivati su " << n << " oggetti\n";
   return true;
 }
@@ -952,9 +953,11 @@ bool CmdGripMove(Engine& e, TokenStream& ts) {
   ON_Geometry* ng = MoveGrip(g, *i, *j, *p);
   if (!ng) return e.Fail("punto di controllo non modificabile");
   e.pointsOn.erase(id);
+  const bool edit = e.editPointsOn.erase(id) > 0;
   const ON_UUID nid = e.ReplaceObject(id, ng);
   if (ON_UuidIsNil(nid)) return e.Fail("sostituzione non riuscita");
   e.pointsOn.insert(nid);
+  if (edit) e.editPointsOn.insert(nid);
   return true;
 }
 

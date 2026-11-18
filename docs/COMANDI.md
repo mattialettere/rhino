@@ -17,21 +17,21 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Punti | 9 / 9 |
 | Curve: linee e polilinee | 11 / 11 |
 | Curve: forme | 19 / 19 |
-| Curve: forme libere | 16 / 18 |
+| Curve: forme libere | 18 / 18 |
 | Curve da oggetti | 14 / 14 |
-| Superfici | 26 / 29 |
+| Superfici | 29 / 29 |
 | Solidi | 24 / 24 |
-| SubD | 14 / 23 |
-| Mesh | 18 / 19 |
+| SubD | 21 / 23 |
+| Mesh | 19 / 19 |
 | Trasformazioni | 28 / 30 |
-| Modifica | 33 / 34 |
+| Modifica | 34 / 34 |
 | Selezione | 19 / 19 |
-| Blocchi | 5 / 6 |
+| Blocchi | 6 / 6 |
 | Livelli e proprieta' | 12 / 12 |
-| Annotazioni | 12 / 14 |
+| Annotazioni | 14 / 14 |
 | Analisi | 15 / 15 |
 | File | 7 / 7 |
-| **Totale** | **282 / 303** |
+| **Totale** | **299 / 303** |
 
 ## Punti
 
@@ -94,8 +94,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Curve | ✔ |
 | InterpCrv | ✔ |
 | InterpCrvOnSrf | ✔ |
-| HandleCurve | ⬜ |
-| Sketch | ⬜ |
+| HandleCurve | ✔ |
+| Sketch | ✔ |
 | CurveThroughPt | ✔ |
 | Blend | ✔ |
 | BlendCrv | ✔ |
@@ -156,12 +156,12 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | FilletSrf | ✔ |
 | ChamferSrf | ✔ |
 | BlendSrf | ✔ |
-| MatchSrf | 🧱 |
+| MatchSrf | ✔ |
 | ExtendSrf | ✔ |
 | ShrinkTrimmedSrf | ✔ |
 | UntrimAll | ✔ |
-| Heightfield | ⬜ |
-| DevLoft | 🧱 |
+| Heightfield | ✔ |
+| DevLoft | ✔ |
 
 ## Solidi
 
@@ -206,17 +206,17 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | ToSubD | ✔ |
 | ToNURBS | ✔ |
 | SubDLoft | ✔ |
-| SubDSweep | 🧱 |
-| SubDExtrude | 🧱 |
+| SubDSweep | ✔ |
+| SubDExtrude | ✔ |
 | Bevel | 🧱 |
-| Bridge | 🧱 |
+| Bridge | ✔ |
 | Crease | ✔ |
 | Uncrease | ✔ |
-| InsertEdge | 🧱 |
-| Stitch | 🧱 |
-| Append | 🧱 |
+| InsertEdge | ✔ |
+| Stitch | ✔ |
+| Append | ✔ |
 | Fill | ✔ |
-| Reflect | ⬜ |
+| Reflect | ✔ |
 | MultiPipe | 🧱 |
 | SubDDisplayToggle | ✔ |
 
@@ -233,7 +233,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | MeshPlane | ✔ |
 | MeshPolyline | ✔ |
 | MeshPatch | ✔ |
-| QuadRemesh | 🧱 |
+| QuadRemesh | ✔ |
 | Reduce | ✔ |
 | MeshBooleanUnion | ✔ |
 | MeshBooleanDifference | ✔ |
@@ -309,7 +309,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | InsertControlPoint | ✔ |
 | PointsOn | ✔ |
 | PointsOff | ✔ |
-| EditPtOn | ⬜ |
+| EditPtOn | ✔ |
 | MakePeriodic | ✔ |
 | Match | ✔ |
 | Fit | ✔ |
@@ -349,7 +349,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Block | ✔ |
 | Insert | ✔ |
 | ExplodeBlock | ✔ |
-| BlockEdit | ⬜ |
+| BlockEdit | ✔ |
 | BlockManager | ✔ |
 | ReplaceBlock | ✔ |
 
@@ -375,7 +375,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Comando | Stato |
 |---|---|
 | Text | ✔ |
-| TextObject | ⬜ |
+| TextObject | ✔ |
 | Dim | ✔ |
 | DimAligned | ✔ |
 | DimRotated | ✔ |
@@ -387,7 +387,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Leader | ✔ |
 | Dot | ✔ |
 | Hatch | ✔ |
-| DimStyle | ⬜ |
+| DimStyle | ✔ |
 
 ## Analisi
 

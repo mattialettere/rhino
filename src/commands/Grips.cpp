@@ -1,4 +1,6 @@
 #include "commands/Grips.h"
+#include <cmath>
+#include <vector>
 #include <memory>
 
 namespace cad {
@@ -26,8 +28,52 @@ bool SupportsGrips(const ON_Geometry* g) {
   return GetGrips(g, tmp);
 }
 
-bool GetGrips(const ON_Geometry* g, GripSet& out) {
+namespace {
+// Curva NURBS non razionale e non periodica con i punti di modifica (Greville).
+bool EditForm(const ON_Geometry* g, ON_NurbsCurve& nc, std::vector<double>& t) {
+  const auto* c = ON_Curve::Cast(g);
+  if (!c || !c->GetNurbForm(nc) || nc.IsPeriodic()) return false;
+  if (nc.IsRational()) return false;
+  t.resize(nc.CVCount());
+  return nc.GetGrevilleAbcissae(t.data());
+}
+
+// Curva con gli stessi nodi che passa per Q[k] ai parametri t[k].
+bool InterpolateSameKnots(ON_NurbsCurve& nc, const std::vector<double>& t, const std::vector<ON_3dPoint>& Q) {
+  const int n = nc.CVCount();
+  std::vector<std::vector<double>> A(n, std::vector<double>(n + 3, 0.0));
+  ON_NurbsCurve basis(nc);
+  for (int j = 0; j < n; j++) {
+    for (int k = 0; k < n; k++) basis.SetCV(k, ON_3dPoint(k == j ? 1.0 : 0.0, 0, 0));
+    for (int r = 0; r < n; r++) A[r][j] = basis.PointAt(t[r]).x;
+  }
+  for (int r = 0; r < n; r++) { A[r][n] = Q[r].x; A[r][n + 1] = Q[r].y; A[r][n + 2] = Q[r].z; }
+  for (int col = 0; col < n; col++) {  // Gauss con pivot parziale
+    int piv = col;
+    for (int r = col + 1; r < n; r++) if (std::fabs(A[r][col]) > std::fabs(A[piv][col])) piv = r;
+    if (std::fabs(A[piv][col]) < 1e-14) return false;
+    std::swap(A[piv], A[col]);
+    for (int r = 0; r < n; r++) {
+      if (r == col) continue;
+      const double f = A[r][col] / A[col][col];
+      if (f == 0) continue;
+      for (int k = col; k < n + 3; k++) A[r][k] -= f * A[col][k];
+    }
+  }
+  for (int j = 0; j < n; j++) nc.SetCV(j, ON_3dPoint(A[j][n] / A[j][j], A[j][n + 1] / A[j][j], A[j][n + 2] / A[j][j]));
+  return true;
+}
+}  // namespace
+
+bool GetGrips(const ON_Geometry* g, GripSet& out, bool editPoints) {
   out = {};
+  if (editPoints && ON_Curve::Cast(g)) {
+    ON_NurbsCurve nc;
+    std::vector<double> t;
+    if (!EditForm(g, nc, t)) return false;
+    for (int i = 0; i < (int)t.size(); i++) out.grips.push_back({nc.PointAt(t[i]), i, -2});
+    return true;
+  }
   if (const auto* pl = ON_PolylineCurve::Cast(g)) {
     const int n = pl->PointCount() - (pl->IsClosed() ? 1 : 0);
     for (int i = 0; i < n; i++) out.grips.push_back({pl->m_pline[i], i});
@@ -93,6 +139,17 @@ bool GetGrips(const ON_Geometry* g, GripSet& out) {
 }
 
 ON_Geometry* MoveGrip(const ON_Geometry* g, int i, int j, const ON_3dPoint& p) {
+  if (j == -2) {  // punto di modifica: la curva si reinterpola per i punti di modifica
+    auto* nc = new ON_NurbsCurve;
+    std::vector<double> t;
+    if (!EditForm(g, *nc, t) || i < 0 || i >= (int)t.size()) { delete nc; return nullptr; }
+    std::vector<ON_3dPoint> Q;
+    for (double tk : t) Q.push_back(nc->PointAt(tk));
+    Q[i] = p;
+    if (nc->IsClosed() && (i == 0 || i == (int)Q.size() - 1)) Q.front() = Q.back() = p;
+    if (!InterpolateSameKnots(*nc, t, Q)) { delete nc; return nullptr; }
+    return nc;
+  }
   if (const auto* pl = ON_PolylineCurve::Cast(g)) {
     auto* c = static_cast<ON_PolylineCurve*>(pl->Duplicate());
     const int n = c->PointCount();

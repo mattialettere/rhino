@@ -10,7 +10,14 @@ namespace cad {
 namespace {
 
 const ON_DimStyle& CurrentStyle(Engine& e) {
-  const auto* ds = ON_DimStyle::Cast(e.Model().DefaultDimensionStyle().ModelComponent());
+  // stile corrente (DimStyle), altrimenti quello predefinito del modello
+  // stile corrente scelto con DimStyle (segnato da una stringa utente); lo stile
+  // creato con il documento non viene usato, per non cambiare le quote esistenti
+  const ON_UUID cur = e.Model().CurrentDimensionStyleId();
+  const auto* ds = ON_UuidIsNil(cur) ? nullptr : ON_DimStyle::Cast(e.Model().DimensionStyleFromId(cur).ModelComponent());
+  ON_wString mark;
+  if (ds && !ds->GetUserString(L"Kurva3D.DimStyle", mark)) ds = nullptr;
+  if (!ds) ds = ON_DimStyle::Cast(e.Model().DefaultDimensionStyle().ModelComponent());
   return ds ? *ds : ON_DimStyle::Default;
 }
 

@@ -80,6 +80,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterExtra3Commands(*this);
   RegisterExtra4Commands(*this);
   RegisterExtra5Commands(*this);
+  RegisterExtra6Commands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
@@ -87,6 +88,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterSurface3Commands(*this);
   RegisterKernel4Commands(*this);
   RegisterKernel5Commands(*this);
+  RegisterKernel6Commands(*this);
 #endif
 }
 
@@ -245,8 +247,13 @@ std::map<std::string, std::string> Engine::ReadOptions(TokenStream& ts, const st
     const std::string& t = ts.Peek();
     auto eq = t.find('=');
     if (eq != std::string::npos) {
-      opts[NormalizeName(t.substr(0, eq))] = NormalizeName(t.substr(eq + 1));
+      const std::string key = NormalizeName(t.substr(0, eq));
+      std::string val = t.substr(eq + 1);
       ts.Next();
+      // Name="Con spazi": il valore tra virgolette e' il token successivo
+      if (val.empty() && !ts.AtEnd() && !IsEnter(ts.Peek())) { val = ts.Peek(); ts.Next(); }
+      // nomi e caratteri mantengono maiuscole e minuscole
+      opts[key] = key == "name" || key == "font" ? val : NormalizeName(val);
     } else if (switches.count(NormalizeName(t))) {
       opts[NormalizeName(t)] = "yes";
       ts.Next();

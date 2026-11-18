@@ -503,7 +503,7 @@ void Viewport::paintGL() {
         gl->glEnd();
       }
       GripSet gs;
-      if (moved && GetGrips(moved.get(), gs))
+      if (moved && GetGrips(moved.get(), gs, m_gripDrag.j == -2))
         for (const auto& poly : gs.cage) {
           gl->glBegin(GL_LINE_STRIP);
           for (const auto& q : poly) gl->glVertex3d(q.x, q.y, q.z);
