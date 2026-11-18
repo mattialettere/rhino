@@ -215,6 +215,46 @@ jobs:
           if [ $bad -ne 0 ]; then echo "librerie esterne non incluse"; exit 1; fi
           du -sh dist/Kurva3D.app
 
+      # Motore dell'assistente AI: llama-server di llama.cpp (MIT) per macOS, versione fissa
+      # (Metal su Apple Silicon). Va in Contents/Helpers/llama, firmato con l'app.
+      - name: llama.cpp per l'assistente AI
+        run: |
+          tag=b12000
+          arch=${{ matrix.arch == 'AppleSilicon' && 'arm64' || 'x64' }}
+          mkdir -p "$RUNNER_TEMP/llama"
+          ok=0
+          for ext in tar.gz zip; do
+            url="https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-macos-$arch.$ext"
+            if curl -fsSL "$url" -o "$RUNNER_TEMP/llama.$ext"; then
+              if [ $ext = zip ]; then unzip -q "$RUNNER_TEMP/llama.zip" -d "$RUNNER_TEMP/llama"; else tar -xzf "$RUNNER_TEMP/llama.tar.gz" -C "$RUNNER_TEMP/llama"; fi
+              ok=1; break
+            fi
+          done
+          [ $ok = 1 ] || { echo "llama.cpp per macOS non scaricato"; exit 1; }
+          srv=$(find "$RUNNER_TEMP/llama" -type f -name llama-server | head -1)
+          [ -n "$srv" ] || { echo "llama-server non trovato nell'archivio"; exit 1; }
+          H=dist/Kurva3D.app/Contents/Helpers/llama
+          mkdir -p "$H"
+          cp -R "$(dirname "$srv")"/* "$H/"
+          chmod +x "$H/llama-server"
+          xattr -cr "$H" || true
+          ls -la "$H"
+          # le librerie devono essere quelle accanto a llama-server, non di Homebrew
+          if otool -L "$H/llama-server" | grep -E "/opt/homebrew|/usr/local"; then echo "llama-server usa librerie esterne"; exit 1; fi
+
+      - name: Cache del modello di prova
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Application Support/Kurva3D/models
+          key: kurva3d-ai-model-mac-qwen3-0.6b-v1
+
+      # Prova completa dell'assistente con il llama-server impacchettato
+      - name: Prova dell'assistente AI
+        timeout-minutes: 25
+        run: |
+          KURVA3D_LLAMA_SERVER="$PWD/dist/Kurva3D.app/Contents/Helpers/llama/llama-server" \
+            build/kurva3d-ai-test --model qwen3-0.6b --prompt "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro"
+
       - name: Firma
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -231,10 +271,14 @@ jobs:
             security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
             ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | awk '{print $2}')
             if [ -z "$ID" ]; then echo "certificato Developer ID Application non trovato"; exit 1; fi
+            # prima gli eseguibili e le librerie di llama.cpp (Helpers non e' coperto da --deep)
+            find dist/Kurva3D.app/Contents/Helpers -type f \( -perm -111 -o -name "*.dylib" \) -exec \
+              codesign --force --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" {} \;
             codesign --force --deep --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" dist/Kurva3D.app
             echo "FIRMATA=1" >> "$GITHUB_ENV"
           else
             echo "Nessun certificato nei Secrets: firma ad hoc (app non firmata da Apple)"
+            find dist/Kurva3D.app/Contents/Helpers -type f \( -perm -111 -o -name "*.dylib" \) -exec codesign --force -s - {} \;
             codesign --force --deep -s - dist/Kurva3D.app
           fi
           codesign --verify --deep --strict --verbose=2 dist/Kurva3D.app

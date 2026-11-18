@@ -115,14 +115,14 @@ MainWindow::MainWindow(QWidget* parent)
   m_history = new QPlainTextEdit;
   m_history->setReadOnly(true);
   m_history->setMaximumHeight(70);
-  m_history->setFont(QFont("Consolas", 9));
+  m_history->setFont(MonoFont(9));
   m_history->setFrameShape(QFrame::NoFrame);
   cmdBox->addWidget(m_history);
   auto* line = new QHBoxLayout;
   m_prompt = new QLabel("Comando:");
   m_prompt->setObjectName("panelTitle");
   m_input = new QLineEdit;
-  m_input->setFont(QFont("Consolas", 10));
+  m_input->setFont(MonoFont(10));
   m_input->installEventFilter(this);
   {  // completamento automatico dei nomi dei comandi (come la riga di comando di Rhino 8)
     QStringList names;
@@ -315,7 +315,7 @@ void MainWindow::BuildMenus() {
     auto* theme = view->addMenu("Tema");
     auto* group = new QActionGroup(theme);
     const std::pair<const char*, ThemeMode> modes[] = {
-        {"Automatico (come Windows)", ThemeMode::Auto}, {"Chiaro", ThemeMode::Light}, {"Scuro", ThemeMode::Dark}};
+        {"Automatico (come il sistema)", ThemeMode::Auto}, {"Chiaro", ThemeMode::Light}, {"Scuro", ThemeMode::Dark}};
     const ThemeMode cur = SavedThemeMode();
     for (auto& [label, m] : modes) {
       QAction* a = theme->addAction(label, this, [this, m = m] { SetTheme(m); });

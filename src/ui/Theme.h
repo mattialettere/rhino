@@ -2,6 +2,7 @@
 // stile moderno e icone disegnate dal programma (originali, non quelle di Rhino).
 #pragma once
 #include <QColor>
+#include <QFont>
 #include <QIcon>
 #include <QString>
 
@@ -24,6 +25,9 @@ bool SystemPrefersDark();
 // Applica il tema (tavolozza, foglio di stile, colori delle viste).
 void ApplyTheme(ThemeMode m);
 const ThemePalette& CurrentPalette();
+
+// Carattere a spaziatura fissa del sistema (Consolas su Windows, Menlo su macOS).
+QFont MonoFont(int pointSize);
 
 // Icona di un comando (es. "_Line") nei colori del tema attuale; vuota se non c'e'.
 QIcon CommandIcon(const QString& command);

@@ -1,6 +1,7 @@
 #include "ui/Theme.h"
 #include "ui/Viewport.h"
 #include <QApplication>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QPainter>
 #include <QPainterPath>
@@ -181,6 +182,19 @@ bool SystemPrefersDark() {
 }
 
 const ThemePalette& CurrentPalette() { return g_pal; }
+
+QFont MonoFont(int pointSize) {
+#if defined(Q_OS_WIN)
+  QFont f("Consolas", pointSize);
+#elif defined(Q_OS_MACOS)
+  QFont f("Menlo", pointSize + 2);  // i punti su macOS sono piu' piccoli
+#else
+  QFont f = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+  f.setPointSize(pointSize);
+#endif
+  f.setStyleHint(QFont::Monospace);
+  return f;
+}
 
 void ApplyTheme(ThemeMode m) {
   const bool dark = m == ThemeMode::Dark || (m == ThemeMode::Auto && SystemPrefersDark());

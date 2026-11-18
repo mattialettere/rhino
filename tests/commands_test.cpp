@@ -1812,9 +1812,14 @@ int main(int argc, char** argv) {
     CHECK(c.e.Run("_Box 0,0,0 10,20 5\n_SubDBox 30,0,0 40,10 10\n_SelAll\n_ApplyTexture File= \"" + img + "\" Repeat=2"));
     const auto ids = c.e.AllObjectIds(true);
     ObjectTexture t0, t1;
+    // openNURBS su Windows salva il percorso con le barre rovesciate
+    auto same = [](std::string a, std::string b) {
+      for (auto* x : {&a, &b}) for (auto& ch : *x) if (ch == '\\') ch = '/';
+      return a == b;
+    };
     CHECK(ids.size() == 2 && GetObjectTexture(c.e.Model(), *c.e.Object(ids[0])->Attributes(nullptr), t0) &&
           GetObjectTexture(c.e.Model(), *c.e.Object(ids[1])->Attributes(nullptr), t1));
-    CHECK(t0.file == img && t0.uvw[0][0] == 2.0 && t0.hasMapping && t1.hasMapping);
+    CHECK(same(t0.file, img) && t0.uvw[0][0] == 2.0 && t0.hasMapping && t1.hasMapping);
     // solido NURBS: parametri della superficie; SubD: box
     CHECK(t0.mapping.m_type == ON_TextureMapping::TYPE::srfp_mapping);
     CHECK(t1.mapping.m_type == ON_TextureMapping::TYPE::box_mapping);
@@ -1842,7 +1847,7 @@ int main(int argc, char** argv) {
     ObjectTexture tb;
     const auto* ob = back.Model().ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[1]).ModelComponent();
     const auto* mgc = ON_ModelGeometryComponent::Cast(ob);
-    CHECK(mgc && GetObjectTexture(back.Model(), *mgc->Attributes(nullptr), tb) && tb.file == img &&
+    CHECK(mgc && GetObjectTexture(back.Model(), *mgc->Attributes(nullptr), tb) && same(tb.file, img) &&
           tb.hasMapping && tb.mapping.m_type == ON_TextureMapping::TYPE::cylinder_mapping);
     const std::string res = ResolveTextureFile(back.Model(), img, dir + "/cache");
     std::ifstream rf(res, std::ios::binary);
@@ -1886,6 +1891,14 @@ int main(int argc, char** argv) {
     CHECK(pick(8, 0) == "qwen3-4b");
     CHECK(pick(16, 0) == "qwen3-8b");
     CHECK(pick(32, 0) == "qwen3-14b");
+    {  // Mac con Apple Silicon: memoria unificata, la GPU (Metal) usa la RAM
+      ai::HardwareInfo mac;
+      mac.ramGB = 16;
+      mac.unifiedMemory = true;
+      bool gpu = false;
+      ai::ModelBudgetGB(mac, &gpu);
+      CHECK(gpu && ai::Catalog()[ai::RecommendModel(mac)].id == "qwen3-8b");
+    }
     CHECK(pick(64, 0) == "qwen3-32b");
     CHECK(pick(16, 24) == "qwen3-14b");
     for (const auto& m : ai::Catalog()) CHECK(ai::LicenseAllowed(m.license));

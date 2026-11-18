@@ -187,7 +187,8 @@ QString LlamaServer::Executable() {
 #else
   const QString name = "llama-server";
 #endif
-  for (const QString& c : {dir + "/llama/" + name, dir + "/" + name, dir + "/../Resources/llama/" + name})
+  for (const QString& c : {dir + "/llama/" + name, dir + "/" + name, dir + "/../Helpers/llama/" + name,
+                         dir + "/../Resources/llama/" + name})
     if (QFileInfo::exists(c)) return c;
   return QStandardPaths::findExecutable(name);
 }

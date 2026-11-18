@@ -1,4 +1,5 @@
 #include "ui/AiPanel.h"
+#include "ui/Theme.h"
 #include "commands/Engine.h"
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -48,7 +49,7 @@ AiPanel::AiPanel(cad::Engine& engine, std::function<void()> afterChange, QWidget
   lay->addWidget(m_status);
   lay->addWidget(new QLabel("Comandi (modificabili):"));
   m_script = new QPlainTextEdit;
-  m_script->setFont(QFont("Consolas", 9));
+  m_script->setFont(MonoFont(9));
   lay->addWidget(m_script, 1);
   auto* row = new QHBoxLayout;
   m_apply = new QPushButton("Anteprima");
