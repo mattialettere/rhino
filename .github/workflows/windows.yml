@@ -6,6 +6,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write   # per pubblicare la Release quando si spinge un tag v*
+
 jobs:
   build:
     runs-on: windows-2022
@@ -78,3 +81,14 @@ jobs:
         with:
           name: rhino-windows-x64
           path: dist
+
+      # Checkpoint: un tag v* crea la Release con lo zip, solo se compilazione e test sono passati
+      - name: Release (solo per i tag v*)
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          Compress-Archive -Path dist\* -DestinationPath "rhino-windows-x64-$tag.zip"
+          gh release create $tag "rhino-windows-x64-$tag.zip" --title "Rhinoceros CAD $tag (Windows 64 bit)" --notes-file docs/RELEASE_NOTES.md
