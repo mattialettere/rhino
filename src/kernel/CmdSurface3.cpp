@@ -25,6 +25,14 @@
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_Tool.hxx>
 #include <GeomLib.hxx>
+#include <GeomAPI_PointsToBSpline.hxx>
+#include <GeomAPI_Interpolate.hxx>
+#include <TColStd_HArray1OfReal.hxx>
+#include <TColgp_HArray1OfPnt.hxx>
+#include <Geom2dAPI_Interpolate.hxx>
+#include <Geom2d_BSplineCurve.hxx>
+#include <TColgp_Array1OfPnt.hxx>
+#include <TColgp_HArray1OfPnt2d.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <Geom_BoundedSurface.hxx>
 #include <ShapeAnalysis_FreeBounds.hxx>
@@ -206,6 +214,62 @@ struct ArcTable {
     return 0.5 * (a + b);
   }
 };
+
+
+// Superficie che passa esattamente per sezioni con la stessa struttura NURBS
+// (stesso grado, nodi e pesi): ogni fila di punti di controllo si interpola
+// in v con una cubica (periodica se le sezioni fanno il giro completo).
+ON_Brep* SurfaceFromSections(const std::vector<ON_NurbsCurve>& secs, const std::vector<double>& v, bool periodic, double tol) {
+  const size_t K = secs.size();
+  if (K < 2 || v.size() != K + (periodic ? 1 : 0)) return nullptr;
+  const ON_NurbsCurve& s0 = secs[0];
+  const int nc = s0.CVCount();
+  std::vector<Handle(Geom_BSplineCurve)> rows(nc);
+  int templ = -1;
+  for (int c = 0; c < nc; c++) {
+    Handle(TColgp_HArray1OfPnt) pts = new TColgp_HArray1OfPnt(1, (int)K);
+    double spread = 0;
+    for (size_t k = 0; k < K; k++) {
+      ON_3dPoint q;
+      secs[k].GetCV(c, q);
+      pts->SetValue(int(k) + 1, gp_Pnt(q.x, q.y, q.z));
+      if (k) spread = std::max(spread, pts->Value(int(k) + 1).Distance(pts->Value(1)));
+    }
+    if (spread <= tol) continue;  // fila degenere (punto sull'asse): poli tutti uguali
+    Handle(TColStd_HArray1OfReal) par = new TColStd_HArray1OfReal(1, (int)v.size());
+    for (size_t k = 0; k < v.size(); k++) par->SetValue(int(k) + 1, v[k]);
+    GeomAPI_Interpolate in(pts, par, periodic ? Standard_True : Standard_False, 1e-12);
+    in.Perform();
+    if (!in.IsDone()) return nullptr;
+    Handle(Geom_BSplineCurve) r = in.Curve();
+    if (r->IsPeriodic()) r->SetNotPeriodic();
+    rows[c] = r;
+    if (templ < 0) templ = c;
+  }
+  if (templ < 0) return nullptr;
+  const Handle(Geom_BSplineCurve)& T = rows[templ];
+  const int nv = T->NbPoles(), dv = T->Degree();
+  TColStd_Array1OfReal flat(1, T->NbPoles() + dv + 1);
+  T->KnotSequence(flat);
+  auto* ns = new ON_NurbsSurface(3, s0.IsRational(), s0.Order(), dv + 1, nc, nv);
+  for (int i = 0; i < s0.KnotCount(); i++) ns->m_knot[0][i] = s0.m_knot[i];
+  for (int i = 0; i < ns->KnotCount(1); i++) ns->m_knot[1][i] = flat(i + 2);
+  for (int c = 0; c < nc; c++) {
+    const double w = s0.IsRational() ? s0.Weight(c) : 1.0;
+    ON_3dPoint fixed;
+    secs[0].GetCV(c, fixed);
+    for (int j = 0; j < nv; j++) {
+      ON_3dPoint q = fixed;
+      if (!rows[c].IsNull()) { const gp_Pnt g = rows[c]->Pole(j + 1); q = ON_3dPoint(g.X(), g.Y(), g.Z()); }
+      if (ns->IsRational()) ns->SetCV(c, j, ON_4dPoint(q.x * w, q.y * w, q.z * w, w));
+      else ns->SetCV(c, j, q);
+    }
+  }
+  ON_Brep* b = ON_Brep::New();
+  ON_Surface* sp = ns;
+  if (!b->Create(sp)) { delete b; delete ns; return nullptr; }
+  return b;
+}
 
 // --- ExtrudeCrvTapered -----------------------------------------------------------
 // Estrusione con angolo di sformo lungo z. DraftAngle= in gradi (positivo
@@ -613,8 +677,8 @@ bool CmdSweep2(Engine& e, TokenStream& ts) {
     for (size_t i = 1; i < profs.size(); i++)
       if (!MakeCompatible(profs[0].local, profs[i].local)) return e.Fail("profili non compatibili");
   const int stations = std::max(12, 6 * int(profs.size()) + 6);
-  BRepOffsetAPI_ThruSections mk(Standard_False, Standard_False, e.Tolerance());
-  int added = 0;
+  std::vector<ON_NurbsCurve> secs;
+  std::vector<double> vpar;
   for (int k = 0; k <= stations; k++) {
     const double f = double(k) / stations;
     const double t1 = A1.ParamAt(f * A1.Length()), t2 = A2.ParamAt(f * A2.Length());
@@ -643,18 +707,15 @@ bool CmdSweep2(Engine& e, TokenStream& ts) {
       if (sec.IsRational()) { const double w = loc.Weight(i); sec.SetCV(i, ON_4dPoint(q.x * w, q.y * w, q.z * w, w)); }
       else sec.SetCV(i, q);
     }
-    TopoDS_Shape edge = occt::CurveToShape(sec);
-    if (edge.IsNull()) continue;
-    mk.AddWire(BRepBuilderAPI_MakeWire(TopoDS::Edge(edge)).Wire());
-    added++;
+    secs.push_back(sec);
+    vpar.push_back(f);
   }
-  if (added < 2) return e.Fail("sezioni non valide");
-  try {
-    mk.CheckCompatibility(Standard_False);
-    mk.Build();
-  } catch (...) {
-  }
-  if (!mk.IsDone() || !AddShape(e, mk.Shape(), Attrs(e, sel[2]))) return e.Fail("sweep non riuscito");
+  if (secs.size() < 2) return e.Fail("sezioni non valide");
+  ON_Brep* br = nullptr;
+  try { br = SurfaceFromSections(secs, vpar, false, e.Tolerance()); } catch (...) {}
+  if (!br) return e.Fail("sweep non riuscito");
+  const ON_3dmObjectAttributes at = Attrs(e, sel[2]);
+  e.AddObject(br, &at);
   e.Out() << "  Creata superficie di sweep su 2 binari\n";
   return true;
 }
@@ -953,6 +1014,171 @@ bool CmdMeshBooleanUnion(Engine& e, TokenStream&) { return MeshBoolean(e, 0, "Me
 bool CmdMeshBooleanDifference(Engine& e, TokenStream&) { return MeshBoolean(e, 1, "MeshBooleanDifference"); }
 bool CmdMeshBooleanIntersection(Engine& e, TokenStream&) { return MeshBoolean(e, 2, "MeshBooleanIntersection"); }
 
+// --- RailRevolve ----------------------------------------------------------------------------
+// Rivoluzione del profilo attorno all'asse con l'estremo che segue il binario:
+// il profilo si scala in direzione radiale (ScaleHeight=Yes scala anche in altezza).
+bool CmdRailRevolve(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto pp = e.ReadPick(ts, "curva del profilo");
+  if (!pp) return false;
+  ON_UUID pid = ON_nil_uuid;
+  const ON_Curve* prof = NearestCurve(e, *pp, {}, &pid);
+  if (!prof) return e.Fail("profilo non trovato");
+  auto pr = e.ReadPick(ts, "curva del binario");
+  if (!pr) return false;
+  const ON_Curve* rail = NearestCurve(e, *pr, {pid});
+  if (!rail) return e.Fail("binario non trovato");
+  auto a0 = e.ReadPoint(ts, "inizio dell'asse");
+  if (!a0) return false;
+  auto a1 = e.ReadPoint(ts, "fine dell'asse");
+  if (!a1) return false;
+  opts.merge(e.ReadOptions(ts));
+  ON_3dVector Z = *a1 - *a0;
+  if (!Z.Unitize()) return e.Fail("asse nullo");
+  const bool scaleHeight = YesOpt(opts, "scaleheight", false);
+  ON_Plane frame(*a0, Z);
+  auto local = [&](const ON_3dPoint& q, double& r, double& ang, double& h) {
+    const ON_3dVector v = q - *a0;
+    const double x = v * frame.xaxis, y = v * frame.yaxis;
+    h = v * Z;
+    r = std::hypot(x, y);
+    ang = std::atan2(y, x);
+  };
+  ON_NurbsCurve pc;
+  if (!prof->GetNurbForm(pc)) return e.Fail("profilo non valido");
+  // estremo del profilo sul binario
+  auto railDist = [&](const ON_3dPoint& q) {
+    double b = 1e300;
+    for (int i = 0; i <= 400; i++) b = std::min(b, rail->PointAt(rail->Domain().ParameterAt(i / 400.0)).DistanceTo(q));
+    return b;
+  };
+  const ON_3dPoint E = railDist(pc.PointAtStart()) < railDist(pc.PointAtEnd()) ? pc.PointAtStart() : pc.PointAtEnd();
+  double rE, angE, hE;
+  local(E, rE, angE, hE);
+  if (rE <= e.Tolerance()) return e.Fail("l'estremo del profilo e' sull'asse");
+  // binario campionato in angolo (svolto) attorno all'asse
+  const int ns = 2000;
+  std::vector<double> rr(ns + 1), aa(ns + 1), hh(ns + 1);
+  for (int i = 0; i <= ns; i++) {
+    local(rail->PointAt(rail->Domain().ParameterAt(double(i) / ns)), rr[i], aa[i], hh[i]);
+    if (i) while (aa[i] - aa[i - 1] > ON_PI) aa[i] -= 2 * ON_PI;
+    if (i) while (aa[i] - aa[i - 1] < -ON_PI) aa[i] += 2 * ON_PI;
+  }
+  const bool closed = rail->IsClosed() && std::fabs(std::fabs(aa[ns] - aa[0]) - 2 * ON_PI) < 0.1;
+  const int stations = 48;
+  std::vector<ON_NurbsCurve> secs;
+  std::vector<double> vpar;
+  const int count = closed ? stations : stations + 1;
+  for (int k = 0; k < count; k++) {
+    const double f = double(k) / stations;
+    const int i = std::min(ns - 1, int(f * ns));
+    const double u = f * ns - i;
+    const double ang = aa[i] + u * (aa[i + 1] - aa[i]);
+    const double r = rr[i] + u * (rr[i + 1] - rr[i]);
+    const double h = hh[i] + u * (hh[i + 1] - hh[i]);
+    const double s = r / rE;
+    ON_NurbsCurve sec = pc;
+    for (int c = 0; c < sec.CVCount(); c++) {
+      ON_3dPoint q;
+      pc.GetCV(c, q);
+      double qr, qa, qh;
+      local(q, qr, qa, qh);
+      const double nr = qr * s;
+      const double na = qa + (ang - angE);
+      const double nh = scaleHeight ? h + (qh - hE) * s : qh + (h - hE);
+      const ON_3dPoint w = *a0 + frame.xaxis * (nr * std::cos(na)) + frame.yaxis * (nr * std::sin(na)) + Z * nh;
+      if (sec.IsRational()) { const double wt = sec.Weight(c); sec.SetCV(c, ON_4dPoint(w.x * wt, w.y * wt, w.z * wt, wt)); }
+      else sec.SetCV(c, w);
+    }
+    secs.push_back(sec);
+    vpar.push_back(f);
+  }
+  if (closed) vpar.push_back(1.0);
+  ON_Brep* br = nullptr;
+  try { br = SurfaceFromSections(secs, vpar, closed, e.Tolerance()); } catch (...) {}
+  if (!br) return e.Fail("rivoluzione su binario non riuscita");
+  const ON_3dmObjectAttributes at = Attrs(e, pid);
+  e.AddObject(br, &at);
+  e.Out() << "  Creata superficie di rivoluzione su binario\n";
+  return true;
+}
+
+// --- InterpCrvOnSrf ----------------------------------------------------------------------
+// Curva interpolata sulla superficie per i punti dati (Invio per finire).
+bool CmdInterpCrvOnSrf(Engine& e, TokenStream& ts) {
+  auto ps = e.ReadPick(ts, "clicca la superficie");
+  if (!ps) return false;
+  const ON_Geometry* g = NearestSurface(e, *ps, {}, nullptr);
+  if (!g) return e.Fail("superficie non trovata");
+  std::vector<ON_3dPoint> pts;
+  while (true) {
+    if (pts.size() >= 2 && !e.MoreInput(ts)) break;
+    auto q = e.ReadPoint(ts, pts.size() < 2 ? "punto sulla superficie" : "punto successivo (Invio per finire)");
+    if (!q) { if (pts.size() >= 2) break; return false; }
+    pts.push_back(*q);
+  }
+  e.SkipEnter(ts);
+  try {
+    const TopoDS_Shape s = occt::GeometryToShape(*g, e.Tolerance());
+    TopExp_Explorer ex(s, TopAbs_FACE);
+    if (!ex.More()) return e.Fail("superficie non valida");
+    const TopoDS_Face face = TopoDS::Face(ex.Current());
+    Handle(Geom_Surface) srf = BRep_Tool::Surface(face);
+    ShapeAnalysis_Surface sas(srf);
+    Handle(TColgp_HArray1OfPnt2d) uv = new TColgp_HArray1OfPnt2d(1, (int)pts.size());
+    for (size_t i = 0; i < pts.size(); i++) uv->SetValue(int(i) + 1, sas.ValueOfUV(gp_Pnt(pts[i].x, pts[i].y, pts[i].z), e.Tolerance()));
+    Geom2dAPI_Interpolate interp(uv, Standard_False, 1e-9);
+    interp.Perform();
+    if (!interp.IsDone()) return e.Fail("interpolazione non riuscita");
+    BRepBuilderAPI_MakeEdge me(interp.Curve(), srf);
+    if (!me.IsDone()) return e.Fail("curva sulla superficie non riuscita");
+    TopoDS_Edge edge = me.Edge();
+    BRepLib::BuildCurves3d(edge, 1e-5, GeomAbs_C2, 14, 200);
+    std::vector<ON_Curve*> cs = occt::ShapeToCurves(edge, e.Tolerance());
+    if (cs.empty()) return e.Fail("curva non convertibile");
+    for (size_t i = 1; i < cs.size(); i++) delete cs[i];
+    e.AddObject(cs[0]);
+  } catch (...) {
+    return e.Fail("curva sulla superficie non riuscita");
+  }
+  e.Out() << "  Creata curva interpolata sulla superficie\n";
+  return true;
+}
+
+// --- FitCrv -----------------------------------------------------------------------------------
+// Ricostruisce le curve con una NURBS cubica entro la tolleranza (Tolerance=).
+bool CmdFitCrv(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("FitCrv", "seleziona le curve da riadattare, poi Invio");
+  if (sel.empty()) return false;
+  opts.merge(e.ReadOptions(ts));
+  const double tol = NumOpt(opts, "tolerance", e.Tolerance());
+  int n = 0;
+  for (const auto& id : sel) {
+    const auto* c = ON_Curve::Cast(Geo(e, id));
+    if (!c) continue;
+    const ArcTable at(*c);
+    const int np = 200;
+    TColgp_Array1OfPnt arr(1, np + 1);
+    for (int i = 0; i <= np; i++) {
+      const ON_3dPoint q = c->PointAt(at.ParamAt(at.Length() * i / np));
+      arr.SetValue(i + 1, gp_Pnt(q.x, q.y, q.z));
+    }
+    try {
+      GeomAPI_PointsToBSpline fit(arr, 3, 3, GeomAbs_C2, tol);
+      if (!fit.IsDone()) continue;
+      ON_NurbsCurve* r = occt::FromOcct(fit.Curve());
+      if (!r) continue;
+      e.ReplaceObject(id, r);
+      n++;
+    } catch (...) {
+    }
+  }
+  if (!n) return e.Fail("nessuna curva riadattata");
+  e.Out() << "  Riadattate " << n << " curve (tolleranza " << tol << ")\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterSurface3Commands(Engine& e) {
@@ -972,6 +1198,10 @@ void RegisterSurface3Commands(Engine& e) {
   reg("MeshBooleanUnion", "Mesh", "Unione di mesh chiuse", CmdMeshBooleanUnion);
   reg("MeshBooleanDifference", "Mesh", "Differenza di mesh chiuse (la prima meno le altre)", CmdMeshBooleanDifference);
   reg("MeshBooleanIntersection", "Mesh", "Intersezione di mesh chiuse", CmdMeshBooleanIntersection);
+  reg("RailRevolve", "Superfici", "Rivoluzione con l'estremo del profilo lungo un binario (ScaleHeight=)", CmdRailRevolve);
+  reg("InterpCrvOnSrf", "Curve", "Curva interpolata per punti su una superficie", CmdInterpCrvOnSrf);
+  reg("FitCrv", "Curve", "Riadatta le curve con una NURBS cubica entro la tolleranza", CmdFitCrv);
+  reg("Fit", "Curve", "Come FitCrv", CmdFitCrv);
   reg("ArraySrf", "Trasforma", "Copie degli oggetti sulla griglia u x v di una superficie", CmdArraySrf);
 }
 

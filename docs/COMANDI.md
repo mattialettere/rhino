@@ -17,21 +17,21 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | Punti | 6 / 9 |
 | Curve: linee e polilinee | 10 / 11 |
 | Curve: forme | 17 / 19 |
-| Curve: forme libere | 10 / 18 |
+| Curve: forme libere | 12 / 18 |
 | Curve da oggetti | 12 / 14 |
-| Superfici | 22 / 29 |
+| Superfici | 23 / 29 |
 | Solidi | 23 / 24 |
 | SubD | 10 / 23 |
 | Mesh | 15 / 19 |
 | Trasformazioni | 23 / 30 |
-| Modifica | 26 / 34 |
+| Modifica | 28 / 34 |
 | Selezione | 18 / 19 |
 | Blocchi | 3 / 6 |
 | Livelli e proprieta' | 11 / 12 |
 | Annotazioni | 12 / 14 |
 | Analisi | 11 / 15 |
 | File | 7 / 7 |
-| **Totale** | **236 / 303** |
+| **Totale** | **241 / 303** |
 
 ## Punti
 
@@ -93,7 +93,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 |---|---|
 | Curve | ✔ |
 | InterpCrv | ✔ |
-| InterpCrvOnSrf | 🧱 |
+| InterpCrvOnSrf | ✔ |
 | HandleCurve | ⬜ |
 | Sketch | ⬜ |
 | CurveThroughPt | ✔ |
@@ -108,7 +108,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | RebuildCrvNonUniform | 🧱 |
 | Fair | 🧱 |
 | Smooth | ✔ |
-| Simplify | 🧱 |
+| Simplify | ✔ |
 
 ## Curve da oggetti
 
@@ -145,7 +145,7 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | NetworkSrf | ✔ |
 | Patch | ✔ |
 | Revolve | ✔ |
-| RailRevolve | 🧱 |
+| RailRevolve | ✔ |
 | ExtrudeCrv | ✔ |
 | ExtrudeCrvAlongCrv | ✔ |
 | ExtrudeCrvToPoint | ✔ |
@@ -311,8 +311,8 @@ I comandi si usano dalla riga di comando della finestra `rhino-ui` (come in Rhin
 | PointsOff | ✔ |
 | EditPtOn | ⬜ |
 | MakePeriodic | 🧱 |
-| Match | 🧱 |
-| Fit | 🧱 |
+| Match | ✔ |
+| Fit | ✔ |
 | ConvertToBezier | ✔ |
 | Isolate | ✔ |
 | Unisolate | ✔ |

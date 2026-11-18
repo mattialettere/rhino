@@ -277,6 +277,156 @@ bool CmdReduce(Engine& e, TokenStream& ts) {
   return n > 0 || e.Fail("nessuna mesh ridotta");
 }
 
+// --- SimplifyCrv -------------------------------------------------------------------------
+// I tratti che sono linee o archi diventano linee e archi veri; le linee
+// allineate si uniscono.
+void SplitPieces(const ON_Curve& c, std::vector<std::unique_ptr<ON_Curve>>& out) {
+  if (const auto* pc = ON_PolyCurve::Cast(&c)) {
+    for (int i = 0; i < pc->Count(); i++) SplitPieces(*pc->SegmentCurve(i), out);
+    return;
+  }
+  std::vector<double> br{c.Domain()[0]};
+  double t = c.Domain()[0];
+  int hint = 0;
+  while (c.GetNextDiscontinuity(ON::continuity::C2_locus_continuous, t, c.Domain()[1], &t, &hint))
+    if (t > br.back()) br.push_back(t);
+  if (br.back() < c.Domain()[1]) br.push_back(c.Domain()[1]);
+  for (size_t i = 0; i + 1 < br.size(); i++) {
+    std::unique_ptr<ON_Curve> piece(c.DuplicateCurve());
+    if (br.size() > 2 && !piece->Trim(ON_Interval(br[i], br[i + 1]))) continue;
+    out.push_back(std::move(piece));
+  }
+}
+
+bool CmdSimplifyCrv(Engine& e, TokenStream&) {
+  auto sel = e.RequireSelection("SimplifyCrv", "seleziona le curve da semplificare, poi Invio");
+  if (sel.empty()) return false;
+  const double tol = e.Tolerance();
+  int changed = 0;
+  for (const auto& id : sel) {
+    const auto* c = ON_Curve::Cast(Geo(e, id));
+    if (!c || ON_LineCurve::Cast(c) || ON_ArcCurve::Cast(c)) continue;
+    std::vector<std::unique_ptr<ON_Curve>> pieces;
+    SplitPieces(*c, pieces);
+    std::vector<std::unique_ptr<ON_Curve>> simple;
+    int converted = 0;
+    for (auto& p : pieces) {
+      ON_Arc arc;
+      if (!ON_LineCurve::Cast(p.get()) && p->IsLinear(tol)) {
+        auto* l = new ON_LineCurve(p->PointAtStart(), p->PointAtEnd());
+        // linee allineate consecutive: una sola
+        if (!simple.empty()) {
+          if (auto* prev = ON_LineCurve::Cast(simple.back().get())) {
+            ON_3dVector a = prev->m_line.Direction(), b = l->m_line.Direction();
+            if (a.Unitize() && b.Unitize() && a * b > 1 - 1e-9) { prev->m_line.to = l->m_line.to; prev->SetDomain(0, prev->m_line.Length()); delete l; converted++; continue; }
+          }
+        }
+        simple.emplace_back(l);
+        converted++;
+      } else if (!ON_ArcCurve::Cast(p.get()) && p->IsArc(nullptr, &arc, tol)) {
+        simple.emplace_back(new ON_ArcCurve(arc));
+        converted++;
+      } else {
+        simple.push_back(std::move(p));
+      }
+    }
+    if (!converted) continue;
+    ON_Curve* res = nullptr;
+    if (simple.size() == 1) {
+      res = simple[0].release();
+    } else {
+      auto* pc = new ON_PolyCurve();
+      for (auto& s : simple) pc->AppendAndMatch(s.release());
+      res = pc;
+    }
+    e.ReplaceObject(id, res);
+    changed++;
+  }
+  e.Out() << "  Semplificate " << changed << " curve\n";
+  return true;
+}
+
+// --- Match (MatchCrv) ------------------------------------------------------------------
+// Porta l'estremo di una curva su quello di un'altra con continuita' di
+// posizione, tangenza o curvatura (Continuity=Position/Tangency/Curvature).
+bool CmdMatch(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto p0 = e.ReadPick(ts, "curva da modificare (vicino all'estremo)");
+  if (!p0) return false;
+  double t0 = 0;
+  const ON_Curve* c0 = PickCurve(e, *p0, t0);
+  if (!c0) return e.Fail("curva non trovata");
+  ON_UUID id0 = ON_nil_uuid;
+  for (const auto& id : e.AllObjectIds(false)) if (Geo(e, id) == c0) id0 = id;
+  opts.merge(e.ReadOptions(ts));
+  auto p1 = e.ReadPick(ts, "curva di destinazione (vicino all'estremo)");
+  if (!p1) return false;
+  // la destinazione e' la curva piu' vicina diversa dalla prima
+  const ON_Curve* c1 = nullptr;
+  double best = 1e300;
+  for (const auto& id : e.AllObjectIds(false)) {
+    const auto* c = ON_Curve::Cast(Geo(e, id));
+    if (!c || c == c0) continue;
+    for (int i = 0; i <= 400; i++) {
+      const double d = c->PointAt(c->Domain().ParameterAt(i / 400.0)).DistanceTo(*p1);
+      if (d < best) { best = d; c1 = c; }
+    }
+  }
+  if (!c1) return e.Fail("curva di destinazione non trovata");
+  std::string cont = opts.count("continuity") ? opts["continuity"] : "tangency";
+  const int level = cont == "position" ? 0 : cont == "curvature" ? 2 : 1;
+  ON_NurbsCurve nc;
+  if (!c0->GetNurbForm(nc)) return e.Fail("curva non convertibile");
+  const bool atStart = p0->DistanceTo(nc.PointAtStart()) < p0->DistanceTo(nc.PointAtEnd());
+  if (atStart) nc.Reverse();
+  if (nc.Degree() < 3 && level > 0) nc.IncreaseDegree(3);
+  while (nc.CVCount() < 2 * (level + 1)) {  // abbastanza punti per non toccare l'altro estremo
+    double maxLen = 0, at = 0;
+    for (int i = nc.Order() - 2; i < nc.CVCount() - 1; i++) {
+      const double a = nc.m_knot[i], b = nc.m_knot[i + 1];
+      if (b - a > maxLen) { maxLen = b - a; at = 0.5 * (a + b); }
+    }
+    if (maxLen <= 0 || !nc.InsertKnot(at, 1)) break;
+  }
+  if (nc.CVCount() < level + 2) return e.Fail("la curva ha troppo pochi punti di controllo");
+  const bool tStart = p1->DistanceTo(c1->PointAtStart()) < p1->DistanceTo(c1->PointAtEnd());
+  const double tt = tStart ? c1->Domain()[0] : c1->Domain()[1];
+  const ON_3dPoint P = c1->PointAt(tt);
+  ON_3dVector T = c1->TangentAt(tt);
+  if (!tStart) T = -T;  // la curva modificata arriva in P e prosegue lungo la destinazione
+  const int n = nc.CVCount();
+  auto setCV = [&](int i, const ON_3dPoint& q) {
+    if (nc.IsRational()) { const double w = nc.Weight(i); nc.SetCV(i, ON_4dPoint(q.x * w, q.y * w, q.z * w, w)); }
+    else nc.SetCV(i, q);
+  };
+  auto getCV = [&](int i) { ON_3dPoint q; nc.GetCV(i, q); return q; };
+  const double h1 = getCV(n - 1).DistanceTo(getCV(n - 2));
+  const double h2 = getCV(n - 2).DistanceTo(getCV(n - 3 >= 0 ? n - 3 : 0));
+  setCV(n - 1, P);
+  if (level >= 1) setCV(n - 2, P - T * h1);
+  if (level >= 2 && n >= 3) {
+    const ON_3dVector K = c1->CurvatureAt(tt);
+    const ON_3dPoint base = getCV(n - 2) - T * h2;
+    ON_3dVector N = K;
+    if (!N.Unitize()) {
+      setCV(n - 3, base);  // destinazione diritta: curvatura nulla
+    } else {
+      const double tEnd = nc.Domain()[1];
+      setCV(n - 3, base);
+      const ON_3dVector k0 = nc.CurvatureAt(tEnd);
+      setCV(n - 3, base + N);
+      const ON_3dVector k1 = nc.CurvatureAt(tEnd);
+      const double den = (k1 - k0) * N;
+      const double s = std::fabs(den) > 1e-15 ? (K * N - k0 * N) / den : 0.0;
+      setCV(n - 3, base + N * s);
+    }
+  }
+  if (atStart) nc.Reverse();
+  e.ReplaceObject(id0, new ON_NurbsCurve(nc));
+  e.Out() << "  Curva raccordata (" << (level == 0 ? "posizione" : level == 1 ? "tangenza" : "curvatura") << ")\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterExtra4Commands(Engine& e) {
@@ -287,6 +437,9 @@ void RegisterExtra4Commands(Engine& e) {
   };
   reg("Tangent", "Curve", "Linea tangente a una curva nel punto cliccato", CmdTangent);
   reg("Perpendicular", "Curve", "Linea perpendicolare a una curva nel punto cliccato", CmdPerpendicular);
+  reg("SimplifyCrv", "Curve", "Sostituisce i tratti rettilinei e circolari con linee e archi veri", CmdSimplifyCrv);
+  reg("Simplify", "Curve", "Come SimplifyCrv", CmdSimplifyCrv);
+  reg("Match", "Curve", "Raccorda l'estremo di una curva a un'altra (Continuity=Position/Tangency/Curvature)", CmdMatch);
   reg("Reduce", "Mesh", "Riduce il numero di facce delle mesh (ReductionPercent=, FaceCount=)", CmdReduce);
 }
 

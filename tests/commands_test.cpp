@@ -1097,6 +1097,26 @@ int main(int argc, char** argv) {
       const auto* s = ON_SubD::Cast(c.Last());
       CHECK(s && s->IsValid() && s->FaceCount() == 8 + 8);
     });
+    Case("SimplifyCrv", "_Polyline 0,0 10,0 20,0 20,10\n_SelAll _SimplifyCrv", [](Ctx& c) {
+      const auto* pc = ON_PolyCurve::Cast(c.Last());
+      CHECK(pc && pc->Count() == 2 && ON_LineCurve::Cast(pc->SegmentCurve(0)) && ON_LineCurve::Cast(pc->SegmentCurve(1)));
+      CHECK(pc && NearPt(pc->SegmentCurve(0)->PointAtEnd(), ON_3dPoint(20, 0, 0), 1e-9));
+    });
+    Case("Match_tangenza", "_Line 0,0 10,0\n_Line 12,2 20,6\n_Match 10,0 12,2", [](Ctx& c) {
+      const ON_Curve* m = nullptr;
+      for (auto* g : c.Objects()) if (ON_NurbsCurve::Cast(g)) m = ON_Curve::Cast(g);
+      CHECK(m && NearPt(m->PointAtEnd(), ON_3dPoint(12, 2, 0), 1e-9) && NearPt(m->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-9));
+      ON_3dVector d(8, 4, 0);
+      d.Unitize();
+      CHECK(m && (m->TangentAt(m->Domain()[1]) - d).Length() < 1e-9);
+    });
+    Case("Match_curvatura", "_Line 0,0 10,0\n_Arc3Pt 12,0 22,0 17,5\n_Match Continuity=Curvature 10,0 12,0", [](Ctx& c) {
+      const ON_Curve* m = nullptr;
+      for (auto* g : c.Objects()) if (ON_NurbsCurve::Cast(g)) m = ON_Curve::Cast(g);
+      CHECK(m && NearPt(m->PointAtEnd(), ON_3dPoint(12, 0, 0), 1e-9));
+      CHECK(m && (m->TangentAt(m->Domain()[1]) - ON_3dVector(0, 1, 0)).Length() < 1e-9);
+      CHECK(m && (m->CurvatureAt(m->Domain()[1]) - ON_3dVector(0.2, 0, 0)).Length() < 1e-6);
+    });
     Case("Twist_linea", "_Line 5,0,0 5,0,10\n_SelAll _Twist 0,0,0 0,0,10 90", [](Ctx& c) {
       const auto* cv = ON_Curve::Cast(c.Last());
       // la cima ruota di 90 gradi attorno a z: (5,0,10) -> (0,5,10)
@@ -1274,6 +1294,24 @@ int main(int argc, char** argv) {
     Case("MeshBooleanIntersection", "_MeshBox 0,0 10,10 10\n_MeshBox 5,5,5 15,15,5 10\n_SelMesh _MeshBooleanIntersection", [](Ctx& c) {
       const auto* m = ON_Mesh::Cast(c.Last());
       CHECK(m && std::fabs(MeshVolume(*m) - 125.0) < 1e-3);
+    });
+    Case("RailRevolve", "_Line 0,0,10 5,0,0\n_Circle 0,0,0 10\n_RailRevolve 2.5,0,5 10,0,0 0,0,0 0,0,1", [](Ctx& c) {
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->IsValid());
+      ON_BoundingBox bb;
+      if (b) b->GetTightBoundingBox(bb);
+      CHECK(b && Near(bb.m_max.x, 10, 0.05) && Near(bb.m_max.y, 10, 0.05) && Near(bb.m_max.z, 10, 1e-3));
+    });
+    Case("InterpCrvOnSrf", "_Plane 0,0 10,10\n_InterpCrvOnSrf 5,5 1,1 5,8 9,2 _Enter", [](Ctx& c) {
+      const auto* cv = ON_Curve::Cast(c.Last());
+      CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(1, 1, 0), 1e-4) && NearPt(cv->PointAtEnd(), ON_3dPoint(9, 2, 0), 1e-4));
+    });
+    Case("FitCrv", "_Circle 0,0 10\n_SelAll _FitCrv Tolerance=0.001", [](Ctx& c) {
+      const auto* nc = ON_NurbsCurve::Cast(c.Last());
+      CHECK(nc && !nc->IsRational() && nc->Degree() == 3);
+      bool ok = nc != nullptr;
+      for (int i = 0; nc && i <= 100; i++) ok = ok && std::fabs(nc->PointAt(nc->Domain().ParameterAt(i / 100.0)).DistanceTo(ON_origin) - 10) < 0.002;
+      CHECK(ok);
     });
     Case("ArraySrf", "_Plane 0,0 10,10\n_Point 0,0,1\n_SelPt _ArraySrf 0,0,0 5,5 3 2", [](Ctx& c) {
       CHECK(c.Objects().size() == 2 + 6);
