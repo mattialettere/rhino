@@ -4,6 +4,7 @@
 #include "commands/Annotation.h"
 #include "ai/Assistant.h"
 #include "commands/Engine.h"
+#include "python/PythonHost.h"
 #include "commands/Grips.h"
 #include "commands/Materials.h"
 #include "commands/Exchange.h"
@@ -2281,6 +2282,89 @@ int main(int argc, char** argv) {
     for (const auto& m : ai::Catalog()) CHECK(ai::LicenseAllowed(m.license));
     CHECK(!ai::LicenseAllowed("llama3.1") && !ai::LicenseAllowed("gemma") && !ai::LicenseAllowed("other"));
   }
+
+#ifdef CAD_WITH_PYTHON
+  {
+    std::printf("Python\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/python";
+    fs::create_directories(dir);
+    const std::string py = dir + "/script.py";
+    {
+      std::ofstream f(py, std::ios::binary);
+      f << "import rhinoscriptsyntax as rs\n"
+           "rs.AddLayer('Rosso', (255, 0, 0))\n"
+           "rs.CurrentLayer('Rosso')\n"
+           "a = rs.AddLine((0, 0, 0), (10, 0, 0))\n"
+           "c = rs.AddCircle(rs.WorldXYPlane(), 5)\n"
+           "ids = [rs.AddPoint(i * 2, 0, 0) for i in range(3)]\n"
+           "rs.ObjectName(a, 'asse')\n"
+           "rs.ObjectColor(c, (0, 128, 255))\n"
+           "m = rs.CopyObject(c, (20, 0, 0))\n"
+           "rs.RotateObject(m, (20, 0, 0), 90)\n"
+           "rs.ScaleObject(m, (20, 0, 0), (2, 2, 2))\n"
+           "t = rs.CurveClosestPoint(a, (3, 4, 0))\n"
+           "print('lunghezza %.6f %.6f %.9f' % (rs.CurveLength(a), rs.CurveLength(c), t))\n"
+           "print('tipi', rs.ObjectType(a), rs.ObjectType(ids[0]), rs.IsCurveClosed(c))\n"
+           "print('mid', rs.CurveMidPoint(a), rs.VectorCrossProduct((1, 0, 0), (0, 1, 0)))\n"
+           "rs.Command('_Line 0,0,0 0,10,0')\n"
+           "print('creati', len(rs.LastCreatedObjects()))\n";
+    }
+    Ctx c;
+    CHECK(c.e.Run("_RunPythonScript \"" + py + "\""));
+    const std::string log = c.log.str();
+    CHECK(log.find("lunghezza 10.000000 31.415927 3.000000000") != std::string::npos);
+    CHECK(log.find("tipi 4 1 True") != std::string::npos);
+    CHECK(log.find("mid 5,0,0 0,0,1") != std::string::npos);
+    CHECK(log.find("creati 1") != std::string::npos);
+    int curves = 0, points = 0, red = 0;
+    bool named = false, colored = false, scaled = false;
+    for (const auto& id : c.e.AllObjectIds(true)) {
+      const auto* o = c.e.Object(id);
+      const auto* g = o->Geometry(nullptr);
+      const auto* a = o->Attributes(nullptr);
+      if (ON_Curve::Cast(g)) curves++;
+      if (ON_Point::Cast(g)) points++;
+      const auto* l = ON_Layer::Cast(c.e.Model().ComponentFromIndex(ON_ModelComponent::Type::Layer, a->m_layer_index).ModelComponent());
+      if (l && ToUtf8(l->Name()) == "Rosso") red++;
+      if (ToUtf8(a->m_name) == "asse") named = true;
+      if (a->ColorSource() == ON::color_from_object && a->m_color == ON_Color(0, 128, 255)) colored = true;
+      ON_BoundingBox b;
+      if (const auto* arc = ON_ArcCurve::Cast(g); arc && g->GetTightBoundingBox(b) && Near(b.Center().x, 20) && Near(arc->Radius(), 10)) scaled = true;
+    }
+    CHECK(curves == 4 && points == 3 && red == 7 && named && colored && scaled);
+    // un solo passo di annullamento per tutto lo script
+    CHECK(c.e.Run("_Undo") && c.e.AllObjectIds(true).empty());
+    // codice in linea (virgolette, parentesi e punto e virgola restano nel codice)
+    Ctx d;
+    CHECK(d.e.Run("-_RunPythonScript (import rhinoscriptsyntax as rs; print(\"a (b); c\"); rs.AddPoint((1, 2, 3)))"));
+    CHECK(d.log.str().find("a (b); c") != std::string::npos && d.Objects().size() == 1);
+    // errore: traccia nel messaggio, quanto creato prima resta (come in Rhino)
+    Ctx e2;
+    CHECK(!e2.e.Run("-_RunPythonScript (import rhinoscriptsyntax as rs; rs.AddPoint((0, 0, 0)); 1 / 0)"));
+    CHECK(e2.e.LastError().find("ZeroDivisionError") != std::string::npos && e2.Objects().size() == 1);
+    // solidi, booleane e misure (motore geometrico)
+    Ctx f;
+    CHECK(f.e.Run("-_RunPythonScript (import rhinoscriptsyntax as rs; "
+                  "b = rs.AddBox([(0,0,0),(10,0,0),(10,10,0),(0,10,0),(0,0,10),(10,0,10),(10,10,10),(0,10,10)]); "
+                  "s = rs.AddSphere((30, 0, 0), 2); cy = rs.AddCylinder((0, 0, 0), (0, 0, 20), 1); "
+                  "k = rs.AddCone((50, 0, 0), 6, 3); tor = rs.AddTorus((70, 0, 0), 5, 1); "
+                  "print('bb', rs.BoundingBox([s])[6]); print('tipo', rs.ObjectType(b), rs.IsPolysurface(b)))"));
+    CHECK(f.log.str().find("bb 32,2,2") != std::string::npos && f.log.str().find("tipo 16 True") != std::string::npos);
+    CHECK(f.Objects().size() == 5);
+#ifdef CAD_WITH_OCCT
+    CHECK(f.e.Run("-_RunPythonScript (import rhinoscriptsyntax as rs; ids = rs.AllObjects(); "
+                  "print('vol %.4f %.4f %.4f' % (rs.SurfaceVolume(ids[0])[0], rs.SurfaceVolume(ids[1])[0], rs.SurfaceVolume(ids[3])[0])); "
+                  "u = rs.BooleanUnion([ids[0], ids[2]]); print('unione', len(u), '%.3f' % rs.SurfaceVolume(u[0])[0]))"));
+    const std::string fl = f.log.str();
+    CHECK(fl.find("vol 1000.0000 33.5103 56.5487") != std::string::npos);
+    // cilindro (r=1, h=20) sullo spigolo del cubo: dentro solo un quarto della parte z<10
+    char want[64];
+    std::snprintf(want, sizeof want, "unione 1 %.3f", 1000 + ON_PI * (0.75 * 10 + 10));
+    CHECK(fl.find(want) != std::string::npos);
+#endif
+  }
+#endif
 
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);

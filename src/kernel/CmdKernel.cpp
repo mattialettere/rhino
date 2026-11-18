@@ -3,6 +3,7 @@
 // divisione, mesh, aree e volumi.
 #include "commands/Engine.h"
 #include "kernel/OcctConvert.h"
+#include "python/PythonHost.h"
 
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -541,6 +542,21 @@ bool Props(Engine& e, bool volume) {
   return true;
 }
 bool CmdArea(Engine& e, TokenStream&) { return Props(e, false); }
+
+bool MassProps(Engine& e, const ON_UUID& id, bool volume, double& value, ON_3dPoint& centroid) {
+  const ON_Geometry* g = Geo(e, id);
+  if (!g) return false;
+  TopoDS_Shape s = GeometryToShape(*g, e.Tolerance());
+  if (s.IsNull()) return false;
+  GProp_GProps p;
+  if (volume) BRepGProp::VolumeProperties(s, p, 1e-9);
+  else if (ON_Curve::Cast(g)) BRepGProp::LinearProperties(s, p);
+  else BRepGProp::SurfaceProperties(s, p, 1e-9);
+  value = p.Mass();
+  const gp_Pnt c = p.CentreOfMass();
+  centroid = ON_3dPoint(c.X(), c.Y(), c.Z());
+  return true;
+}
 bool CmdVolume(Engine& e, TokenStream&) { return Props(e, true); }
 
 }  // namespace
@@ -558,6 +574,7 @@ void RegisterKernelCommands(Engine& e) {
   reg("ChamferEdge", "Solidi", "Smusso di tutti gli spigoli (distanza)", CmdChamferEdge);
   reg("Offset", "Curve", "Offset di curve planari (distanza, lato)", CmdOffset);
   reg("OffsetSrf", "Superfici", "Offset di superfici (distanza)", CmdOffsetSrf);
+  MassPropertiesFn = MassProps;
   reg("Loft", "Superfici", "Loft tra curve nell'ordine di selezione", CmdLoft);
   reg("Pipe", "Solidi", "Tubo di raggio costante lungo curve", CmdPipe);
   reg("Sweep1", "Superfici", "Sweep su un binario (primo selezionato)", CmdSweep1);

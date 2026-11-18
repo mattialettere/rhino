@@ -1,5 +1,6 @@
 // kurva3d: finestra principale in stile Rhino 8.
 //   kurva3d [file.3dm] [--script comandi.txt] [--screenshot out.png]
+#include "python/PythonHost.h"
 #include "ui/MainWindow.h"
 #include "ui/Theme.h"
 #include <QApplication>
@@ -39,6 +40,7 @@ int main(int argc, char** argv) {
   QApplication::setWindowIcon(QIcon(":/kurva3d.png"));
   cad::ui::ApplyTheme(cad::ui::SavedThemeMode());
   cad::InitLibrary();
+  cad::SetPythonProgramDir(QCoreApplication::applicationDirPath().toStdString());
   QString open, script, shot, panel;
   int wait = 800;
   const QStringList args = app.arguments();

@@ -59,6 +59,14 @@ Kurva3D non e' affiliato, approvato o sponsorizzato da McNeel. Il formato
    modelli con licenza Apache 2.0 o MIT e controlla la licenza dichiarata nel
    repository prima del download.
 
+7. Python 3.12 (distribuzione "embeddable" di python.org: python312.dll,
+   python312.zip e moduli .pyd nella cartella del programma; script Python)
+   Copyright (c) 2001 Python Software Foundation. All rights reserved.
+   Licenza: Python Software Foundation License Version 2 -
+   licenses/Python-PSF-LICENSE.txt (contiene anche le licenze delle librerie
+   incluse, per esempio OpenSSL, libffi, SQLite, zlib, bzip2, xz)
+   Sorgente: https://www.python.org/downloads/source/
+
 Sostituzione delle librerie LGPL: Open CASCADE e Qt sono DLL separate nella
 cartella del programma. Si possono sostituire con versioni compatibili,
 anche ricompilate dall'utente, senza modificare kurva3d.exe. Il codice

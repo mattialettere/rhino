@@ -1,6 +1,7 @@
 #include "ui/MainWindow.h"
 #include "ui/AiPanel.h"
 #include "ui/TexturePanel.h"
+#include "ui/ScriptEditor.h"
 #include "ui/Theme.h"
 #include "ui/LayoutView.h"
 #include "ui/RenderWindow.h"
@@ -349,6 +350,23 @@ MainWindow::MainWindow(QWidget* parent)
   texDock->setWidget(m_textures);
   addDockWidget(Qt::RightDockWidgetArea, texDock);
   tabifyDockWidget(propsDock, texDock);
+  // Editor di script Python (ScriptEditor): in basso, nascosto finche' non serve
+  auto* scriptDock = new QDockWidget("Editor di script", this);
+  scriptDock->setObjectName("scriptDock");
+  auto* scriptEd = new ScriptEditor([this](const QString& f) {
+    QString path = f;
+    path.replace('"', "");
+    Run(("_RunPythonScript \"" + path + "\"").toStdString());
+  }, scriptDock);
+  scriptDock->setWidget(scriptEd);
+  addDockWidget(Qt::BottomDockWidgetArea, scriptDock);
+  scriptDock->hide();
+  m_engine.showScriptEditor = [scriptDock, scriptEd](const std::string& file) {
+    if (!file.empty() && !scriptEd->OpenFile(QString::fromStdString(file))) return false;
+    scriptDock->show();
+    scriptDock->raise();
+    return true;
+  };
   propsDock->raise();
   for (auto* v : m_views)
     connect(v, &Viewport::TextureDropped, this, [this](QString file, std::vector<ON_UUID> ids) {
@@ -600,6 +618,12 @@ void MainWindow::BuildMenus() {
       render->addAction(label, this, [this, c] { Submit(c); });
     }
   }
+  auto* scripts = menuBar()->addMenu("&Script");
+  scripts->addAction("Editor di script", this, [this] { Submit("_ScriptEditor"); });
+  scripts->addAction("Esegui script Python…", this, [this] {
+    const QString f = QFileDialog::getOpenFileName(this, "Esegui script Python", QString(), "Script Python (*.py)");
+    if (!f.isEmpty()) Run(("_RunPythonScript \"" + f + "\"").toStdString());
+  });
   auto* aiMenu = menuBar()->addMenu("&AI");
   aiMenu->addAction("Assistente AI", this, [this] {
     for (auto* d : findChildren<QDockWidget*>())

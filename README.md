@@ -39,6 +39,7 @@ Dettagli e alternative: [docs/STACK.md](docs/STACK.md).
 src/core/            nucleo: documento .3dm, riepilogo per categoria, confronto modelli
 src/commands/        motore dei comandi (sintassi delle macro di Rhino) e comandi
 src/kernel/          ponte openNURBS <-> OpenCASCADE e comandi che ne hanno bisogno
+src/python/          Python incorporato: RunPythonScript e rhinoscriptsyntax
 src/ui/              finestra in stile Rhino 8 (Qt): riga di comando, 4 viste, pannelli
 tools/cad-console    riga di comando in stile Rhino: crea e modifica modelli
 tools/3dm-info       stampa il contenuto di un .3dm per categoria
@@ -79,6 +80,9 @@ In alternativa: Qt 6 dall'installer ufficiale (componente MSVC 2022 64-bit)
 e OpenCASCADE 7.x dall'installer del sito, passando a CMake
 `-DCMAKE_PREFIX_PATH="C:\Qt\6.x\msvc2022_64;C:\OpenCASCADE-7.x\occt"`.
 Se CMake non li trova lo dice nell'output e compila il resto.
+Per gli script Python serve Python 3.12 64 bit (installer di python.org):
+CMake lo trova da solo, oppure `-DPython3_ROOT_DIR=C:\Python312`; senza Python
+i comandi di script rispondono che la versione e' compilata senza Python.
 **Nota:** la build Windows di `kurva3d` e del kernel non è ancora stata
 provata (vedi D-023); la versione Linux è compilata e testata.
 
@@ -140,6 +144,10 @@ Le schede sotto le viste (**Modello**, **Pagina 1**, ...) mostrano le tavole com
 ## Rendering
 
 Modalita' di visualizzazione **Renderizzato** (colori dei materiali, luci del modello, ombre sul piano di terra) e **Raytraced** (immagine che si affina da sola, calcolata in un thread mentre si lavora), dal menu del titolo della vista o con `SetDisplayMode`. **Render > Rendering** apre la finestra di rendering con il salvataggio in PNG/JPG; da script: `Render Width=1920 Height=1080 Samples=256 File="render.png"`. Luci: `PointLight`, `DirectionalLight`, `SpotLight`, `RectangularLight`; `Sun On Azimuth=135 Altitude=40`, `Skylight`, `GroundPlane`. `SetMaterial Color=200,40,40 Gloss=0.8` assegna un materiale semplice (vetro: `Transparency=0.95 IOR=1.5`).
+
+## Script Python
+
+Menu **Script > Editor di script** (o il comando `ScriptEditor`): scrivi uno script e premi **Esegui** (F5); l'output di `print` va nella cronologia dei comandi. Gli script usano `import rhinoscriptsyntax as rs` con le stesse funzioni di Rhino 8 (per esempio `rs.AddCircle(rs.WorldXYPlane(), 5)`, `rs.AddBox(...)`, `rs.MoveObject(id, (10, 0, 0))`, `rs.BooleanUnion(ids)`, `rs.Command("_Line 0,0,0 10,0,0")`). Da riga di comando o nelle macro: `RunPythonScript "script.py"` oppure `-RunPythonScript (codice)`. Il Python 3.12 e' incluso nella versione Windows; le differenze rispetto a Rhino sono in [DIFFERENZE](docs/DIFFERENZE.md) (D-064).
 
 ## Texture
 

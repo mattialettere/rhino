@@ -35,7 +35,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Rendering (luci e immagini) | 9 / 9 |
 | Viste e sezioni | 7 / 7 |
 | Tavole e stampa | 5 / 5 |
-| **Totale** | **331 / 331** |
+| Script | 2 / 2 |
+| **Totale** | **333 / 333** |
 
 ## Punti
 
@@ -475,5 +476,12 @@ Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale sem
 | Detail | ✔ (Add, Scale, Projection, ZoomExtents, DisplayMode; D-062) |
 | Print | ✔ (stampante o PDF; D-062) |
 
+## Script
 
-Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (rendering, layout, scripting, Grasshopper restano fuori per ora).
+| Comando | Stato |
+|---|---|
+| RunPythonScript | ✔ (Python 3 con un sottoinsieme di rhinoscriptsyntax; anche codice in linea `-RunPythonScript (codice)`; D-064) |
+| ScriptEditor | ✔ (editor con evidenziazione, Apri/Salva, Esegui F5; senza debugger, D-064) |
+
+
+Questo elenco copre i comandi di modellazione principali, non tutti gli oltre mille comandi di Rhino 8 (Grasshopper e la cronologia di costruzione restano fuori per ora).

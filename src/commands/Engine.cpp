@@ -8,6 +8,12 @@
 namespace cad {
 
 // ---------------------------------------------------------------- token
+static bool IsPythonCommand(std::string t) {
+  while (!t.empty() && (t[0] == '-' || t[0] == '_' || t[0] == '!' || t[0] == '\'')) t.erase(0, 1);
+  for (auto& ch : t) ch = (char)std::tolower((unsigned char)ch);
+  return t == "runpythonscript";
+}
+
 TokenStream::TokenStream(const std::string& script, bool appendFinalEnter) {
   std::string cur;
   bool inQuote = false;
@@ -17,6 +23,22 @@ TokenStream::TokenStream(const std::string& script, bool appendFinalEnter) {
     if (inQuote) {
       if (c == '"') { inQuote = false; m_tokens.push_back(cur); cur.clear(); }
       else cur += c;
+    } else if (c == '(' && cur.empty() && !m_tokens.empty() && IsPythonCommand(m_tokens.back())) {
+      // -RunPythonScript (codice): il codice resta un solo token, con virgolette e a capo
+      size_t j = i;
+      int depth = 0;
+      char str = 0;
+      for (; j < script.size(); j++) {
+        const char d = script[j];
+        if (str) {
+          if (d == '\\') j++;
+          else if (d == str) str = 0;
+        } else if (d == '"' || d == '\'') str = d;
+        else if (d == '(') depth++;
+        else if (d == ')' && --depth == 0) break;
+      }
+      m_tokens.push_back(script.substr(i, std::min(j, script.size() - 1) - i + 1));
+      i = j;
     } else if (c == '"') {
       flush(); inQuote = true;
     } else if (c == '\n' || c == '\r') {
@@ -86,6 +108,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterViewCommands(*this);
   RegisterLayoutCommands(*this);
   RegisterRenderCommands(*this);
+  RegisterPythonCommands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
@@ -155,18 +178,33 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   if (it == m_commands.end()) return Fail("Comando sconosciuto: \"" + name + "\"");
   const CommandInfo& cmd = it->second;
   if (!interactive) m_out << "Comando: " << cmd.name << "\n";
+  // Comandi annidati (es. rs.Command da uno script): un solo passo di annullamento,
+  // quello del comando esterno; gli oggetti creati si sommano a quelli dell'esterno.
+  const bool nested = m_commandDepth > 0;
   std::vector<unsigned char> before;
   if (cmd.modifiesModel) before = m_doc.ToBuffer();
+  std::vector<ON_UUID> outerCreated;
+  if (nested) outerCreated = m_lastCreated;
+  const bool outerCollecting = m_collectingCreated;
+  if (!nested) keepChangesOnFailure = false;
   m_lastCreated.clear();
   m_collectingCreated = true;
+  m_commandDepth++;
   const bool ok = cmd.fn(*this, ts);
-  m_collectingCreated = false;
+  m_commandDepth--;
+  m_collectingCreated = outerCollecting;
   if (!m_lastCreated.empty()) m_previousCreated = m_lastCreated;
-  if (ok && cmd.modifiesModel) {
+  if (nested) {
+    if (!ok && cmd.modifiesModel && !before.empty()) { m_doc.FromBuffer(before); m_lastCreated.clear(); }
+    outerCreated.insert(outerCreated.end(), m_lastCreated.begin(), m_lastCreated.end());
+    m_lastCreated = std::move(outerCreated);
+    return ok;
+  }
+  if ((ok || keepChangesOnFailure) && cmd.modifiesModel) {
     m_undo.push_back(std::move(before));
     m_redo.clear();
   }
-  if (!ok && cmd.modifiesModel && !before.empty()) {
+  if (!ok && !keepChangesOnFailure && cmd.modifiesModel && !before.empty()) {
     // Un comando non concluso non lascia modifiche a meta'.
     m_doc.FromBuffer(before);
     m_lastCreated.clear();

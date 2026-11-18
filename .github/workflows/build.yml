@@ -53,18 +53,30 @@ jobs:
           arch: 'win64_msvc2019_64'
           cache: true
 
+      # Python per gli script (RunPythonScript): 3.12.10 e' l'ultima 3.12 con i
+      # pacchetti "embeddable" per Windows, quelli che si mettono accanto all'exe
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+          architecture: x64
+
       - name: Configura
         shell: pwsh
         run: >
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DPython3_ROOT_DIR="$env:pythonLocation" -DPython3_FIND_REGISTRY=NEVER
 
       - name: Compila
         run: cmake --build build --config Release --parallel
 
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        shell: pwsh
+        run: |
+          $env:KURVA3D_PYTHONHOME = $env:pythonLocation
+          ctest --test-dir build -C Release --output-on-failure
 
       - name: Prepara lo zip
         if: always()
@@ -88,6 +100,15 @@ jobs:
           # note di copyright delle librerie installate da vcpkg (OCCT, Qt e dipendenze)
           New-Item -ItemType Directory -Force dist\licenses\vcpkg | Out-Null
           Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\share\*\copyright" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName ("dist\licenses\vcpkg\" + $_.Directory.Name + ".txt") }
+          # Python "embeddable" (python.org) accanto all'exe: DLL, libreria standard
+          # (python312.zip) e moduli .pyd; stessa versione con cui si e' compilato
+          $pyver = python -c "import sys; print('%d.%d.%d' % sys.version_info[:3])"
+          Invoke-WebRequest "https://www.python.org/ftp/python/$pyver/python-$pyver-embed-amd64.zip" -OutFile pyembed.zip
+          Expand-Archive pyembed.zip -DestinationPath pyembed -Force
+          Get-ChildItem pyembed -File | Where-Object { $_.Extension -in '.dll', '.pyd', '.zip' } | ForEach-Object {
+            if (-not (Test-Path ("dist\" + $_.Name))) { Copy-Item $_.FullName dist\ }
+          }
+          Copy-Item pyembed\LICENSE.txt dist\licenses\Python-PSF-LICENSE.txt
           Get-ChildItem dist
 
       # Motore dell'assistente AI: llama-server di llama.cpp (MIT), versione fissa.
@@ -134,6 +155,16 @@ jobs:
 
       # Installer (Inno Setup): crea Kurva3D-Setup-<versione>.exe, poi lo prova
       # con un'installazione silenziosa in una cartella temporanea e la disinstalla.
+      - name: Prova degli script Python (Python incluso nello zip)
+        shell: pwsh
+        run: |
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notlike "*Python*" }) -join ';'
+          Remove-Item Env:pythonLocation -ErrorAction SilentlyContinue
+          Set-Content -Path pytest.txt -Value '-_RunPythonScript (import rhinoscriptsyntax as rs, json; rs.AddCircle(rs.WorldXYPlane(), 5); print("python-ok", json.dumps(len(rs.AllObjects()))))'
+          $out = & dist\cad-console.exe pytest.txt 2>&1 | Out-String
+          Write-Output $out
+          if ($out -notmatch 'python-ok 1') { throw "lo script Python non e' partito con il Python incluso" }
+
       - name: Installer
         shell: pwsh
         run: |
@@ -188,7 +219,7 @@ jobs:
 
       - name: Configura
         run: >
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DKURVA3D_PYTHON=OFF
           -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix opencascade)"
 
       - name: Compila

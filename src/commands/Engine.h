@@ -70,6 +70,9 @@ public:
   enum class Result { Done, NeedsInput, Error };
   Result RunInteractive(const std::string& script, std::string* pending);
   bool interactive = false;
+  // Se un comando fallisce dopo aver modificato il modello (es. errore in uno script Python)
+  // le modifiche gia' fatte restano, come in Rhino.
+  bool keepChangesOnFailure = false;
   bool NeedsInput() const { return m_needsInput; }
   // Che tipo di input aspetta il comando in sospeso:
   //  Point   = un punto (clic sul piano di costruzione, con osnap)
@@ -180,7 +183,9 @@ public:
   std::function<void()> layoutsChanged;
   // Finestra di rendering progressivo (Render senza File=)
   std::function<bool(const ON_3dmView& view, int width, int height, int samples)> renderWindow;
-  std::function<bool(const std::string& mode)> setDisplayMode;  // nome normalizzato (wireframe, shaded, ...)     // l'interfaccia aggiorna le schede delle tavole
+  std::function<bool(const std::string& mode)> setDisplayMode;  // nome normalizzato (wireframe, shaded, ...)
+  // ScriptEditor: apre l'editor di script Python (eventualmente con un file)
+  std::function<bool(const std::string& file)> showScriptEditor;
   // Stampa su stampante (dalla finestra): pagine gia' composte
   std::function<bool(const std::vector<struct PageDrawing>&)> printPages;
   std::vector<ON_UUID> viewportIds;         // tutte le viste della finestra
@@ -203,6 +208,7 @@ private:
   std::vector<ON_UUID> m_selectionOrder, m_prevSelection;
   std::vector<ON_UUID> m_lastCreated, m_previousCreated;
   bool m_collectingCreated = false;
+  int m_commandDepth = 0;
   std::vector<std::vector<unsigned char>> m_undo, m_redo;
   std::string m_lastError;
   bool m_needsInput = false;
@@ -230,6 +236,7 @@ void RegisterExchangeCommands(Engine& e);
 void RegisterViewCommands(Engine& e);
 void RegisterLayoutCommands(Engine& e);
 void RegisterRenderCommands(Engine& e);
+void RegisterPythonCommands(Engine& e);
 // PDF della tavola attiva o della vista (opzioni come Print)
 bool ExportPdf(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti

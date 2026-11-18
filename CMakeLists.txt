@@ -107,6 +107,33 @@ if(WIN32)
   target_link_libraries(cadcore PUBLIC dxgi)
 endif()
 
+# Script Python (opzionale): CPython incorporato e modulo rhinoscriptsyntax
+option(KURVA3D_PYTHON "Script Python (RunPythonScript)" ON)
+target_sources(cadcore PRIVATE src/python/PythonHost.cpp src/python/PythonHost.h)
+# il sorgente di rhinoscriptsyntax.py diventa una stringa C++ (a pezzi: limite di MSVC sui letterali)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/python/rhinoscriptsyntax.py)
+file(READ ${CMAKE_SOURCE_DIR}/src/python/rhinoscriptsyntax.py _rs_src)
+string(LENGTH "${_rs_src}" _rs_len)
+set(_rs_cpp "// generato da CMake da src/python/rhinoscriptsyntax.py\nnamespace cad {\nextern const char* const kRhinoscriptsyntax;\nconst char* const kRhinoscriptsyntax =\n")
+set(_rs_pos 0)
+while(_rs_pos LESS _rs_len)
+  string(SUBSTRING "${_rs_src}" ${_rs_pos} 8000 _rs_chunk)
+  string(APPEND _rs_cpp "R\"rs(${_rs_chunk})rs\"\n")
+  math(EXPR _rs_pos "${_rs_pos} + 8000")
+endwhile()
+string(APPEND _rs_cpp ";\n}\n")
+file(WRITE ${CMAKE_BINARY_DIR}/generated/RsSource.cpp.tmp "${_rs_cpp}")
+file(COPY_FILE ${CMAKE_BINARY_DIR}/generated/RsSource.cpp.tmp ${CMAKE_BINARY_DIR}/generated/RsSource.cpp ONLY_IF_DIFFERENT)
+target_sources(cadcore PRIVATE ${CMAKE_BINARY_DIR}/generated/RsSource.cpp)
+if(KURVA3D_PYTHON)
+  find_package(Python3 COMPONENTS Development.Embed)
+  if(Python3_Development.Embed_FOUND)
+    message(STATUS "Python ${Python3_VERSION}: script Python attivi")
+    target_link_libraries(cadcore PUBLIC Python3::Python)
+    target_compile_definitions(cadcore PUBLIC CAD_WITH_PYTHON)
+  endif()
+endif()
+
 add_executable(3dm-info tools/3dm-info/main.cpp)
 target_link_libraries(3dm-info PRIVATE cadcore)
 
@@ -154,6 +181,7 @@ if(Qt6_FOUND)
     src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
     src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h src/ui/RenderWindow.cpp src/ui/RenderWindow.h
+    src/ui/ScriptEditor.cpp src/ui/ScriptEditor.h
     src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})
   if(APPLE)
     # versione minima di macOS: quella delle librerie Homebrew con cui si compila
