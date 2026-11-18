@@ -328,6 +328,25 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
     for (auto& l : ad.labels) d.labels.push_back(std::move(l));
     d.triangles.insert(d.triangles.end(), ad.triangles.begin(), ad.triangles.end());
     d.snapPoints.push_back({an->Plane().origin, SnapKind::Point});
+  } else if (const auto* mc = ON_MorphControl::Cast(g)) {
+    // Gabbia di CageEdit: reticolo dei punti di controllo (visibile e selezionabile anche a punti spenti)
+    if (mc->m_varient != 3) return;
+    const ON_NurbsCage& c = mc->m_nurbs_cage;
+    const int n[3] = {c.CVCount(0), c.CVCount(1), c.CVCount(2)};
+    for (int dir = 0; dir < 3; dir++)
+      for (int a = 0; a < n[(dir + 1) % 3]; a++)
+        for (int b = 0; b < n[(dir + 2) % 3]; b++) {
+          std::vector<ON_3dPoint> w;
+          for (int k = 0; k < n[dir]; k++) {
+            int idx[3];
+            idx[dir] = k; idx[(dir + 1) % 3] = a; idx[(dir + 2) % 3] = b;
+            ON_3dPoint q;
+            c.GetCV(idx[0], idx[1], idx[2], q);
+            w.push_back(q);
+            if (dir == 0) d.snapPoints.push_back({q, SnapKind::Point});
+          }
+          d.wires.push_back(std::move(w));
+        }
   } else if (const auto* ir = ON_InstanceRef::Cast(g)) {
     // Blocco: geometria della definizione trasformata (anche blocchi annidati)
     if (depth > 8) return;
