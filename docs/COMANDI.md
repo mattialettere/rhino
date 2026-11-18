@@ -429,8 +429,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Open | ✔ |
 | Save | ✔ |
 | SaveAs | ✔ |
-| Import | ✔ (3dm, STEP, IGES, STL, OBJ, DXF) |
-| Export | ✔ (3dm, STEP, IGES, STL, OBJ, DXF) |
+| Import | ✔ (3dm, STEP, IGES, STL, OBJ, DXF, glTF/GLB, 3MF, PLY) |
+| Export | ✔ (3dm, STEP, IGES, STL, OBJ con .mtl, DXF, glTF/GLB, 3MF, PLY) |
 | IncrementalSave | ✔ |
 | ViewCaptureToFile | ✔ |
 | ViewCaptureToClipboard | ✔ |

@@ -2573,6 +2573,96 @@ int main(int argc, char** argv) {
 #endif
 
   {
+    std::printf("Formati mesh: glTF, GLB, 3MF, PLY, OBJ con materiali\n");
+    namespace fs = std::filesystem;
+    const std::string dir = g_outDir + "/formati";
+    fs::create_directories(dir);
+    // immagine PNG vera (2x2) per la texture
+    const std::string img = dir + "/tex.png";
+    {
+      const unsigned char png[] = {0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0,0,0,0x0D,0x49,0x48,0x44,0x52,0,0,0,2,0,0,0,2,8,2,0,0,0,0xFD,0xD4,0x9A,0x73,
+                                   0,0,0,0x14,0x49,0x44,0x41,0x54,0x78,0x9C,0x63,0xF8,0xCF,0xC0,0xF0,0x1F,0x08,0x19,0x18,0xFE,0x03,0,0x1F,0xEE,0x03,0xFD,0x8C,0x4E,0xE3,0x5B,
+                                   0,0,0,0,0x49,0x45,0x4E,0x44,0xAE,0x42,0x60,0x82};
+      std::ofstream f(img, std::ios::binary);
+      f.write(reinterpret_cast<const char*>(png), sizeof png);
+    }
+    Ctx a;
+    CHECK(a.e.Run("_Box 0,0,0 100,50 20\n_SelLast _SetMaterial Color=200,40,40 Name=Rosso\n_SelNone\n"
+                  "_Sphere 200,0,0 30\n_SelLast _SetMaterial Color=20,40,220 Transparency=0.5 Name=Blu\n_SelNone\n"
+                  "_MeshBox 300,0,0 320,20 20\n_SelLast _ApplyTexture File=\"" + img + "\"\n_SelNone\n"
+                  "_Line 0,0,0 10,0,0\n"));
+    ON_BoundingBox all = a.BBox();
+    auto boxOfMeshes = [](Ctx& c) {
+      ON_BoundingBox b;
+      for (auto* g : c.Objects()) if (const auto* m = ON_Mesh::Cast(g)) { ON_BoundingBox t; m->GetTightBoundingBox(t); b.Union(t); }
+      return b;
+    };
+    auto materialNamed = [](Ctx& c, const wchar_t* n) -> const ON_Material* {
+      for (const auto& id : c.e.AllObjectIds()) {
+        const auto* at = c.e.Object(id)->Attributes(nullptr);
+        const auto* m = ON_Material::Cast(c.e.Model().ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, at->m_material_index).ModelComponent());
+        if (m && m->Name() == n) return m;
+      }
+      return nullptr;
+    };
+    for (const char* ext : {"glb", "gltf", "3mf", "obj", "ply"}) {
+      const std::string f = dir + "/prova." + ext;
+      std::remove(f.c_str());
+      CHECK(a.e.Run(std::string("_SelAll\n_Export \"") + f + "\""));
+      Ctx b;
+      const bool ok = b.e.Run(std::string("_Import \"") + f + "\"");
+      CHECK(ok);
+      if (!ok) { std::printf("    %s: %s\n", ext, b.log.str().c_str()); continue; }
+      const size_t n = b.Objects().size();
+      const ON_BoundingBox bb = boxOfMeshes(b);
+      // stessa posizione e dimensione (unita' convertite, Y/Z scambiati e rimessi a posto)
+      const double d = bb.m_min.DistanceTo(all.m_min) + bb.m_max.DistanceTo(ON_3dPoint(320, 50, 30));
+      const bool where = d < 0.5;
+      CHECK(where);
+      if (!where) std::printf("    %s: box %g,%g,%g - %g,%g,%g\n", ext, bb.m_min.x, bb.m_min.y, bb.m_min.z, bb.m_max.x, bb.m_max.y, bb.m_max.z);
+      if (std::string(ext) == "ply") {
+        CHECK(n == 1);  // PLY: un solo oggetto con i colori per vertice
+        const auto* m = ON_Mesh::Cast(b.Last());
+        CHECK(m && m->m_C.Count() == m->m_V.Count());
+        if (m && m->m_C.Count()) CHECK(m->m_C[0] == ON_Color(200, 40, 40));
+        continue;
+      }
+      CHECK(n == (std::string(ext) == "obj" ? 4u : 3u));  // OBJ tiene anche la linea
+      const ON_Material* rosso = materialNamed(b, L"Rosso");
+      const ON_Material* blu = materialNamed(b, L"Blu");
+      CHECK(rosso && blu);
+      if (rosso) CHECK((rosso->IsPhysicallyBased() ? ON_Color(rosso->PhysicallyBased()->BaseColor()) : rosso->Diffuse()) == ON_Color(200, 40, 40));
+      if (blu) {
+        const double tr = blu->IsPhysicallyBased() ? 1.0 - blu->PhysicallyBased()->Opacity() : blu->Transparency();
+        CHECK(std::fabs(tr - 0.5) < 0.01);
+      }
+      if (std::string(ext) != "3mf") {
+        // texture: materiale con immagine e coordinate di texture sulla mesh
+        bool tex = false;
+        for (const auto& id : b.e.AllObjectIds()) {
+          const auto* at = b.e.Object(id)->Attributes(nullptr);
+          const auto* m = ON_Material::Cast(b.e.Model().ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, at->m_material_index).ModelComponent());
+          const auto* mesh = ON_Mesh::Cast(b.e.Object(id)->Geometry(nullptr));
+          if (m && m->m_textures.Count() == 1 && mesh && mesh->m_T.Count() == mesh->m_V.Count()) {
+            const std::string file = ToUtf8(m->m_textures[0].m_image_file_reference.FullPath());
+            tex = !ResolveTextureFile(b.e.Model(), file, dir + "/cache").empty();
+          }
+        }
+        CHECK(tex);
+      }
+    }
+    // PLY ASCII e nuvola di punti
+    {
+      Ctx c;
+      CHECK(c.e.Run("_Point 0,0,0\n_Point 10,0,0\n_Point 0,10,5\n_SelAll\n_Export \"" + dir + "/punti.ply\" Ascii"));
+      Ctx d;
+      CHECK(d.e.Run("_Import \"" + dir + "/punti.ply\""));
+      const auto* pc = ON_PointCloud::Cast(d.Last());
+      CHECK(pc && pc->m_P.Count() == 3 && NearPt(pc->m_P[2], ON_3dPoint(0, 10, 5), 1e-5));
+    }
+  }
+
+  {
     std::printf("Import/Export .3dm con tabelle\n");
     namespace fs = std::filesystem;
     const std::string dir = g_outDir + "/merge";

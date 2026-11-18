@@ -4,6 +4,7 @@
 #pragma once
 #include "opennurbs.h"
 #include <string>
+#include <vector>
 
 namespace cad {
 
@@ -24,6 +25,12 @@ bool GetObjectTexture(const ONX_Model& model, const ON_3dmObjectAttributes& a, O
 // Percorso leggibile dell'immagine: il file stesso se esiste, altrimenti la copia
 // incorporata nel .3dm estratta in cacheDir. Vuoto se non si trova.
 std::string ResolveTextureFile(const ONX_Model& model, const std::string& file, const std::string& cacheDir);
+
+// Incorpora nel documento un'immagine da file (una sola copia per percorso).
+void EmbedImageFile(ONX_Model& model, const std::string& path);
+// Incorpora un'immagine dai suoi byte (es. texture dentro un .glb) con il nome di file
+// indicato, che il materiale usera' come percorso della texture.
+bool EmbedImageBuffer(ONX_Model& model, const std::string& path, const std::vector<unsigned char>& bytes);
 
 // Id del motore di rendering a cui si associano le mappature degli oggetti.
 const ON_UUID& MappingPlugInId();

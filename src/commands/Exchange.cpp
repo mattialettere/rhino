@@ -2,6 +2,7 @@
 #include "commands/Engine.h"
 #include "core/Document3dm.h"
 #include "core/SubDLimit.h"
+#include "commands/Materials.h"
 #ifdef CAD_WITH_OCCT
 #include "kernel/OcctConvert.h"
 #endif
@@ -136,10 +137,11 @@ std::string FileExtension(const std::string& path) {
 }
 
 bool IsExchangeFormat(const std::string& ext) {
-  return ext == "stl" || ext == "obj" || ext == "dxf" || ext == "step" || ext == "stp" || ext == "iges" || ext == "igs";
+  return ext == "stl" || ext == "obj" || ext == "dxf" || ext == "step" || ext == "stp" || ext == "iges" || ext == "igs" ||
+         ext == "gltf" || ext == "glb" || ext == "3mf" || ext == "ply";
 }
 
-std::string ExchangeFormatsDescription() { return "3dm, STEP (.stp/.step), IGES (.igs/.iges), STL, OBJ, DXF"; }
+std::string ExchangeFormatsDescription() { return "3dm, STEP (.stp/.step), IGES (.igs/.iges), STL, OBJ, DXF, glTF (.gltf/.glb), 3MF, PLY"; }
 
 std::unique_ptr<ON_Mesh> ExportMesh(const ON_Geometry& g, double tolerance) {
   if (const auto* m = ON_Mesh::Cast(&g)) return std::make_unique<ON_Mesh>(*m);
@@ -289,9 +291,61 @@ bool WriteSTL(const std::string& path, const std::vector<ExportItem>& items, dou
 }
 
 // --- OBJ --------------------------------------------------------------------------------------
+// Materiali di un file .mtl (nome -> materiale).
+void ReadMTL(const fs::path& file, std::map<std::string, std::shared_ptr<ExchangeMaterial>>& mats) {
+  std::ifstream f(file);
+  if (!f) return;
+  std::shared_ptr<ExchangeMaterial> cur;
+  auto color = [](std::istringstream& in) {
+    double r = 0, g = 0, b = 0;
+    in >> r >> g >> b;
+    auto c = [](double v) { return static_cast<int>(std::lround(std::clamp(v, 0.0, 1.0) * 255)); };
+    return ON_Color(c(r), c(g), c(b));
+  };
+  for (std::string line; std::getline(f, line);) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    std::istringstream in(line);
+    std::string t;
+    if (!(in >> t)) continue;
+    if (t == "newmtl") {
+      std::string rest;
+      std::getline(in, rest);
+      cur = std::make_shared<ExchangeMaterial>();
+      cur->name = Trim(rest);
+      mats[cur->name] = cur;
+    } else if (!cur) continue;
+    else if (t == "Kd") cur->diffuse = color(in);
+    else if (t == "Ks") cur->specular = color(in);
+    else if (t == "Ke") cur->emission = color(in);
+    else if (t == "Ns") { double v = 0; in >> v; cur->shine = std::clamp(v / 1000.0, 0.0, 1.0); }
+    else if (t == "d") { double v = 1; in >> v; cur->transparency = 1.0 - std::clamp(v, 0.0, 1.0); }
+    else if (t == "Tr") { double v = 0; in >> v; cur->transparency = std::clamp(v, 0.0, 1.0); }
+    else if (t == "Ni") { double v = 1; in >> v; cur->ior = v; }
+    else if (t == "Pm") { double v = 0; in >> v; cur->metallic = v; cur->pbr = true; }
+    else if (t == "Pr") { double v = 0.5; in >> v; cur->roughness = v; cur->pbr = true; }
+    else if (t == "map_Kd") {
+      std::string rest;
+      std::getline(in, rest);
+      rest = Trim(rest);
+      // le opzioni (-s, -o, ...) precedono il nome del file: si prende l'ultima parola
+      // se il nome intero non esiste
+      fs::path p = file.parent_path() / fs::u8path(rest);
+      std::error_code ec;
+      if (!fs::is_regular_file(p, ec)) {
+        const size_t sp = rest.find_last_of(' ');
+        if (sp != std::string::npos) p = file.parent_path() / fs::u8path(rest.substr(sp + 1));
+      }
+      if (fs::u8path(rest).is_absolute() && fs::is_regular_file(fs::u8path(rest), ec)) p = fs::u8path(rest);
+      cur->texture = U8(fs::absolute(p, ec).lexically_normal());
+    }
+  }
+}
+
 bool ReadOBJ(const std::string& path, std::vector<ImportedObject>& out, std::string& err) {
   std::ifstream f(fs::u8path(path));
   if (!f) { err = "impossibile aprire " + path; return false; }
+  std::map<std::string, std::shared_ptr<ExchangeMaterial>> mats;
+  std::shared_ptr<ExchangeMaterial> curMat;
   std::vector<ON_3dPoint> V;
   std::vector<ON_2dPoint> T;
   std::vector<ON_3dVector> N;
@@ -309,6 +363,7 @@ bool ReadOBJ(const std::string& path, std::vector<ImportedObject>& out, std::str
       ImportedObject o;
       o.geom = std::move(mesh);
       o.name = name;
+      o.material = curMat;
       out.push_back(std::move(o));
     }
     for (auto& pl : lines)
@@ -337,6 +392,16 @@ bool ReadOBJ(const std::string& path, std::vector<ImportedObject>& out, std::str
       std::string rest;
       std::getline(in, rest);
       if (!Trim(rest).empty()) name = Trim(rest);
+    } else if (t == "mtllib") {
+      std::string rest;
+      std::getline(in, rest);
+      ReadMTL(fs::u8path(path).parent_path() / fs::u8path(Trim(rest)), mats);
+    } else if (t == "usemtl") {
+      std::string rest;
+      std::getline(in, rest);
+      auto mf = mats.find(Trim(rest));
+      std::shared_ptr<ExchangeMaterial> m = mf == mats.end() ? nullptr : mf->second;
+      if (m != curMat) { flush(); curMat = m; }  // un oggetto per materiale
     } else if (t == "l") {
       ON_Polyline pl;
       for (std::string w; in >> w;) {
@@ -388,10 +453,51 @@ bool ReadOBJ(const std::string& path, std::vector<ImportedObject>& out, std::str
   return true;
 }
 
+// File .mtl accanto all'OBJ; le immagini delle texture vengono copiate nella stessa cartella.
+std::map<const ExchangeMaterial*, std::string> WriteMTL(const fs::path& mtl, const std::vector<ExportItem>& items) {
+  std::map<const ExchangeMaterial*, std::string> names;
+  std::map<std::string, int> used;
+  std::ostringstream o;
+  o << "# Kurva3D\n";
+  for (const auto& it : items) {
+    const ExchangeMaterial* m = it.material.get();
+    if (!m || names.count(m)) continue;
+    std::string n = m->name.empty() ? "materiale" : m->name;
+    for (auto& c : n) if (std::isspace((unsigned char)c)) c = '_';
+    if (used[n]++) n += "_" + std::to_string(used[n]);
+    names[m] = n;
+    auto c3 = [](const ON_Color& c) {
+      std::ostringstream s;
+      s << c.FractionRed() << " " << c.FractionGreen() << " " << c.FractionBlue();
+      return s.str();
+    };
+    o << "\nnewmtl " << n << "\nKa 0 0 0\nKd " << c3(m->diffuse) << "\nKs " << c3(m->specular)
+      << "\nNs " << m->shine * 1000.0 << "\nd " << 1.0 - m->transparency << "\nNi " << m->ior << "\n";
+    if (m->emission.Red() || m->emission.Green() || m->emission.Blue()) o << "Ke " << c3(m->emission) << "\n";
+    if (m->pbr) o << "Pm " << m->metallic << "\nPr " << m->roughness << "\n";
+    o << "illum " << (m->transparency > 0 ? 4 : 2) << "\n";
+    if (!m->texture.empty()) {
+      std::error_code ec;
+      const fs::path src = fs::u8path(m->texture);
+      const fs::path dst = mtl.parent_path() / src.filename();
+      if (!fs::equivalent(src, dst, ec)) fs::copy_file(src, dst, fs::copy_options::overwrite_existing, ec);
+      o << "map_Kd " << U8(src.filename()) << "\n";
+    }
+  }
+  if (!names.empty()) {
+    std::ofstream f(mtl);
+    f << o.str();
+  }
+  return names;
+}
+
 bool WriteOBJ(const std::string& path, const std::vector<ExportItem>& items, double tol, std::string& err) {
   std::ofstream f(fs::u8path(path));
   if (!f) { err = "impossibile scrivere " + path; return false; }
   f << "# Kurva3D\n";
+  const fs::path mtlPath = fs::u8path(path).replace_extension(".mtl");
+  const auto mtlNames = WriteMTL(mtlPath, items);
+  if (!mtlNames.empty()) f << "mtllib " << U8(mtlPath.filename()) << "\n";
   f.precision(10);
   size_t vb = 1, tb = 1, nb = 1;
   int n = 0;
@@ -417,11 +523,12 @@ bool WriteOBJ(const std::string& path, const std::vector<ExportItem>& items, dou
       n++;
       continue;
     }
-    auto m = ExportMesh(*it.geom, tol);
+    auto m = ExportMeshFor(it, tol);
     if (!m || m->m_F.Count() == 0) continue;
     const int nv = m->m_V.Count();
     const bool hasT = m->m_T.Count() == nv, hasN = m->m_N.Count() == nv;
     f << "o " << nm << "\n";
+    if (auto mn = mtlNames.find(it.material.get()); it.material && mn != mtlNames.end()) f << "usemtl " << mn->second << "\n";
     for (int k = 0; k < nv; k++) f << "v " << m->m_V[k].x << " " << m->m_V[k].y << " " << m->m_V[k].z << "\n";
     if (hasT) for (int k = 0; k < nv; k++) f << "vt " << m->m_T[k].x << " " << m->m_T[k].y << "\n";
     if (hasN) for (int k = 0; k < nv; k++) f << "vn " << m->m_N[k].x << " " << m->m_N[k].y << " " << m->m_N[k].z << "\n";
@@ -843,6 +950,83 @@ bool WriteDXF(const std::string& path, const std::vector<ExportItem>& items, ON:
 
 // --- Comandi ----------------------------------------------------------------------------------
 namespace {
+// Materiale del documento per un materiale importato (riusato se c'e' gia' con lo stesso nome).
+int AddExchangeMaterial(ONX_Model& model, const ExchangeMaterial& em) {
+  const ON_wString wname(em.name.c_str());
+  if (!em.name.empty())
+    if (const ON_ModelComponent* c = model.ComponentFromName(ON_ModelComponent::Type::RenderMaterial, ON_nil_uuid, wname).ModelComponent())
+      return c->Index();
+  ON_Material m;
+  m.SetName(wname);
+  m.SetDiffuse(em.diffuse);
+  m.SetSpecular(em.specular);
+  m.SetEmission(em.emission);
+  m.SetShine(std::clamp(em.shine, 0.0, 1.0) * ON_Material::MaxShine);
+  m.SetTransparency(std::clamp(em.transparency, 0.0, 1.0));
+  m.m_index_of_refraction = em.ior;
+  if (em.pbr) {
+    m.ToPhysicallyBased();
+    auto pb = m.PhysicallyBased();
+    pb->SetBaseColor(ON_4fColor(em.diffuse));
+    pb->SetMetallic(std::clamp(em.metallic, 0.0, 1.0));
+    pb->SetRoughness(std::clamp(em.roughness, 0.0, 1.0));
+    pb->SetOpacity(1.0 - std::clamp(em.transparency, 0.0, 1.0));
+    pb->SetEmission(ON_4fColor(em.emission));
+  }
+  if (!em.texture.empty()) {
+    if (!em.textureData.empty()) EmbedImageBuffer(model, em.texture, em.textureData);
+    else {
+      std::error_code ec;
+      if (fs::is_regular_file(fs::u8path(em.texture), ec)) EmbedImageFile(model, em.texture);
+    }
+    ON_Texture tex;
+    tex.m_image_file_reference.SetFullPath(ON_wString(em.texture.c_str()), false);
+    tex.m_type = ON_Texture::TYPE::bitmap_texture;
+    tex.m_mapping_channel_id = 1;  // coordinate di texture della mesh
+    m.AddTexture(tex);
+    if (!em.pbr) m.SetDiffuse(ON_Color(255, 255, 255));
+  }
+  ON_ModelComponentReference ref = model.AddModelComponent(m, true);
+  return ref.ModelComponent() ? ref.ModelComponent()->Index() : -1;
+}
+
+// Materiale di rendering di un oggetto per i formati mesh (dall'oggetto o dal livello).
+std::shared_ptr<ExchangeMaterial> ExportMaterialOf(const ONX_Model& model, const ON_3dmObjectAttributes& a,
+                                                   std::map<int, std::shared_ptr<ExchangeMaterial>>& cache) {
+  int mi = -1;
+  if (a.MaterialSource() == ON::material_from_object) mi = a.m_material_index;
+  else if (const auto* l = ON_Layer::Cast(model.LayerFromIndex(a.m_layer_index).ModelComponent())) mi = l->RenderMaterialIndex();
+  if (mi < 0) return nullptr;
+  if (auto f = cache.find(mi); f != cache.end()) return f->second;
+  const auto* m = ON_Material::Cast(model.ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, mi).ModelComponent());
+  if (!m) return cache[mi] = nullptr;
+  auto em = std::make_shared<ExchangeMaterial>();
+  em->name = ToUtf8(m->Name()).empty() ? "Materiale " + std::to_string(mi + 1) : ToUtf8(m->Name());
+  em->diffuse = m->Diffuse();
+  em->specular = m->Specular();
+  em->emission = m->Emission();
+  em->shine = m->Shine() / ON_Material::MaxShine;
+  em->transparency = m->Transparency();
+  em->ior = m->m_index_of_refraction;
+  if (m->IsPhysicallyBased()) {
+    auto pb = m->PhysicallyBased();
+    em->pbr = true;
+    em->diffuse = ON_Color(pb->BaseColor());
+    em->metallic = pb->Metallic();
+    em->roughness = pb->Roughness();
+    em->transparency = 1.0 - pb->Opacity();
+  }
+  const int ti = m->FindTexture(nullptr, ON_Texture::TYPE::bitmap_texture);
+  if (ti >= 0 && m->m_textures[ti].m_bOn) {
+    std::string file = ToUtf8(m->m_textures[ti].m_image_file_reference.FullPath());
+    std::error_code ec;
+    const std::string cache2 = U8(fs::temp_directory_path(ec) / "kurva3d-texture");
+    const std::string res = ResolveTextureFile(model, file, cache2);
+    if (!res.empty()) em->texture = res;
+  }
+  return cache[mi] = em;
+}
+
 int LayerFor(Engine& e, const std::string& name, const ON_Color& color) {
   if (name.empty()) return e.Model().m_settings.CurrentLayerIndex();
   ONX_ModelComponentIterator it(e.Model(), ON_ModelComponent::Type::Layer);
@@ -865,14 +1049,26 @@ bool ImportExchange(Engine& e, const std::string& path, const std::map<std::stri
   else if (ext == "obj") ok = ReadOBJ(path, objs, err);
   else if (ext == "dxf") ok = ReadDXF(path, units, objs, err);
   else if (ext == "step" || ext == "stp" || ext == "iges" || ext == "igs") ok = ReadStepIges(path, units, e.Tolerance(), objs, err);
+  else if (ext == "gltf" || ext == "glb") ok = ReadGLTF(path, units, objs, err);
+  else if (ext == "3mf") ok = Read3MF(path, units, objs, err);
+  else if (ext == "ply") ok = ReadPLY(path, objs, err);
   else err = "formato non supportato: " + ext;
   if (!ok) return e.Fail(err);
   e.ClearSelection();
   int n = 0;
+  std::map<const ExchangeMaterial*, int> matIndex;
   for (auto& o : objs) {
     ON_3dmObjectAttributes at;
     at.m_layer_index = LayerFor(e, o.layer, o.color);
     if (!o.name.empty()) at.SetName(ON_wString(o.name.c_str()), true);
+    if (o.material) {
+      auto f = matIndex.find(o.material.get());
+      const int mi = f != matIndex.end() ? f->second : (matIndex[o.material.get()] = AddExchangeMaterial(e.Model(), *o.material));
+      if (mi >= 0) {
+        at.m_material_index = mi;
+        at.SetMaterialSource(ON::material_from_object);
+      }
+    }
     const ON_UUID id = e.AddObject(o.geom.release(), &at);
     if (!ON_UuidIsNil(id)) { e.Select(id); n++; }
   }
@@ -885,6 +1081,7 @@ bool ExportExchange(Engine& e, const std::vector<ON_UUID>& ids, const std::strin
                     const std::map<std::string, std::string>& opts) {
   const std::string ext = FileExtension(path);
   std::vector<ExportItem> items;
+  std::map<int, std::shared_ptr<ExchangeMaterial>> materials;
   for (const auto& id : ids) {
     const auto* o = e.Object(id);
     if (!o || !o->Geometry(nullptr)) continue;
@@ -895,6 +1092,12 @@ bool ExportExchange(Engine& e, const std::vector<ON_UUID>& ids, const std::strin
       if (const auto* l = ON_Layer::Cast(e.Model().LayerFromIndex(a->m_layer_index).ModelComponent())) {
         it.layer = ToUtf8(l->Name());
         it.color = a->ColorSource() == ON::color_from_object ? a->m_color : l->Color();
+      }
+      it.material = ExportMaterialOf(e.Model(), *a, materials);
+      ObjectTexture tex;
+      if (GetObjectTexture(e.Model(), *a, tex) && tex.hasMapping) {
+        it.mapping = tex.mapping;
+        it.hasMapping = true;
       }
     }
     items.push_back(it);
@@ -909,9 +1112,16 @@ bool ExportExchange(Engine& e, const std::vector<ON_UUID>& ids, const std::strin
   } else if (ext == "obj") ok = WriteOBJ(path, items, e.Tolerance(), err);
   else if (ext == "dxf") ok = WriteDXF(path, items, units, e.Tolerance(), err);
   else if (ext == "step" || ext == "stp" || ext == "iges" || ext == "igs") ok = WriteStepIges(path, items, units, e.Tolerance(), err);
-  else err = "formato non supportato: " + ext;
+  else if (ext == "gltf" || ext == "glb") ok = WriteGLTF(path, items, units, e.Tolerance(), ext == "glb", err);
+  else if (ext == "3mf") ok = Write3MF(path, items, units, e.Tolerance(), err);
+  else if (ext == "ply") {
+    auto it = opts.find("binary");
+    const bool binary = !opts.count("ascii") && (it == opts.end() || it->second != "no");
+    ok = WritePLY(path, items, e.Tolerance(), binary, err);
+  } else err = "formato non supportato: " + ext;
   if (!ok) return e.Fail(err);
   e.Out() << "  Esportati " << items.size() << " oggetti in " << U8(fs::u8path(path).filename()) << "\n";
+  if (!err.empty()) e.Out() << "  Nota: " << err << "\n";
   return true;
 }
 

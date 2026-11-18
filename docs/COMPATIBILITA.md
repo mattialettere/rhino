@@ -72,14 +72,18 @@ I file prodotti dai comandi vengono salvati in formato Rhino 8, riletti e
 confrontati in ogni test (nessuna differenza); i B-rep prodotti da OpenCASCADE
 passano anche il controllo `IsValid` di openNURBS. Resta da aprirli in Rhino 8.
 
-## Formati di scambio (0.9)
+## Formati di scambio (0.9, 0.11)
 
 | Formato | Import | Export | Verificato con | Note |
 |---|---|---|---|---|
 | STEP (.stp/.step) | ✔ | ✔ | andata e ritorno in Kurva3D (test "Scambio_file": solidi chiusi, ingombro identico) | ⬜ da provare con file di altri CAD e con Rhino 8 |
 | IGES (.igs/.iges) | ✔ | ✔ | andata e ritorno in Kurva3D | ⬜ come sopra |
 | STL | ✔ | ✔ (binario e ASCII) | andata e ritorno, mesh chiusa | ⬜ |
-| OBJ | ✔ | ✔ | andata e ritorno | ⬜ |
+| OBJ (+ .mtl) | ✔ | ✔ | andata e ritorno con materiali e texture (test "Formati mesh") | ⬜ da provare con Rhino 8, Blender |
+| glTF 2.0 (.gltf, .glb) | ✔ | ✔ | andata e ritorno con materiali PBR, trasparenza, texture incorporata, Y in alto e metri; struttura controllata (accessori, buffer, indici) | ⬜ da provare con il validatore Khronos, Rhino 8, Blender |
+| 3MF | ✔ | ✔ | andata e ritorno con colori e unita' | ⬜ da provare con un programma di stampa 3D (Cura, PrusaSlicer, Bambu Studio) e Rhino 8 |
+| PLY | ✔ | ✔ (binario e ASCII) | andata e ritorno con colori per vertice, nuvola di punti | ⬜ da provare con MeshLab, Rhino 8 |
 | DXF R12 | ✔ | ✔ | andata e ritorno, DXF scritto a mano (rigonfiamenti, SPLINE, 3DFACE, unita') | ⬜ da provare con AutoCAD/Rhino 8 |
 | DWG, FBX | ⬜ | ⬜ | | richiedono librerie a pagamento (ODA, Autodesk) |
+| SketchUp (.skp), Collada (.dae) | ⬜ | ⬜ | | SketchUp: SDK con licenza propria, da valutare; Collada: possibile in futuro |
 

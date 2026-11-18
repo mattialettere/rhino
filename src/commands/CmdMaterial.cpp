@@ -242,6 +242,23 @@ bool GetObjectTexture(const ONX_Model& model, const ON_3dmObjectAttributes& a, O
   return true;
 }
 
+void EmbedImageFile(ONX_Model& model, const std::string& path) { EmbedFile(model, path); }
+
+bool EmbedImageBuffer(ONX_Model& model, const std::string& path, const std::vector<unsigned char>& bytes) {
+  ONX_ModelComponentIterator it(model, ON_ModelComponent::Type::EmbeddedFile);
+  for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent())
+    if (const auto* ef = ON_EmbeddedFile::Cast(c))
+      if (SameFile(ToUtf8(ef->Filename()), path)) return true;
+  if (bytes.empty()) return false;
+  ON_Buffer buf;
+  buf.Write(bytes.size(), bytes.data());
+  buf.SeekFromStart(0);
+  auto* ef = new ON_EmbeddedFile();
+  if (!ef->LoadFromBuffer(buf)) { delete ef; return false; }
+  ef->SetFilename(ON_wString(path.c_str()));
+  return !model.AddManagedModelComponent(ef, true).IsEmpty();
+}
+
 std::string ResolveTextureFile(const ONX_Model& model, const std::string& file, const std::string& cacheDir) {
   namespace fs = std::filesystem;
   std::error_code ec;

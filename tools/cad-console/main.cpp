@@ -7,6 +7,7 @@
 // Comandi speciali della console: "?" elenca i comandi, "esci" termina.
 #include "commands/Engine.h"
 #include "core/ModelCompare.h"
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -84,6 +85,11 @@ int main(int argc, char** argv) {
       }
     }
     if (rc == 0 && !outPath.empty()) {
+      {
+        std::error_code ec;  // crea la cartella di uscita se manca
+        const auto parent = std::filesystem::u8path(outPath).parent_path();
+        if (!parent.empty()) std::filesystem::create_directories(parent, ec);
+      }
       cad::SyncRenderMaterials(doc.Model());
       const cad::ModelSnapshot before = cad::TakeSnapshot(doc.Model());
       if (!doc.Save(outPath)) { std::cerr << "Salvataggio non riuscito: " << outPath << "\n"; rc = 1; }
