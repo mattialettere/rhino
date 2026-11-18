@@ -5,6 +5,7 @@
 #include "ai/Assistant.h"
 #include "commands/Engine.h"
 #include "python/PythonHost.h"
+#include "nodes/Graph.h"
 #include "commands/Grips.h"
 #include "commands/Materials.h"
 #include "commands/Exchange.h"
@@ -2356,6 +2357,102 @@ int main(int argc, char** argv) {
     CHECK(e3.e.Run("_History Record=Yes\n_Line 0,20 10,20\n_SelLast _ExtrudeCrv 5\n_SelNone _SelObjectsWithHistory"));
     CHECK(e3.e.Selection().size() == 1);
     CHECK(e3.e.Run("_HistoryPurge All") && !e3.e.Model().GetDocumentUserString(L"Kurva3D.History", after));
+  }
+  {
+    std::printf("Nodi\n");
+    using namespace cad::nodes;
+    Ctx c;
+    Graph g;
+    // cursore -> raggio del cerchio; serie -> punti -> polilinea
+    const int sl = g.Add("Slider");
+    g.Get(sl)->params["value"] = "3.25";
+    const int circ = g.Add("Circle");
+    CHECK(g.Connect(sl, 0, circ, 1));
+    const int ser = g.Add("Series");
+    const int pt = g.Add("ConstructPoint");
+    CHECK(g.Connect(ser, 0, pt, 0));
+    const int expr = g.Add("Expression");
+    g.Get(expr)->params["expr"] = "sin(x/9*pi)*4";
+    CHECK(g.Connect(ser, 0, expr, 0) && g.Connect(expr, 0, pt, 1));
+    const int pl = g.Add("Polyline");
+    CHECK(g.Connect(pt, 0, pl, 0));
+    CHECK(!g.Connect(pl, 0, ser, 0));  // niente cicli
+    g.Evaluate(&c.e);
+    const auto* cn = g.Get(circ);
+    CHECK(cn->error.empty() && cn->outputs[0].size() == 1);
+    { ON_Arc a; CHECK(ON_Curve::Cast(cn->outputs[0][0].geo.get())->IsArc(nullptr, &a) && Near(a.Radius(), 3.25)); }
+    CHECK(g.Get(pt)->outputs[0].size() == 10 && Near(g.Get(pt)->outputs[0][9].pt.x, 9));
+    CHECK(Near(g.Get(pt)->outputs[0][3].pt.y, std::sin(3.0 / 9 * ON_PI) * 4));
+    const auto* poly = ON_PolylineCurve::Cast(g.Get(pl)->outputs[0][0].geo.get());
+    CHECK(poly && poly->PointCount() == 10);
+    // lista piu' lunga: 3 raggi -> 3 cerchi
+    const int pan = g.Add("Panel");
+    g.Get(pan)->params["text"] = "1\n2\n4";
+    const int circ2 = g.Add("Circle");
+    CHECK(g.Connect(pan, 0, circ2, 1));
+    // cerchi -> estrusione chiusa -> volume; loft tra due cerchi
+    const int ex = g.Add("Extrude");
+    CHECK(g.Connect(circ2, 0, ex, 0));
+    g.Evaluate(&c.e);
+    CHECK(g.Get(circ2)->outputs[0].size() == 3 && g.Get(ex)->outputs[0].size() == 3);
+    const auto* solid = ON_Brep::Cast(g.Get(ex)->outputs[0][0].geo.get());
+    CHECK(solid && solid->IsSolid());
+    // salvataggio e rilettura del grafo
+    const std::string text = g.Save();
+    Graph h;
+    CHECK(h.Load(text) && h.nodes.size() == g.nodes.size() && h.wires.size() == g.wires.size());
+    CHECK(h.Get(expr)->params["expr"] == "sin(x/9*pi)*4" && h.Get(pan)->params["text"] == "1\n2\n4");
+    h.Evaluate(&c.e);
+    CHECK(h.Get(ex)->outputs[0].size() == 3);
+    // anteprima e bake
+    std::vector<std::shared_ptr<const ON_Geometry>> prev;
+    h.Preview(prev);
+    CHECK(prev.size() >= 3 + 3 + 1 + 10);
+    CHECK(h.Bake(ex, c.e) == 3 && c.e.AllObjectIds(true).size() == 3);
+    // geometria dal modello: le curve del documento entrano nel grafo
+    CHECK(c.e.Run("_Circle 0,0,0 5\n_Circle 0,0,10 3"));
+    std::string ids;
+    for (const auto& id : c.e.AllObjectIds(true)) {
+      if (!ON_Curve::Cast(c.e.Object(id)->Geometry(nullptr))) continue;
+      char b[64];
+      ON_UuidToString(id, b);
+      ids += std::string(ids.empty() ? "" : ",") + b;
+    }
+    Graph k;
+    const int ref = k.Add("GeometryRef");
+    k.Get(ref)->params["ids"] = ids;
+    const int len = k.Add("CurveLength");
+    const int sum = k.Add("MassAddition");
+    CHECK(k.Connect(ref, 0, len, 0) && k.Connect(len, 0, sum, 0));
+    const int item = k.Add("ListItem");
+    CHECK(k.Connect(len, 0, item, 0));
+    k.Get(item)->params.clear();
+    k.Evaluate(&c.e);
+    CHECK(Near(k.Get(sum)->outputs[0][0].num, 2 * ON_PI * 8, 1e-6));
+    CHECK(Near(k.Get(item)->outputs[0][0].num, 2 * ON_PI * 5, 1e-6));
+    // ingresso mancante: avviso, nessun risultato
+    const int line = k.Add("Line");
+    k.Evaluate(&c.e);
+    CHECK(!k.Get(line)->warning.empty() && k.Get(line)->outputs[0].empty());
+#ifdef CAD_WITH_OCCT
+    const int loft = k.Add("Loft");
+    CHECK(k.Connect(ref, 0, loft, 0));
+    const int bx = k.Add("CenterBox");
+    const int vol = k.Add("Volume");
+    CHECK(k.Connect(bx, 0, vol, 0));
+    const int rect = k.Add("Rectangle");
+    const int area = k.Add("Area");
+    CHECK(k.Connect(rect, 0, area, 0));
+    k.Evaluate(&c.e);
+    CHECK(k.Get(loft)->error.empty() && k.Get(loft)->outputs[0].size() == 1 && ON_Brep::Cast(k.Get(loft)->outputs[0][0].geo.get()));
+    CHECK(Near(k.Get(vol)->outputs[0][0].num, 1, 1e-6) && Near(k.Get(area)->outputs[0][0].num, 1, 1e-6));
+    CHECK(NearPt(k.Get(area)->outputs[1][0].pt, ON_3dPoint(0.5, 0.5, 0), 1e-6));
+#endif
+    // espressioni
+    double r = 0;
+    std::string err;
+    CHECK(EvalExpression("2^3 + max(1, 4) * -2 + sqrt(16)", {}, r, err) && Near(r, 4));
+    CHECK(!EvalExpression("2 +", {}, r, err) && !err.empty());
   }
 #ifdef CAD_WITH_PYTHON
   {

@@ -543,7 +543,15 @@ bool Props(Engine& e, bool volume) {
 }
 bool CmdArea(Engine& e, TokenStream&) { return Props(e, false); }
 
+bool MassPropsImpl(Engine& e, const ON_UUID& id, bool volume, double& value, ON_3dPoint& centroid);
 bool MassProps(Engine& e, const ON_UUID& id, bool volume, double& value, ON_3dPoint& centroid) {
+  try {
+    return MassPropsImpl(e, id, volume, value, centroid);
+  } catch (...) {
+    return false;
+  }
+}
+bool MassPropsImpl(Engine& e, const ON_UUID& id, bool volume, double& value, ON_3dPoint& centroid) {
   const ON_Geometry* g = Geo(e, id);
   if (!g) return false;
   TopoDS_Shape s = GeometryToShape(*g, e.Tolerance());

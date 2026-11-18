@@ -962,6 +962,49 @@ void Viewport::paintGL() {
     gl->glPopMatrix();
   }
 
+  // Anteprima dell'editor a nodi: superfici trasparenti e curve nel colore dell'anteprima
+  if (!m_scene.Preview().empty()) {
+    const QColor pc(200, 60, 40);
+    gl->glDisable(GL_LIGHTING);
+    if (shaded) {
+      gl->glEnable(GL_BLEND);
+      gl->glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      gl->glDepthMask(GL_FALSE);
+      gl->glColor4f(pc.redF(), pc.greenF(), pc.blueF(), 0.35f);
+      for (const auto& obj : m_scene.Preview()) {
+        if (!obj.shaded) continue;
+        const ON_Mesh& m = *obj.shaded;
+        gl->glBegin(GL_TRIANGLES);
+        for (int i = 0; i < m.m_F.Count(); i++) {
+          const ON_MeshFace& f = m.m_F[i];
+          const int tri[2][3] = {{f.vi[0], f.vi[1], f.vi[2]}, {f.vi[0], f.vi[2], f.vi[3]}};
+          for (int t = 0; t < (f.IsQuad() ? 2 : 1); t++)
+            for (int k = 0; k < 3; k++) gl->glVertex3fv(&m.m_V[tri[t][k]].x);
+        }
+        gl->glEnd();
+      }
+      gl->glDepthMask(GL_TRUE);
+      gl->glDisable(GL_BLEND);
+    }
+    gl->glColor3ub(pc.red(), pc.green(), pc.blue());
+    gl->glLineWidth(1.5f);
+    for (const auto& obj : m_scene.Preview()) {
+      for (const auto* list : {&obj.wires, &obj.isocurves})
+        for (const auto& wire : *list) {
+          gl->glBegin(GL_LINE_STRIP);
+          for (const auto& q : wire) gl->glVertex3d(q.x, q.y, q.z);
+          gl->glEnd();
+        }
+      if (!obj.points.empty()) {
+        gl->glPointSize(5.0f);
+        gl->glBegin(GL_POINTS);
+        for (const auto& q : obj.points) gl->glVertex3d(q.x, q.y, q.z);
+        gl->glEnd();
+      }
+    }
+    gl->glLineWidth(1.0f);
+  }
+
   for (int k = 0; k < clips; k++) gl->glDisable(GL_CLIP_PLANE0 + k);
 
   // Elastico dall'ultimo punto al cursore durante un comando

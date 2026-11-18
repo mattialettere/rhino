@@ -81,6 +81,9 @@ public:
   bool historyUpdate = true;
   bool historyLock = false;
   static bool SupportsHistory(const std::string& commandName);
+  // Modifica del modello fatta dall'interfaccia (es. Bake dell'editor a nodi) come un comando:
+  // un passo di annullamento e gli oggetti creati diventano "ultimi creati".
+  bool Transaction(const std::string& name, const std::function<bool()>& fn);
   // Ricalcola gli oggetti con storia i cui ingressi sono cambiati (dopo ogni comando).
   void UpdateHistory();
   bool NeedsInput() const { return m_needsInput; }
@@ -196,6 +199,7 @@ public:
   std::function<bool(const std::string& mode)> setDisplayMode;  // nome normalizzato (wireframe, shaded, ...)
   // ScriptEditor: apre l'editor di script Python (eventualmente con un file)
   std::function<bool(const std::string& file)> showScriptEditor;
+  std::function<bool()> showNodeEditor;  // NodeEditor: editor visuale a nodi
   // Stampa su stampante (dalla finestra): pagine gia' composte
   std::function<bool(const std::vector<struct PageDrawing>&)> printPages;
   std::vector<ON_UUID> viewportIds;         // tutte le viste della finestra
@@ -252,6 +256,7 @@ void RegisterLayoutCommands(Engine& e);
 void RegisterRenderCommands(Engine& e);
 void RegisterPythonCommands(Engine& e);
 void RegisterHistoryCommands(Engine& e);
+void RegisterNodeCommands(Engine& e);
 // PDF della tavola attiva o della vista (opzioni come Print)
 bool ExportPdf(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);
 // CageEdit: deforma di nuovo gli oggetti catturati dalla gabbia; restituisce quanti

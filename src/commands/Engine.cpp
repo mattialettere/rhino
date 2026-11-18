@@ -121,6 +121,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterRenderCommands(*this);
   RegisterPythonCommands(*this);
   RegisterHistoryCommands(*this);
+  RegisterNodeCommands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterKernelCommands(*this);
   RegisterCurveEditCommands(*this);
@@ -149,6 +150,30 @@ bool Engine::Run(const std::string& script) {
     if (IsEnter(t)) continue;
     if (!RunCommand(t, ts)) return false;
   }
+  return true;
+}
+
+bool Engine::Transaction(const std::string& name, const std::function<bool()>& fn) {
+  std::vector<unsigned char> before = m_doc.ToBuffer();
+  m_lastCreated.clear();
+  m_collectingCreated = true;
+  m_commandDepth++;
+  bool ok = false;
+  try {
+    ok = fn();
+  } catch (...) {
+    ok = false;
+  }
+  m_commandDepth--;
+  m_collectingCreated = false;
+  if (!m_lastCreated.empty()) m_previousCreated = m_lastCreated;
+  if (!ok) {
+    m_doc.FromBuffer(before);
+    return false;
+  }
+  m_undo.push_back(std::move(before));
+  m_redo.clear();
+  m_lastCommandName = name;
   return true;
 }
 
@@ -208,7 +233,14 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   m_lastCreated.clear();
   m_collectingCreated = true;
   m_commandDepth++;
-  const bool ok = cmd.fn(*this, ts);
+  bool ok = false;
+  try {
+    ok = cmd.fn(*this, ts);
+  } catch (const std::exception& ex) {
+    ok = Fail(std::string("errore interno: ") + ex.what());
+  } catch (...) {
+    ok = Fail("errore interno del motore geometrico");
+  }
   m_commandDepth--;
   m_collectingCreated = outerCollecting;
   if (!m_lastCreated.empty()) m_previousCreated = m_lastCreated;

@@ -399,6 +399,26 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
 
 std::string Scene::textureCacheDir;
 
+void Scene::SetPreview(const std::vector<std::shared_ptr<const ON_Geometry>>& geometry) {
+  m_preview.clear();
+  std::map<std::string, std::shared_ptr<ON_Mesh>> newCache;
+  // le mesh gia' calcolate (stessa geometria) si riusano tra un aggiornamento e l'altro
+  std::swap(m_meshCache, m_previewCache);
+  for (const auto& g : geometry) {
+    if (!g) continue;
+    DisplayObject d;
+    g->GetTightBoundingBox(d.bbox);
+    std::string sig = std::string("preview|") + g->ClassId()->ClassName() + "|" + std::to_string(g->DataCRC(0));
+    for (int i = 0; i < 3; i++) sig += "|" + std::to_string(d.bbox.m_min[i]) + "|" + std::to_string(d.bbox.m_max[i]);
+    AddGeometry(g.get(), d, sig, newCache, 0);
+    d.snapPoints.clear();
+    m_preview.push_back(std::move(d));
+  }
+  std::swap(m_meshCache, m_previewCache);
+  m_previewCache = std::move(newCache);
+  m_version++;
+}
+
 void Scene::Rebuild() {
   m_version++;
   m_objects.clear();

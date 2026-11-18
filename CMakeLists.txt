@@ -43,6 +43,7 @@ add_library(cadcore STATIC
   src/commands/CmdViews.cpp
   src/commands/CmdLayout.cpp
   src/commands/History.cpp
+  src/nodes/Graph.cpp src/nodes/Graph.h src/nodes/Components.cpp
   src/print/Page.cpp src/print/Page.h src/print/Pdf.cpp
   src/render/Render.cpp src/render/Render.h src/render/CmdRender.cpp
   src/ui/Scene.cpp src/ui/Scene.h

@@ -71,6 +71,9 @@ public:
   Engine& GetEngine() const { return m_engine; }
   int Version() const { return m_version; }   // cresce a ogni ricostruzione
   ON_BoundingBox Bounds() const;
+  // Anteprima dell'editor a nodi: geometria non nel documento, disegnata con un colore proprio
+  void SetPreview(const std::vector<std::shared_ptr<const ON_Geometry>>& geometry);
+  const std::vector<DisplayObject>& Preview() const { return m_preview; }
   const ON_Geometry* Geometry(const ON_UUID& id) const {
     const auto* o = m_engine.Object(id);
     return o ? o->Geometry(nullptr) : nullptr;
@@ -83,6 +86,8 @@ private:
   void ApplyTexture(const ON_3dmObjectAttributes& a, DisplayObject& d);
   Engine& m_engine;
   std::vector<DisplayObject> m_objects;
+  std::vector<DisplayObject> m_preview;
+  std::map<std::string, std::shared_ptr<ON_Mesh>> m_previewCache;
   std::vector<ClipPlane> m_clips;
   double m_lightScale = 100;
   int m_version = 0;
