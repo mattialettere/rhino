@@ -13,6 +13,7 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepFilletAPI_MakeChamfer.hxx>
@@ -156,6 +157,15 @@ bool EdgeOp(Engine& e, TokenStream& ts, bool fillet) {
   auto r = e.ReadNumber(ts, fillet ? "raggio" : "distanza");
   if (!r) return false;
   if (*r <= e.Tolerance()) return e.Fail("valore troppo piccolo");
+  // Raggio variabile (FilletEdge): EndRadius= e' il raggio alla fine di ogni spigolo, il
+  // raggio cambia linearmente dall'inizio alla fine (come due maniglie di Rhino agli estremi).
+  // Per ChamferEdge: EndDistance= distanza sulla seconda faccia (smusso asimmetrico).
+  auto eopts = e.ReadOptions(ts);
+  double r2 = *r;
+  if (auto it = eopts.find(fillet ? "endradius" : "enddistance"); it != eopts.end()) {
+    try { r2 = std::stod(it->second); } catch (...) {}
+    if (r2 <= e.Tolerance()) return e.Fail("valore finale troppo piccolo");
+  }
   // Spigoli cliccati (come Rhino); con Invio senza clic: tutti gli spigoli
   std::vector<ON_3dPoint> picks;
   while (e.MoreInput(ts)) {
@@ -198,12 +208,24 @@ bool EdgeOp(Engine& e, TokenStream& ts, bool fillet) {
     try {
       if (fillet) {
         BRepFilletAPI_MakeFillet mk(o.shape);
-        for (int i = 1; i <= o.edges.Extent(); i++) if (useEdge(i)) mk.Add(*r, TopoDS::Edge(o.edges(i)));
+        for (int i = 1; i <= o.edges.Extent(); i++)
+          if (useEdge(i)) {
+            if (std::fabs(r2 - *r) > 1e-12) mk.Add(*r, r2, TopoDS::Edge(o.edges(i)));
+            else mk.Add(*r, TopoDS::Edge(o.edges(i)));
+          }
         mk.Build();
         if (mk.IsDone()) result = mk.Shape();
       } else {
         BRepFilletAPI_MakeChamfer mk(o.shape);
-        for (int i = 1; i <= o.edges.Extent(); i++) if (useEdge(i)) mk.Add(*r, TopoDS::Edge(o.edges(i)));
+        TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+        TopExp::MapShapesAndAncestors(o.shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+        for (int i = 1; i <= o.edges.Extent(); i++)
+          if (useEdge(i)) {
+            const TopoDS_Edge& E = TopoDS::Edge(o.edges(i));
+            if (std::fabs(r2 - *r) > 1e-12 && edgeFaces.Contains(E) && !edgeFaces.FindFromKey(E).IsEmpty())
+              mk.Add(*r, r2, E, TopoDS::Face(edgeFaces.FindFromKey(E).First()));
+            else mk.Add(*r, E);
+          }
         mk.Build();
         if (mk.IsDone()) result = mk.Shape();
       }
@@ -578,8 +600,8 @@ void RegisterKernelCommands(Engine& e) {
   reg("BooleanUnion", "Solidi", "Unione booleana degli oggetti selezionati", CmdBooleanUnion);
   reg("BooleanDifference", "Solidi", "Differenza: primo selezionato meno gli altri", CmdBooleanDifference);
   reg("BooleanIntersection", "Solidi", "Intersezione booleana", CmdBooleanIntersection);
-  reg("FilletEdge", "Solidi", "Raccordo di tutti gli spigoli (raggio)", CmdFilletEdge);
-  reg("ChamferEdge", "Solidi", "Smusso di tutti gli spigoli (distanza)", CmdChamferEdge);
+  reg("FilletEdge", "Solidi", "Raccordo degli spigoli (raggio; EndRadius= per il raggio variabile)", CmdFilletEdge);
+  reg("ChamferEdge", "Solidi", "Smusso degli spigoli (distanza; EndDistance= per lo smusso asimmetrico)", CmdChamferEdge);
   reg("Offset", "Curve", "Offset di curve planari (distanza, lato)", CmdOffset);
   reg("OffsetSrf", "Superfici", "Offset di superfici (distanza)", CmdOffsetSrf);
   MassPropertiesFn = MassProps;

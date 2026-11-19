@@ -168,6 +168,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | UntrimAll | ✔ |
 | Heightfield | ✔ |
 | DevLoft | ✔ |
+| MergeSrf | ✔ (0.13) |
 
 ## Solidi
 
@@ -191,6 +192,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | BooleanIntersection | ✔ |
 | BooleanSplit | ✔ |
 | FilletEdge | ✔ |
+| FilletEdge raggio variabile (EndRadius=) | ✔ (0.13) |
+| SplitFace | ✔ (0.13) |
 | ChamferEdge | ✔ |
 | Shell | ✔ |
 | MergeAllFaces | ✔ |
@@ -246,6 +249,13 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Weld | ✔ |
 | UnweldEdge | ✔ |
 | FillMeshHoles | ✔ |
+| ShrinkWrap | ✔ (0.13) |
+| OffsetMesh | ✔ (0.13) |
+| MeshRepair | ✔ (0.13) |
+| CheckMesh | ✔ (0.13) |
+| CullDegenerateMeshFaces | ✔ (0.13) |
+| RebuildMeshNormals | ✔ (0.13) |
+| ExtractRenderMesh | ✔ (0.13) |
 | UnifyMeshNormals | ✔ |
 | MeshToNURB | ✔ |
 | ExtractMeshPart | ✔ |
@@ -318,6 +328,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | EditPtOn | ✔ |
 | MakePeriodic | ✔ |
 | Match | ✔ |
+| MatchCrv | ✔ (0.13) |
 | Fit | ✔ |
 | ConvertToBezier | ✔ |
 | Isolate | ✔ |
@@ -396,6 +407,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | DimDiameter | ✔ |
 | Centermark | ✔ |
 | DimOrdinate | ✔ |
+| DimArc | ✔ (0.13) |
+| DimCurveLength | ✔ (0.13) |
 | Leader | ✔ |
 | Dot | ✔ |
 | Hatch | ✔ |

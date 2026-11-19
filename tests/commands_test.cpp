@@ -1264,6 +1264,96 @@ int main(int argc, char** argv) {
   }
 
 #ifdef CAD_WITH_OCCT
+  // Modellazione (0.13)
+  {
+    std::printf("Modellazione 0.13\n");
+    auto has = [](Ctx& c, const char* t) { return c.log.str().find(t) != std::string::npos; };
+    auto volumeOf = [](const ON_Geometry* g) {
+      double v = 0;
+      if (const auto* m = ON_Mesh::Cast(g))
+        for (int i = 0; i < m->m_F.Count(); i++) {
+          const ON_MeshFace& f = m->m_F[i];
+          const ON_3dVector a(m->Vertex(f.vi[0])), b(m->Vertex(f.vi[1])), cc(m->Vertex(f.vi[2]));
+          v += a * ON_CrossProduct(b, cc);
+          if (f.IsQuad()) v += a * ON_CrossProduct(cc, ON_3dVector(m->Vertex(f.vi[3])));
+        }
+      return std::fabs(v / 6.0);
+    };
+    Case("FilletEdge_variabile", "_Box 0,0,0 10,10 10\n_SelAll _FilletEdge 1 EndRadius=1.5 10,5,10 _Enter\n_SelAll _Volume", [&](Ctx& c) {
+      // volume tolto: (1 - pi/4) * integrale di r^2 lungo lo spigolo = 0.2146 * 10 * (1 + 1.5 + 2.25) / 3
+      CHECK(has(c, "Volume = 996.59"));
+    });
+    Case("ChamferEdge_asimmetrico", "_Box 0,0,0 10,10 10\n_SelAll _ChamferEdge 1 EndDistance=2 10,5,10 _Enter\n_SelAll _Volume", [&](Ctx& c) {
+      CHECK(has(c, "Volume = 990 mm3"));  // prisma triangolare 1 x 2 / 2 x 10
+    });
+    Case("MergeSrf", "_Plane 0,0,0 10,10,0\n_Plane 10,0,0 20,10,0\n_SelAll _MergeSrf\n_SelAll _Area", [&](Ctx& c) {
+      CHECK(c.Objects().size() == 1);
+      CHECK(has(c, "Area = 200 mm2"));
+      const auto* b = ON_Brep::Cast(c.Last());
+      CHECK(b && b->m_F.Count() == 1);
+    });
+    Case("MergeSrf_lontane", "_Plane 0,0,0 10,10,0\n_Plane 30,0,0 40,10,0\n_SelAll _MergeSrf", [&](Ctx&) {}, false);
+    Case("SplitFace_curva", "_Box 0,0,0 10,10 10\n_Line -5,5,20 15,5,20\n_SelAll _SplitFace\n_SelPolysrf _Volume", [&](Ctx& c) {
+      CHECK(has(c, "Facce: 6 -> 8"));
+      CHECK(has(c, "Volume = 1000 mm3"));
+    });
+    Case("SplitFace_isocurva", "_Box 0,0,0 10,10 10\n_SelAll _SplitFace Isocurve 5,5,10", [&](Ctx& c) { CHECK(has(c, "Facce: 6 -> 7")); });
+    Case("OffsetMesh", "_MeshBox 0,0,0 10,10 10\n_SelAll _OffsetMesh 1", [&](Ctx& c) {
+      CHECK(c.Objects().size() == 2);
+      CHECK(std::fabs(volumeOf(c.Last()) - 1728.0) < 1e-3);  // 12^3: facce spostate di 1
+    });
+    Case("OffsetMesh_solida", "_MeshBox 0,0,0 10,10 10\n_SelAll _OffsetMesh 1 Solid=Yes", [&](Ctx& c) {
+      CHECK(std::fabs(volumeOf(c.Last()) - 728.0) < 1e-3);  // 12^3 - 10^3
+    });
+    Case("OffsetMesh_aperta_solida", "_MeshPlane 0,0,0 10,10\n_SelAll _OffsetMesh 2 Solid=Yes\n_SelNone _SelLast _CheckMesh", [&](Ctx& c) {
+      CHECK(std::fabs(volumeOf(c.Last()) - 200.0) < 1e-3);
+      CHECK(has(c, "spigoli nudi 0"));
+    });
+    Case("ShrinkWrap", "_MeshBox 0,0,0 10,10 10\n_SelAll _ShrinkWrap TargetEdgeLength=0.5 Offset=0.5\n_SelNone _SelLast _CheckMesh", [&](Ctx& c) {
+      CHECK(has(c, "ShrinkWrap: mesh chiusa"));
+      CHECK(has(c, "spigoli nudi 0, spigoli non-manifold 0"));
+      const double v = volumeOf(c.Last());
+      CHECK(v > 1000.0 && v < 1331.0);  // tra la scatola e la scatola gonfiata di 0.5
+    });
+    Case("ShrinkWrap_cavita", "_MeshBox 0,0,0 10,10 10\n_MeshBox 3,3,3 7,7 4\n_SelAll _ShrinkWrap TargetEdgeLength=0.5\n_SelNone _SelLast _CheckMesh",
+         [&](Ctx& c) { CHECK(has(c, "parti 1")); });  // la scatola interna sparisce
+    Case("MeshRepair", "_MeshBox 0,0,0 10,10 10\n_SelAll _MeshRepair", [&](Ctx& c) { CHECK(has(c, "facce degeneri 0, facce doppie 0")); });
+    {
+      Ctx c;
+      CHECK(c.e.Run("_MeshBox 0,0,0 10,10 10"));
+      auto* m = ON_Mesh::Cast(c.e.EditableGeometry(c.e.AllObjectIds().back()));
+      CHECK(m != nullptr);
+      if (m) {
+        const int nf = m->m_F.Count();
+        m->SetTriangle(nf, 0, 1, 1);           // degenere
+        ON_MeshFace dup = m->m_F[0];
+        m->m_F.Append(dup);                    // doppia
+        m->m_V.Append(ON_3fPoint(50, 50, 50)); // non usato
+        CHECK(c.e.Run("_SelAll _MeshRepair"));
+        const auto* r = ON_Mesh::Cast(c.Last());
+        CHECK(r && r->m_F.Count() == nf && r->m_V.Count() == 8);
+        CHECK(c.log.str().find("facce degeneri 1, facce doppie 1, vertici non usati 1") != std::string::npos);
+      }
+    }
+    Case("ExtractRenderMesh", "_Sphere 0,0,0 10\n_SelAll _ExtractRenderMesh", [&](Ctx& c) {
+      CHECK(c.Objects().size() == 2);
+      const double v = volumeOf(c.Last());
+      CHECK(v > 4000 && v < 4189);  // sfera 4/3 pi 1000 = 4188.8, poliedro inscritto
+    });
+    Case("MatchCrv", "_Line 0,0 10,0\n_Line 12,2 20,6\n_MatchCrv 10,0 12,2", [&](Ctx& c) { CHECK(c.Objects().size() == 2); });
+    Case("DimArc", "_Arc 0,0,0 10,0,0 0,10,0\n_SelLast _DimArc 15,15,0", [&](Ctx& c) {
+      CHECK(has(c, "Lunghezza d'arco = 15.70796327"));
+      const auto* d = ON_DimAngular::Cast(c.Last());
+      CHECK(d && ON_wString(d->PlainUserText()).Find(L"15.71") >= 0);
+    });
+    Case("DimCurveLength", "_Arc 0,0,0 10,0,0 0,10,0\n_SelLast _DimCurveLength 15,15,0", [&](Ctx& c) {
+      CHECK(has(c, "Lunghezza della curva = 15.70796"));
+      CHECK(ON_DimLinear::Cast(c.Last()) != nullptr);
+    });
+    Case("DimCurveLength_chiusa", "_Circle 0,0,0 5\n_SelLast _DimCurveLength 15,15,0", [&](Ctx&) {}, false);
+  }
+#endif
+#ifdef CAD_WITH_OCCT
   // Analisi di continuita' e deviazione (0.12)
   {
     std::printf("Analisi: GCon, EdgeContinuity, PointDeviation\n");

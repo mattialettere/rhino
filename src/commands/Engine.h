@@ -286,6 +286,7 @@ void RegisterKernel4Commands(Engine& e);
 void RegisterKernel5Commands(Engine& e);
 void RegisterKernel6Commands(Engine& e);
 void RegisterAnalysisCommands(Engine& e);
+void RegisterModelingCommands(Engine& e);
 #endif
 
 // Utilita' geometriche condivise

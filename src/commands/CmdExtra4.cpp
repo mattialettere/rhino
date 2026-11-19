@@ -858,6 +858,7 @@ void RegisterExtra4Commands(Engine& e) {
   reg("SimplifyCrv", "Curve", "Sostituisce i tratti rettilinei e circolari con linee e archi veri", CmdSimplifyCrv);
   reg("Simplify", "Curve", "Come SimplifyCrv", CmdSimplifyCrv);
   reg("Match", "Curve", "Raccorda l'estremo di una curva a un'altra (Continuity=Position/Tangency/Curvature)", CmdMatch);
+  reg("MatchCrv", "Curve", "Raccorda l'estremo di una curva a un'altra (nome di Rhino 8 di Match)", CmdMatch);
   reg("CircleTangent", "Curve", "Cerchio tangente a tre curve", CmdCircleTangent);
   reg("ArcTangent", "Curve", "Arco di raggio dato tangente a due curve", CmdArcTangent);
   reg("PolylineOnMesh", "Curve", "Polilinea che segue la mesh per i punti dati", CmdPolylineOnMesh);

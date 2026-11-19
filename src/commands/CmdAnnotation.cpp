@@ -7,6 +7,7 @@
 #include <sstream>
 
 namespace cad {
+double CurveLengthOf(const ON_Curve& c);
 namespace {
 
 const ON_DimStyle& CurrentStyle(Engine& e) {
@@ -218,6 +219,78 @@ bool CmdDimAngle(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// Testo della lunghezza con il simbolo d'arco davanti (stile di Rhino: simbolo prima del testo).
+ON_wString ArcLengthText(Engine& e, double length) {
+  ON_wString t;
+  ON_TextContent::FormatDistanceMeasurement(length, e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem(),
+                                            &CurrentStyle(e), L"<>", t);
+  return ON_wString(L"\x2312") + t;
+}
+
+// DimArc: quota della lunghezza di un arco (quota angolare sull'arco con la lunghezza come testo).
+bool CmdDimArc(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("DimArc", "seleziona un arco");
+  if (sel.empty()) return false;
+  ON_Arc arc;
+  bool found = false;
+  for (const auto& id : sel) {
+    const auto* o = e.Object(id);
+    const ON_Curve* c = o ? ON_Curve::Cast(o->Geometry(nullptr)) : nullptr;
+    if (c && c->IsArc(nullptr, &arc, e.Tolerance()) && !arc.IsCircle()) { found = true; break; }
+  }
+  if (!found) return e.Fail("DimArc: la selezione non contiene archi (i cerchi non hanno estremi)");
+  auto p = e.ReadPoint(ts, "posizione dell'arco di quota");
+  if (!p) return false;
+  e.SkipEnter(ts);
+  ON_Plane pl = arc.plane;
+  pl.origin = arc.Center();
+  pl.UpdateEquation();
+  // punto della linea di quota: in mezzo all'arco, alla distanza dal centro del punto scelto
+  const double r = std::max(pl.ClosestPointTo(*p).DistanceTo(arc.Center()), 0.1 * arc.Radius());
+  ON_3dVector mid = arc.PointAt(arc.Domain().Mid()) - arc.Center();
+  mid.Unitize();
+  auto* d = new ON_DimAngular();
+  if (!d->Create(CurrentStyle(e).Id(), pl, pl.xaxis, arc.Center(), arc.StartPoint(), arc.EndPoint(), arc.Center() + mid * r)) {
+    delete d;
+    return e.Fail("quota d'arco non valida");
+  }
+  const double len = arc.Length();
+  d->SetUserText(ArcLengthText(e, len));
+  ApplyHeight(e, *d, opts);
+  AddAnnotation(e, d);
+  ReportDim(e, *d, len, "Lunghezza d'arco");
+  return true;
+}
+
+// DimCurveLength: quota allineata tra gli estremi di una curva aperta con la lunghezza della curva.
+bool CmdDimCurveLength(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto sel = e.RequireSelection("DimCurveLength", "seleziona una curva");
+  if (sel.empty()) return false;
+  const ON_Curve* c = nullptr;
+  for (const auto& id : sel) {
+    const auto* o = e.Object(id);
+    if (const ON_Curve* cc = o ? ON_Curve::Cast(o->Geometry(nullptr)) : nullptr) { c = cc; break; }
+  }
+  if (!c) return e.Fail("DimCurveLength: seleziona una curva");
+  if (c->IsClosed()) return e.Fail("DimCurveLength: la curva e' chiusa (servono due estremi distinti)");
+  auto p = e.ReadPoint(ts, "posizione della linea di quota");
+  if (!p) return false;
+  e.SkipEnter(ts);
+  const double len = CurveLengthOf(*c);
+  ON_3dVector n = ON_3dVector::ZAxis;
+  ON_Plane cp;
+  if (c->IsPlanar(&cp, e.Tolerance())) n = cp.zaxis * (cp.zaxis.z < 0 ? -1.0 : 1.0);
+  ON_DimLinear* d = ON_DimLinear::CreateAligned(c->PointAtStart(), c->PointAtEnd(), *p, n, CurrentStyle(e).Id(), nullptr);
+  if (!d) return e.Fail("quota non valida");
+  d->SetUserText(ArcLengthText(e, len));
+  ApplyHeight(e, *d, opts);
+  AddAnnotation(e, d);
+  ReportDim(e, *d, len, "Lunghezza della curva");
+  return true;
+}
+
 // Leader: punti (il primo e' la punta della freccia) fino a Invio, poi il testo.
 bool CmdLeader(Engine& e, TokenStream& ts) {
   auto opts = e.ReadOptions(ts);
@@ -309,6 +382,8 @@ void RegisterAnnotationCommands(Engine& e) {
   reg("Leader", "Direttrice con freccia e testo", CmdLeader);
   reg("Centermark", "Segno del centro di archi e cerchi", CmdCentermark);
   reg("DimOrdinate", "Quota coordinata (punto, fine della direttrice)", CmdDimOrdinate);
+  reg("DimArc", "Quota della lunghezza di un arco (arco, posizione)", CmdDimArc);
+  reg("DimCurveLength", "Quota della lunghezza di una curva (curva, posizione)", CmdDimCurveLength);
 }
 
 }  // namespace cad
