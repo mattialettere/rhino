@@ -38,5 +38,20 @@ quando Kurva3D sapra' eseguire script CadQuery o tradurli nei suoi comandi.
 4. **Banco di prova**: `kurva3d-ai-test --bench --models a,b [--both]` confronta i modelli sulle
    stesse richieste (anche "un tavolo con gamba centrale") e controlla l'altezza del risultato.
    In CI parte se il messaggio del commit contiene `[ai-bench]`.
-5. **Prossimo passo possibile**: addestramento (LoRA) di un modello Apache su esempi di comandi
+5. **Risultati del banco (CI Windows, 19/11/2026, solo processore, grammatica attiva)**:
+
+   | Modello | Script validi | Forma plausibile | Note |
+   |---|---|---|---|
+   | Qwen3 4B | 6/9 | 4/9 | sbaglia gli oggetti nuovi (sgabello, tavolino, vaso) |
+   | Qwen2.5-Coder 7B | 6/9 | 2/9 | sul "tavolo con gamba centrale" mette la gamba nell'angolo del piano |
+   | Qwen3 8B | 7/9 | 6/9 | il migliore: tavolino e vaso giusti, sbaglia sgabello e mensola |
+
+   Sugli oggetti simili agli esempi (tavoli, sedia, lampada) tutti i modelli funzionano ma
+   copiano l'esempio. Sugli oggetti nuovi l'errore tipico e' leggere il secondo angolo di
+   _Box come misura invece che come punto. Con i modelli piccoli (1.7B, 1.5B) la grammatica
+   non cambia molto: gli script erano gia' quasi sempre scritti bene, l'errore e' nella forma.
+   Conclusione: **Qwen3 resta la famiglia consigliata**; Qwen2.5-Coder resta nel catalogo
+   come scelta manuale. L'ingombro in pianta del primo banco era misurato con il box largo
+   (corretto: ora si usa il box stretto).
+6. **Prossimo passo possibile**: addestramento (LoRA) di un modello Apache su esempi di comandi
    Kurva3D, per avere un modello dedicato e nostro.

@@ -56,7 +56,10 @@ void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
   const auto ids = e.AllObjectIds(true);
   for (const auto& id : ids)
     if (const auto* o = e.Object(id))
-      if (const ON_Geometry* g = o->Geometry(nullptr)) all.Union(g->BoundingBox());
+      if (const ON_Geometry* g = o->Geometry(nullptr)) {
+        ON_BoundingBox b;  // box stretto: quello normale di superfici e polisuperfici e' piu' largo
+        if (g->GetTightBoundingBox(b)) all.Union(b);
+      }
   out.objects = (int)ids.size();
   out.height = all.IsValid() ? all.m_max.z - all.m_min.z : 0;
   out.width = all.IsValid() ? std::max(all.m_max.x - all.m_min.x, all.m_max.y - all.m_min.y) : 0;
