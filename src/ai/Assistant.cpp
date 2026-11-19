@@ -310,6 +310,7 @@ Rules of the command language:
   with _Polyline ... _Close at the right height, then _ExtrudeCrv _Solid=_Yes thickness. Then delete the curve.
 - _Revolve is only for round objects (vases, bottles, wheels); never revolve a flat shape to make a plate.
 - Bent rods and stems: draw the path with _InterpCrv through 3D points, then _Pipe radius. Then delete the path.
+  Leave bent pipes as separate parts: do not use boolean commands on them.
 - Use _BooleanUnion only on solids that really touch or overlap; if unsure, leave the parts separate.
 - Before writing, plan the parts with real proportions and their height range in Z: the base on the floor
   (z = 0), what stands on it above, the top part at the top. Every part has its own Z: never put all the
@@ -379,7 +380,7 @@ _BooleanUnion
 Example: "una lampada da tavolo ad arco"
 ```kurva
 # Base disc diameter 220, z 0-20. Bent stem: pipe along a curve from the base up and forward.
-# Shade: hollow truncated cone around the end of the stem, z 300-440
+# Shade: hollow truncated cone around the end of the stem, z 300-440. The bent stem stays a separate part
 _Cylinder 0,0,0 110 20 => Base
 _InterpCrv 0,0,10 0,40,250 0,160,420 0,300,430 _Enter => Path
 _SelNone
@@ -391,10 +392,7 @@ _Delete
 _TruncatedCone 0,300,300 90 140 30 => Shade
 _TruncatedCone 0,300,295 86 140 26 => Inside
 _SelNone
-_SelName Base Stem Shade
-_BooleanUnion => Lamp
-_SelNone
-_SelName Lamp Inside
+_SelName Shade Inside
 _BooleanDifference
 ```
 

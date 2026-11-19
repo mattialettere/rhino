@@ -2038,7 +2038,7 @@ int main(int argc, char** argv) {
       const auto lines = ai::ExtractScript(sp.substr(a, b + 3 - a));
       const auto v = ai::Validate(c.e, lines);
       if (!v.ok) std::printf("  esempio %d, riga %d: %s\n", blocks + 1, v.line + 1, v.error.c_str());
-      CHECK(v.ok && v.created == 1);
+      CHECK(v.ok && v.created >= 1 && v.created <= 3);  // la lampada lascia lo stelo curvo a parte
       blocks++;
     }
     CHECK(blocks == 6);
