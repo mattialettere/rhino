@@ -79,3 +79,21 @@ un addestramento LoRA leggero, cosi' non deve piu' copiare gli esempi delle istr
 Licenze: Qwen3, unsloth, PEFT, TRL e transformers sono Apache 2.0, llama.cpp e' MIT; gli esempi
 sono generati da noi. Il modello addestrato si puo' quindi distribuire con Kurva3D.
 Nel catalogo un modello addestrato avra' `finetuned = true` (istruzioni brevi).
+
+### Primo modello addestrato (19/11/2026)
+
+Qwen3 4B + LoRA, 1200 esempi per 1 giro su Colab gratuito (T4, circa 1 ora), GGUF q4_k_m da 2,5 GB.
+Banco dei 9 oggetti in CI (CPU Windows, grammatica attiva, una richiesta per processo):
+
+| | script validi | misure plausibili | secondi medi |
+|---|---|---|---|
+| Qwen3 4B di base (istruzioni complete con esempi) | 8/9 | 6/9 | 74 |
+| Qwen3 4B addestrato (istruzioni brevi) | 7/9 | 6/9 | 52 |
+
+- Il modello addestrato fa bene gli oggetti diversi dagli esempi (sgabello, tavolino 60x60,
+  mensola: 3/3 contro 0/3) ed e' piu' veloce perche' le istruzioni sono piu' corte.
+- Sbaglia sedia e lampada, che il modello di base copia dagli esempi delle istruzioni:
+  nel primo addestramento erano pochi esempi di quel tipo (1200 in tutto, 1 giro).
+- Prossimo passo: tutti i 3000 esempi per 2 giri (GPU a noleggio) con piu' sedie e lampade.
+
+Prova: Actions -> Build -> Run workflow, campo "gguf_url" con il link al file (es. Google Drive).
