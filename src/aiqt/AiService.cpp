@@ -89,6 +89,16 @@ void ModelDownloader::Start(const ai::ModelInfo& m) {
   m_parts.clear();
   m_part = 0;
   m_doneBefore = m_total = 0;
+  if (ai::IsDirectUrl(m)) {  // link diretto (modello addestrato su Kurva3D): niente Hugging Face
+    m_license = QString::fromStdString(m.license);
+    m_parts = {Part{QString::fromStdString(m.id) + "-" + QString::fromStdString(m.quants.empty() ? "model" : m.quants[0]) + ".gguf",
+                    QString::fromStdString(m.sha256).toLower(), (qint64)m.bytes}};
+    m_total = m.bytes;
+    m_dir = ModelsDir() + "/" + QString::fromStdString(m.id);
+    QDir().mkpath(m_dir);
+    DownloadPart();
+    return;
+  }
   GetInfo();
 }
 
@@ -173,14 +183,19 @@ void ModelDownloader::DownloadPart() {
   emit Status(m_parts.size() == 1 ? "Download di " + p.file + " (" + HumanSize(p.size) + ")…"
                                   : QString("Download di %1, parte %2 di %3 (%4 in tutto)…")
                                         .arg(p.file).arg(m_part + 1).arg(m_parts.size()).arg(HumanSize(m_total)));
-  QNetworkRequest rq = Req(QString("%1/%2/resolve/main/%3").arg(Hub(), QString::fromStdString(m_model.repo), p.file));
+  QNetworkRequest rq = ai::IsDirectUrl(m_model)
+                           ? Req(QString::fromStdString(m_model.repo))
+                           : Req(QString("%1/%2/resolve/main/%3").arg(Hub(), QString::fromStdString(m_model.repo), p.file));
   m_reply = m_net.get(rq);
   connect(m_reply, &QNetworkReply::readyRead, this, [this] {
     const QByteArray b = m_reply->readAll();
     m_hash->addData(b);
     if (m_out->write(b) != b.size()) m_reply->abort();
   });
-  connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 d, qint64) { emit Progress(m_doneBefore + d, m_total); });
+  connect(m_reply, &QNetworkReply::downloadProgress, this, [this](qint64 d, qint64 t) {
+    if (m_total <= 0 && t > 0) m_total = t;
+    emit Progress(m_doneBefore + d, m_total);
+  });
   connect(m_reply, &QNetworkReply::finished, this, [this] {
     QNetworkReply* r = m_reply;
     r->deleteLater();
@@ -190,9 +205,16 @@ void ModelDownloader::DownloadPart() {
       return Fail(r->error() == QNetworkReply::OperationCanceledError ? "download annullato" : "download interrotto: " + r->errorString());
     m_out->close();
     emit Status("Verifica dell'integrità…");
-    const Part& p = m_parts[m_part];
+    const Part p = m_parts[m_part];
     const QString got = QString::fromLatin1(m_hash->result().toHex());
-    if (m_out->size() != p.size || got != p.sha256) return Fail("il file scaricato non corrisponde (SHA-256 diverso): riprova");
+    if ((p.size > 0 && m_out->size() != p.size) || (!p.sha256.isEmpty() && got != p.sha256))
+      return Fail("il file scaricato non corrisponde (dimensione o SHA-256 diversi): riprova");
+    {  // un GGUF comincia con "GGUF" (un link scaduto restituisce una pagina web)
+      QFile chk(m_out->fileName());
+      if (!chk.open(QIODevice::ReadOnly) || chk.read(4) != "GGUF") return Fail("il link non ha restituito un modello GGUF");
+    }
+    m_parts[m_part].sha256 = got;
+    m_parts[m_part].size = m_out->size();
     const QString final = m_dir + "/" + p.file;
     QFile::remove(final);
     if (!m_out->rename(final)) return Fail("impossibile salvare il modello");

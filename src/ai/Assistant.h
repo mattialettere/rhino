@@ -16,7 +16,7 @@ namespace cad::ai {
 struct ModelInfo {
   std::string id;                   // es. "qwen3-8b"
   std::string label;                // nome mostrato
-  std::string repo;                 // repository Hugging Face con i file GGUF
+  std::string repo;                 // repository Hugging Face con i file GGUF, oppure link diretto "https://..." al file
   std::vector<std::string> quants;  // quantizzazioni preferite, in ordine (suffisso del file)
   double sizeGB = 0;                // dimensione indicativa del file
   std::string license;              // "apache-2.0" o "mit" (verificata anche al download)
@@ -24,7 +24,11 @@ struct ModelInfo {
   int layers = 0;                   // strati del modello (per dividere tra GPU e CPU)
   bool preferred = true;            // famiglia da cui si sceglie il modello consigliato
   bool finetuned = false;           // addestrato su Kurva3D: istruzioni brevi, senza esempi
+  long long bytes = 0;              // link diretto: dimensione esatta del file (verifica)
+  std::string sha256;               // link diretto: impronta del file (vuota: solo dimensione e formato)
 };
+// Il modello si scarica da un link diretto (non da Hugging Face)?
+inline bool IsDirectUrl(const ModelInfo& m) { return m.repo.rfind("https://", 0) == 0; }
 
 // Modelli consentiti (licenza Apache 2.0 o MIT), dal piu' piccolo al piu' grande.
 const std::vector<ModelInfo>& Catalog();

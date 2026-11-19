@@ -246,7 +246,8 @@ int main(int argc, char** argv) {
             .arg(j.model, j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, j.grammar ? "si" : "no"));
     clock.start();
     gen.Run(server.Port(), j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, 3, j.grammar,
-            compact ? QString::fromStdString(cad::ai::CompactSystemPrompt()) : QString());
+            compact ? QString::fromStdString(cad::ai::CompactSystemPrompt())
+                    : QString::fromStdString(cad::ai::SystemPromptFor(cad::ai::FindModel(j.model.toStdString()))));
   };
   auto startServer = [&](const QString& path) { server.Start(path, hw.threads); };
   next = [&] {
