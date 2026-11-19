@@ -150,7 +150,6 @@ jobs:
         timeout-minutes: 200
         run: |
           $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
-          & dist\kurva3d-ai-test.exe --bench --both --models qwen3-1.7b,qwen2.5-coder-1.5b
           & dist\kurva3d-ai-test.exe --bench --models qwen3-4b,qwen2.5-coder-7b,qwen3-8b
 
       - name: Togli lo strumento di prova AI dalla distribuzione
