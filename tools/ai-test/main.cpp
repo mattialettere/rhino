@@ -74,17 +74,22 @@ void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome
         // il box di openNURBS per i solidi usa le superfici non tagliate e i punti di
         // controllo dei cerchi: OpenCASCADE misura la forma vera
         if (g->ObjectType() == ON::brep_object || g->ObjectType() == ON::extrusion_object) {
-          const TopoDS_Shape sh = cad::occt::GeometryToShape(*g, 0.001);
-          if (!sh.IsNull()) {
-            Bnd_Box bb;
-            BRepBndLib::AddOptimal(sh, bb, Standard_False, Standard_False);
-            if (!bb.IsVoid()) {
-              double x0, y0, z0, x1, y1, z1;
-              bb.Get(x0, y0, z0, x1, y1, z1);
-              all.Union(ON_BoundingBox(ON_3dPoint(x0, y0, z0), ON_3dPoint(x1, y1, z1)));
-              continue;
+          bool done = false;
+          try {
+            const TopoDS_Shape sh = cad::occt::GeometryToShape(*g, 0.001);
+            if (!sh.IsNull()) {
+              Bnd_Box bb;
+              BRepBndLib::AddOptimal(sh, bb, Standard_False, Standard_False);
+              if (!bb.IsVoid()) {
+                double x0, y0, z0, x1, y1, z1;
+                bb.Get(x0, y0, z0, x1, y1, z1);
+                all.Union(ON_BoundingBox(ON_3dPoint(x0, y0, z0), ON_3dPoint(x1, y1, z1)));
+                done = true;
+              }
             }
+          } catch (...) {
           }
+          if (done) continue;
         }
 #endif
         if (g->GetTightBoundingBox(b)) all.Union(b);
@@ -154,6 +159,7 @@ int ValidateJsonl(const QString& path, int every) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);  // in CI l'output resta anche se il programma si ferma
   QCoreApplication app(argc, argv);
   QCoreApplication::setApplicationName("Kurva3D");
   QString modelId = "qwen3-0.6b", prompt = "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro";
