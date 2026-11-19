@@ -284,7 +284,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
       else { inner.emplace_back(); inner.back().Append(c.release()); }
     }
     const auto* pat = ON_HatchPattern::Cast(
-        m_engine.Model().ComponentFromIndex(ON_ModelComponent::Type::HatchPattern, h->PatternIndex()).ModelComponent());
+        Source().ComponentFromIndex(ON_ModelComponent::Type::HatchPattern, h->PatternIndex()).ModelComponent());
     const bool solid = !pat || h->PatternIndex() < 0 || pat->FillType() == ON_HatchPattern::HatchFillType::Solid;
 #ifdef CAD_WITH_OCCT
     if (solid && outer.Count() == 1) {
@@ -321,7 +321,7 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
     for (auto& in : inner) for (int i = 0; i < in.Count(); i++) delete in[i];
   } else if (const auto* an = ON_Annotation::Cast(g)) {
     AnnotationDisplay ad;
-    BuildAnnotationDisplay(m_engine.Model(), *an, ad);
+    BuildAnnotationDisplay(Source(), *an, ad);
     for (auto& w : ad.wires) {
       d.snapPoints.push_back({w.front(), SnapKind::End});
       d.wires.push_back(std::move(w));
@@ -352,12 +352,12 @@ void Scene::AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::strin
     // Blocco: geometria della definizione trasformata (anche blocchi annidati)
     if (depth > 8) return;
     const auto* idef = ON_InstanceDefinition::Cast(
-        m_engine.Model().ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, ir->m_instance_definition_uuid).ModelComponent());
+        Source().ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, ir->m_instance_definition_uuid).ModelComponent());
     if (!idef) return;
     const auto& ids = idef->InstanceGeometryIdList();
     for (int i = 0; i < ids.Count(); i++) {
       const auto* mo = ON_ModelGeometryComponent::Cast(
-          m_engine.Model().ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[i]).ModelComponent());
+          Source().ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[i]).ModelComponent());
       const ON_Geometry* mg = mo ? mo->Geometry(nullptr) : nullptr;
       if (!mg) continue;
       std::unique_ptr<ON_Geometry> copy(static_cast<ON_Geometry*>(mg->Duplicate()));
@@ -541,10 +541,43 @@ void Scene::Rebuild() {
     }
     m_objects.push_back(std::move(d));
   }
+  if (ON_UuidIsNil(fixedSpace ? space : m_engine.activeLayoutId)) AddWorksession(newCache);
   m_meshCache.swap(newCache);
   m_subdEdges.swap(m_newSubdEdges);
   m_newSubdEdges.clear();
   RefreshSelection();
+}
+
+// Worksession: oggetti dello spazio modello dei file collegati, bloccati (grigi, solo osnap).
+void Scene::AddWorksession(std::map<std::string, std::shared_ptr<ON_Mesh>>& newCache) {
+  m_engine.SyncWorksession();
+  for (const auto& w : m_engine.worksession) {
+    if (!w.doc) continue;
+    const ONX_Model& model = w.doc->Model();
+    m_sourceModel = &model;
+    ONX_ModelComponentIterator it(model, ON_ModelComponent::Type::ModelGeometry);
+    for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent()) {
+      const auto* mgc = ON_ModelGeometryComponent::Cast(c);
+      const ON_Geometry* g = mgc ? mgc->Geometry(nullptr) : nullptr;
+      const ON_3dmObjectAttributes* a = mgc ? mgc->Attributes(nullptr) : nullptr;
+      if (!g || !a || a->m_space == ON::page_space || !a->IsVisible()) continue;
+      if (a->Mode() == ON::object_mode::idef_object) continue;
+      if (ON_DetailView::Cast(g) || ON_ClippingPlaneSurface::Cast(g)) continue;
+      const auto* layer = ON_Layer::Cast(model.ComponentFromIndex(ON_ModelComponent::Type::Layer, a->m_layer_index).ModelComponent());
+      if (layer && !layer->IsVisible()) continue;
+      DisplayObject d;
+      d.id = mgc->Id();
+      d.color = (a->ColorSource() == ON::color_from_object) ? a->m_color : (layer ? layer->Color() : ON_Color::Black);
+      d.locked = true;
+      g->GetTightBoundingBox(d.bbox);
+      char key[64];
+      ON_UuidToString(d.id, key);
+      std::string sig = "ws:" + w.path + ":" + key + g->ClassId()->ClassName() + "|" + std::to_string(g->DataCRC(0));
+      AddGeometry(g, d, sig, newCache, 0);
+      m_objects.push_back(std::move(d));
+    }
+  }
+  m_sourceModel = nullptr;
 }
 
 // Coordinate di texture della mesh ombreggiata secondo la mappatura dell'oggetto.

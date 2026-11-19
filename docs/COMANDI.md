@@ -386,7 +386,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | MatchProperties | ✔ |
 | SetUserText | ✔ |
 | SetObjectColor | ✔ |
-| Linetypes | ✔ (riga di comando: New, Delete, List) |
+| Linetypes | ✔ (pannello Tipi di linea; riga di comando: New, Edit, Rename, Delete, List) |
 | SetObjectLinetype | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
 | SetObjectPrintWidth | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
 | SetObjectPrintColor | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
@@ -518,6 +518,8 @@ Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale sem
 | SelChildren | ✔ |
 | SelParents | ✔ |
 | SelObjectsWithHistory | ✔ |
+| Worksession | ✔ (Attach, Detach, DetachAll, List, Refresh; nessun file .rws, vedi D-073) |
+| GumballAlignment | ✔ (World, CPlane, Object; anche dal menu del pulsante Gumball) |
 
 Comandi che registrano la storia: Loft, ExtrudeCrv, ExtrudeSrf, ExtrudeCrvToPoint, ExtrudeCrvAlongCrv, ExtrudeCrvTapered, Revolve, RailRevolve, Sweep1, Sweep2, Pipe, Offset, OffsetSrf, PlanarSrf, EdgeSrf, NetworkSrf, Patch, Array, ArrayLinear, ArrayPolar, ArrayCrv, Mirror, Project, Pull, DupEdge, DupBorder, Contour, Intersect, Silhouette, BlendCrv, BlendSrf, FilletSrf, ExtractIsocurve, Smash, Twist, Bend, Taper, Flow (questi ultimi solo quando creano copie).
 

@@ -1284,6 +1284,23 @@ int main(int argc, char** argv) {
     Case("Linetypes_modifica", "-_Linetypes New Tratteggio 5,-2\n-_Linetypes Edit Tratteggio 8,-2,0,-2\n-_Linetypes Rename Tratteggio AsseMio\n-_Linetypes List", [](Ctx& c) {
       CHECK(c.log.str().find("AsseMio: 8 -2 0 -2") != std::string::npos);
     });
+    {  // Worksession: un file salvato si collega come riferimento, non entra nel documento
+      Ctx src;
+      CHECK(src.e.Run("_Line 0,0,0 10,0,0\n_Circle 0,0,0 3\n_Save \"ws_rif.3dm\""));
+      Case("Worksession", "_Worksession Attach \"ws_rif.3dm\"\n_Worksession List\n_Line 0,0,0 0,5,0", [](Ctx& c) {
+        CHECK(c.e.worksession.size() == 1 && c.e.worksession[0].doc && c.e.worksession[0].objectCount == 2);
+        CHECK(c.log.str().find("(2 oggetti)") != std::string::npos);
+        CHECK(c.Objects().size() == 1);  // gli oggetti collegati non sono nel documento
+        CHECK(c.e.Run("_Worksession Detach \"ws_rif.3dm\""));
+        CHECK(c.e.worksession.empty());
+      });
+      Case("Worksession_doppio", "_Worksession Attach ws_rif.3dm\n_Worksession Attach ws_rif.3dm", [](Ctx&) {}, false);
+      Case("Worksession_mancante", "_Worksession Attach non_esiste.3dm", [](Ctx&) {}, false);
+      Case("SessioneDiLavoro_annulla", "SessioneDiLavoro Attach ws_rif.3dm\n_Undo", [](Ctx& c) {
+        c.e.SyncWorksession();
+        CHECK(c.e.worksession.empty());
+      });
+    }
     Case("Italiano_con_underscore", "_Linea 0,0 10,0", [](Ctx&) {}, false);  // "_" = solo nomi inglesi
     {
       Ctx c;

@@ -187,6 +187,15 @@ public:
   const std::string& LastError() const { return m_lastError; }
 
   std::string currentPath;   // percorso del file aperto/salvato
+  // Worksession: file collegati come riferimento (solo visualizzazione e osnap)
+  struct WorksessionFile {
+    std::string path;
+    std::shared_ptr<Document3dm> doc;  // nullptr se il file non si legge
+    int objectCount = 0;
+  };
+  std::vector<WorksessionFile> worksession;
+  // Allinea i file caricati all'elenco salvato nel documento (dopo Apri, Annulla, Worksession)
+  void SyncWorksession();
   // Oggetti con i punti di controllo visibili (PointsOn / PointsOff)
   std::set<ON_UUID, UuidLess> pointsOn;
   // EditPtOn: curve che mostrano i punti di modifica (sulla curva) invece dei punti di controllo
@@ -300,6 +309,7 @@ void RegisterKernel5Commands(Engine& e);
 void RegisterKernel6Commands(Engine& e);
 void RegisterAnalysisCommands(Engine& e);
 void RegisterModelingCommands(Engine& e);
+void RegisterWorksessionCommands(Engine& e);
 const std::vector<std::pair<const char*, const char*>>& ItalianCommandNames();
 void RegisterCommandOptions(Engine& e);
 #endif

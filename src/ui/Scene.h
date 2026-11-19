@@ -84,7 +84,11 @@ private:
                    std::map<std::string, std::shared_ptr<ON_Mesh>>& newCache, int depth);
   static void AddShaded(DisplayObject& d, const std::shared_ptr<ON_Mesh>& m);
   void ApplyTexture(const ON_3dmObjectAttributes& a, DisplayObject& d);
+  void AddWorksession(std::map<std::string, std::shared_ptr<ON_Mesh>>& newCache);
   Engine& m_engine;
+  // Modello da cui leggere blocchi, stili e retini: il documento o un file della Worksession
+  const ONX_Model* m_sourceModel = nullptr;
+  const ONX_Model& Source() const { return m_sourceModel ? *m_sourceModel : m_engine.Model(); }
   std::vector<DisplayObject> m_objects;
   std::vector<DisplayObject> m_preview;
   std::map<std::string, std::shared_ptr<ON_Mesh>> m_previewCache;
