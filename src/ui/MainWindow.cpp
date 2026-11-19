@@ -197,6 +197,8 @@ MainWindow::MainWindow(QWidget* parent)
   {  // completamento automatico dei nomi dei comandi (come la riga di comando di Rhino 8)
     QStringList names;
     for (auto& [k, c] : m_engine.Commands()) names << QString::fromStdString(c.name);
+    for (const auto& [it, en] : ItalianCommandNames())
+      if (m_engine.Aliases().count(NormalizeName(it))) names << QString::fromUtf8(it);
     names.sort(Qt::CaseInsensitive);
     auto* comp = new QCompleter(names, this);
     comp->setCaseSensitivity(Qt::CaseInsensitive);
@@ -204,7 +206,13 @@ MainWindow::MainWindow(QWidget* parent)
     m_input->setCompleter(comp);
     m_completer = comp;
   }
+  m_options = new QLabel;
+  m_options->setTextFormat(Qt::RichText);
+  m_options->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+  m_options->setToolTip("Clic su un'opzione per cambiarla");
+  connect(m_options, &QLabel::linkActivated, this, [this](const QString& l) { OptionClicked(l); });
   line->addWidget(m_prompt);
+  line->addWidget(m_options);
   line->addWidget(m_input, 1);
   cmdBox->addLayout(line);
   vbox->addWidget(cmdBar);
@@ -1137,9 +1145,13 @@ void MainWindow::Submit(const QString& text) {
   // Come Rhino: un nome di comando incompleto viene completato con il primo comando che inizia cosi'
   if (m_pending.empty() && !t.empty() && t.find(' ') == std::string::npos && t.find(',') == std::string::npos) {
     const std::string n = NormalizeName(t);
-    if (!n.empty() && !m_engine.Commands().count(n)) {
+    if (!n.empty() && !m_engine.IsCommand(t)) {
+      bool done = false;
       for (auto& [k, c] : m_engine.Commands())
-        if (k.rfind(n, 0) == 0) { t = (t[0] == '-' ? "-_" : "_") + c.name; break; }
+        if (k.rfind(n, 0) == 0) { t = (t[0] == '-' ? "-_" : "_") + c.name; done = true; break; }
+      if (!done)
+        for (auto& [k, en] : m_engine.Aliases())
+          if (k.rfind(n, 0) == 0) { t = (t[0] == '-' ? "-_" : "_") + m_engine.Commands().at(en).name; break; }
     }
   }
   const std::string norm = NormalizeName(t);
@@ -1215,11 +1227,83 @@ void MainWindow::UpdatePrompt() {
     m_prompt->setText("Comando:");
   } else {
     std::string name = NormalizeName(m_pending.substr(0, m_pending.find(' ')));
-    auto it = m_engine.Commands().find(name);
-    if (it != m_engine.Commands().end()) name = it->second.name;
+    if (const CommandInfo* ci = m_engine.FindCommand(m_pending.substr(0, m_pending.find(' ')))) name = ci->name;
     m_prompt->setText(QString::fromStdString(name + " - " + m_engine.Prompt() +
                                              " (Invio = fine, Esc = annulla):"));
   }
+  // opzioni cliccabili (come "( Solid=No )" nella riga di comando di Rhino)
+  QString opts;
+  if (!m_pending.empty())
+    if (const CommandInfo* ci = m_engine.FindCommand(m_pending.substr(0, m_pending.find(' '))))
+      for (const std::string& spec : ci->options) {
+        const std::string key = spec.substr(0, spec.find('='));
+        std::string def = spec.substr(spec.find('=') + 1);
+        if (!def.empty() && def[0] == '#') def = def.size() > 1 ? def.substr(1) : "auto";
+        else def = def.substr(0, def.find('|'));
+        std::string cur = def;
+        std::istringstream in(m_pending);
+        std::string tok;
+        while (in >> tok) {
+          const auto eq = tok.find('=');
+          if (eq != std::string::npos && NormalizeName(tok.substr(0, eq)) == NormalizeName(key)) cur = tok.substr(eq + 1);
+        }
+        opts += QString(" <a href=\"%1\">%1=%2</a>").arg(QString::fromStdString(key), QString::fromStdString(cur).toHtmlEscaped());
+      }
+  m_options->setText(opts.isEmpty() ? QString() : "(" + opts + " )");
+  m_options->setVisible(!opts.isEmpty());
+}
+
+// Clic su un'opzione: le scelte si alternano, i numeri si chiedono; l'opzione va subito dopo
+// il nome del comando e il comando riparte con l'input gia' dato.
+void MainWindow::OptionClicked(const QString& name) {
+  if (m_pending.empty()) return;
+  const CommandInfo* ci = m_engine.FindCommand(m_pending.substr(0, m_pending.find(' ')));
+  if (!ci) return;
+  const std::string key = name.toStdString();
+  std::string spec;
+  for (const auto& s : ci->options)
+    if (s.substr(0, s.find('=')) == key) spec = s.substr(s.find('=') + 1);
+  // token del comando senza l'opzione, e valore attuale
+  std::vector<std::string> toks;
+  {
+    std::istringstream in(m_pending);
+    std::string t;
+    while (in >> t) toks.push_back(t);
+  }
+  std::string cur;
+  for (size_t i = 1; i < toks.size();) {
+    const auto eq = toks[i].find('=');
+    if (eq != std::string::npos && NormalizeName(toks[i].substr(0, eq)) == NormalizeName(key)) {
+      cur = toks[i].substr(eq + 1);
+      toks.erase(toks.begin() + long(i));
+    } else {
+      i++;
+    }
+  }
+  std::string value;
+  if (!spec.empty() && spec[0] == '#') {
+    bool ok = false;
+    const double start = cur.empty() ? (spec.size() > 1 ? std::atof(spec.c_str() + 1) : 1.0) : std::atof(cur.c_str());
+    const double v = QInputDialog::getDouble(this, QString::fromStdString(ci->name), QString::fromStdString(key), start, -1e9, 1e9, 4, &ok);
+    if (!ok) return;
+    value = QString::number(v, 'g', 10).toStdString();
+  } else {
+    std::vector<std::string> vals;
+    std::istringstream in(spec);
+    std::string v;
+    while (std::getline(in, v, '|')) vals.push_back(v);
+    if (vals.empty()) return;
+    size_t i = 0;
+    for (size_t k = 0; k < vals.size(); k++)
+      if (NormalizeName(vals[k]) == NormalizeName(cur)) i = (k + 1) % vals.size();
+    if (cur.empty()) i = vals.size() > 1 ? 1 : 0;  // dal predefinito al valore successivo
+    value = vals[i];
+  }
+  toks.insert(toks.begin() + 1, key + "=" + value);
+  std::string script;
+  for (const auto& t : toks) script += (script.empty() ? "" : " ") + t;
+  Log(QString("%1=%2").arg(QString::fromStdString(key), QString::fromStdString(value)));
+  Run(script);
 }
 
 void MainWindow::AfterCommand() {

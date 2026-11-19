@@ -45,12 +45,14 @@ int main(int argc, char** argv) {
   cad::SetPythonProgramDir(QCoreApplication::applicationDirPath().toStdString());
   QString open, script, shot, panel, nodesFile, nodesShot, collabHost, collabJoin, collabChat, collabScript, collabTask;
   int wait = 800;
+  bool keepPending = false;
   const QStringList args = app.arguments();
   for (int i = 1; i < args.size(); i++) {
     if (args[i] == "--script" && i + 1 < args.size()) script = args[++i];
     else if (args[i] == "--screenshot" && i + 1 < args.size()) shot = args[++i];
     else if (args[i] == "--panel" && i + 1 < args.size()) panel = args[++i];  // es. textureDock
     else if (args[i] == "--wait" && i + 1 < args.size()) wait = args[++i].toInt();  // ms prima della cattura
+    else if (args[i] == "--keep-pending") keepPending = true;  // l'ultimo comando dello script resta in attesa
     else if (args[i] == "--nodes" && i + 1 < args.size()) nodesFile = args[++i];        // grafo da aprire nell'editor a nodi
     else if (args[i] == "--nodes-screenshot" && i + 1 < args.size()) nodesShot = args[++i];
     // prove della collaborazione: ospitare (il codice va nel file indicato) o entrare (ip:porta:codice),
@@ -84,6 +86,7 @@ int main(int argc, char** argv) {
           w.Submit(lines[i].startsWith('@') ? lines[i].mid(1).trimmed() : lines[i]);
           const bool continues = i + 1 < lines.size() && lines[i + 1].startsWith('@');
           // altrimenti, come in una macro di Rhino, la fine della riga equivale a Invio
+          if (keepPending && i + 1 == lines.size()) break;
           for (int guard = 0; !continues && w.HasPending() && guard < 10; guard++) w.Submit("");
         }
       }

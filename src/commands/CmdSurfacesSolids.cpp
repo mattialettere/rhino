@@ -210,7 +210,7 @@ bool CmdRevolve(Engine& e, TokenStream& ts) {
   if (!b) return false;
   double angle = 360.0;
   if (!ts.AtEnd() && !IsEnter(ts.Peek()) && !LooksLikePoint(ts.Peek()) &&
-      e.Commands().count(NormalizeName(ts.Peek())) == 0) {
+      !e.IsCommand(ts.Peek())) {
     auto v = e.ReadNumber(ts, "angolo di rivoluzione");
     if (!v) return false;
     angle = *v;

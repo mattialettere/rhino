@@ -91,7 +91,7 @@ bool FaceFrame(const TopoDS_Face& f, double u, double v, ON_3dPoint& P, ON_3dVec
 
 // --- Make2D ------------------------------------------------------------------------------
 // Disegno 2D con linee nascoste delle superfici e dei solidi selezionati, visti
-// da View=Top (predefinita), Front, Right, Back, Left, Bottom. Le curve vanno
+// dalla vista attiva (predefinita, anche prospettica) o da View=Top, Front, Right, Back, Left, Bottom. Le curve vanno
 // sul piano xy del mondo; ShowHidden=Yes aggiunge le linee nascoste (grigie),
 // ShowTangents=Yes gli spigoli tangenti.
 bool CmdMake2D(Engine& e, TokenStream& ts) {
@@ -99,14 +99,37 @@ bool CmdMake2D(Engine& e, TokenStream& ts) {
   auto sel = e.RequireSelection("Make2D", "seleziona gli oggetti da disegnare, poi Invio");
   if (sel.empty()) return false;
   opts.merge(e.ReadOptions(ts));
-  const std::string view = opts.count("view") ? opts["view"] : "top";
+  // Come Rhino 8: senza View= si disegna la vista attiva (anche in prospettiva)
+  ON_3dmView active;
+  const bool haveActive = e.getActiveView && e.getActiveView(active) && active.m_vp.IsValidCamera();
+  const std::string view = opts.count("view") ? opts["view"] : (haveActive ? "current" : "top");
   gp_Dir toViewer(0, 0, 1), xdir(1, 0, 0);
-  if (view == "front") { toViewer = gp_Dir(0, -1, 0); xdir = gp_Dir(1, 0, 0); }
+  bool perspective = false;
+  double focus = 0;
+  gp_Pnt projOrigin(0, 0, 0);
+  if (view == "current") {
+    if (!haveActive) return e.Fail("nessuna vista attiva: usa View=Top, Front, Right, ...");
+    const ON_Viewport& vp = active.m_vp;
+    ON_3dVector dir = vp.CameraDirection(), up = vp.CameraUp();
+    dir.Unitize();
+    ON_3dVector x = ON_CrossProduct(dir, up);
+    if (!x.Unitize()) return e.Fail("camera della vista non valida");
+    toViewer = gp_Dir(-dir.x, -dir.y, -dir.z);
+    xdir = gp_Dir(x.x, x.y, x.z);
+    if (vp.IsPerspectiveProjection()) {
+      perspective = true;
+      const ON_3dPoint eye = vp.CameraLocation();
+      projOrigin = gp_Pnt(eye.x, eye.y, eye.z);
+      double fd = vp.TargetDistance(true);
+      if (!(fd > 0)) fd = 1.0;
+      focus = fd;
+    }
+  } else if (view == "front") { toViewer = gp_Dir(0, -1, 0); xdir = gp_Dir(1, 0, 0); }
   else if (view == "back") { toViewer = gp_Dir(0, 1, 0); xdir = gp_Dir(-1, 0, 0); }
   else if (view == "right") { toViewer = gp_Dir(1, 0, 0); xdir = gp_Dir(0, 1, 0); }
   else if (view == "left") { toViewer = gp_Dir(-1, 0, 0); xdir = gp_Dir(0, -1, 0); }
   else if (view == "bottom") { toViewer = gp_Dir(0, 0, -1); xdir = gp_Dir(1, 0, 0); }
-  else if (view != "top") return e.Fail("vista non valida (Top, Front, Right, Back, Left, Bottom)");
+  else if (view != "top" && view != "current") return e.Fail("vista non valida (Current, Top, Front, Right, Back, Left, Bottom)");
   auto yes = [&](const char* k) { auto it = opts.find(k); return it != opts.end() && (it->second == "yes" || it->second == "si"); };
   const bool hidden = yes("showhidden"), tangents = yes("showtangents");
   BRep_Builder bb;
@@ -126,7 +149,8 @@ bool CmdMake2D(Engine& e, TokenStream& ts) {
   try {
     Handle(HLRBRep_Algo) algo = new HLRBRep_Algo();
     algo->Add(all);
-    HLRAlgo_Projector proj(gp_Ax2(gp_Pnt(0, 0, 0), toViewer, xdir));
+    HLRAlgo_Projector proj = perspective ? HLRAlgo_Projector(gp_Ax2(projOrigin, toViewer, xdir), focus)
+                                         : HLRAlgo_Projector(gp_Ax2(gp_Pnt(0, 0, 0), toViewer, xdir));
     algo->Projector(proj);
     algo->Update();
     algo->Hide();
@@ -381,7 +405,7 @@ void RegisterKernel4Commands(Engine& e) {
     i.modifiesModel = true;
     e.Register(i);
   };
-  reg("Make2D", "Curve", "Disegno 2D con linee nascoste (View=, ShowHidden=, ShowTangents=)", CmdMake2D);
+  reg("Make2D", "Curve", "Disegno 2D con linee nascoste della vista attiva (View=Current|Top|Front..., ShowHidden=, ShowTangents=)", CmdMake2D);
   reg("MoveFace", "Solidi", "Sposta una faccia piana di un solido", CmdMoveFace);
   reg("FlowAlongSrf", "Trasforma", "Fa scorrere gli oggetti da una superficie di base a una di destinazione", CmdFlowAlongSrf);
   reg("Splop", "Trasforma", "Copie degli oggetti avvolte sulla superficie nel punto cliccato (Scale=, Rotation=)", CmdSplop);

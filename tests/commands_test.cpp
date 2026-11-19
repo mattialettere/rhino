@@ -1263,6 +1263,34 @@ int main(int argc, char** argv) {
     });
   }
 
+  // Nomi italiani dei comandi (0.14)
+  {
+    std::printf("Nomi italiani dei comandi\n");
+    Case("Linea_italiano", "Linea 0,0 10,0\nCerchio 0,0 5\nSelezionaTutto\nSposta 0,0 0,10", [](Ctx& c) {
+      CHECK(c.Objects().size() == 2);
+      CHECK(c.log.str().find("Comando: Line") != std::string::npos);  // il registro usa il nome inglese
+      ON_BoundingBox bb = c.BBox();
+      CHECK(Near(bb.m_min.y, 5, 1e-9));
+    });
+    Case("Opzioni_dopo_il_nome", "_Box 0,0,0 10,10 10\n_SelAll _FilletEdge EndRadius=1.5 1 10,5,10 _Enter\n_SelAll _Volume", [](Ctx& c) {
+      CHECK(c.log.str().find("Volume = 996.59") != std::string::npos);  // opzione letta anche se scritta prima del raggio
+    });
+    {
+      Ctx c;
+      const CommandInfo* ci = c.e.FindCommand("Make2D");
+      CHECK(ci && !ci->options.empty() && ci->options[0].rfind("View=", 0) == 0);
+      CHECK(c.e.FindCommand("Disegno2D") == ci);
+    }
+    Case("Italiano_con_underscore", "_Linea 0,0 10,0", [](Ctx&) {}, false);  // "_" = solo nomi inglesi
+    {
+      Ctx c;
+      int missing = 0;
+      for (const auto& [it, en] : ItalianCommandNames())
+        if (!c.e.IsCommand(it) && c.e.IsCommand(en)) { std::printf("  alias non attivo: %s\n", it); missing++; }
+      CHECK(missing == 0);
+      CHECK(c.e.Aliases().size() > 150);
+    }
+  }
 #ifdef CAD_WITH_OCCT
   // Modellazione (0.13)
   {
@@ -1551,6 +1579,30 @@ int main(int argc, char** argv) {
       for (auto* g : c.Objects()) if (ON_Curve::Cast(g)) curves++;
       CHECK(curves >= 1);
     });
+    for (const bool persp : {false, true}) {
+      // Make2D senza View=: la vista attiva (assonometria e prospettiva)
+      Ctx c;
+      c.e.getActiveView = [persp](ON_3dmView& v) {
+        v.m_vp = ON_Viewport();
+        if (persp) v.m_vp.ChangeToPerspectiveProjection(50, true, 35);
+        else v.m_vp.ChangeToParallelProjection(true);
+        v.m_vp.SetCameraLocation(ON_3dPoint(40, -40, 40));
+        v.m_vp.SetCameraDirection(ON_3dVector(-1, 1, -1));
+        v.m_vp.SetCameraUp(ON_3dVector(0, 0, 1));
+        v.m_vp.SetFrustum(-20, 20, -20, 20, 1, 200);
+        return true;
+      };
+      CHECK(c.e.Run("_Box 0,0,0 10,10 10\n_SelAll _Make2D"));
+      int curves = 0;
+      double len = 0;
+      for (auto* g : c.Objects()) if (const auto* cv = ON_Curve::Cast(g)) {
+        curves++;
+        for (int i = 1; i <= 200; i++) len += cv->PointAt(cv->Domain().ParameterAt(i / 200.0)).DistanceTo(cv->PointAt(cv->Domain().ParameterAt((i - 1) / 200.0)));
+      }
+      CHECK(curves >= 1);
+      CHECK(c.log.str().find("vista current") != std::string::npos);
+      if (!persp) CHECK(Near(len, 9 * 10 * std::sqrt(2.0 / 3.0), 0.05 * len));  // 9 spigoli visibili, accorciati in assonometria isometrica
+    }
     Case("MoveFace", "_Box 0,0,0 10,10 10\n_MoveFace 10,5,5 0,0,0 5,0,0\n_SelAll _Volume", [](Ctx& c) {
       const std::string log = c.log.str();
       const auto p = log.rfind("Volume = ");

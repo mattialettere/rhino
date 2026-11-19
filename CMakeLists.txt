@@ -31,7 +31,7 @@ add_library(cadcore STATIC
   src/core/SubDLimit.cpp
   src/core/SubDLimit.h
   src/core/ModelCompare.h
-  src/commands/Engine.cpp
+  src/commands/Engine.cpp src/commands/ItalianNames.cpp src/commands/CommandOptions.cpp
   src/commands/Engine.h
   src/commands/CmdCurves.cpp
   src/commands/CmdSurfacesSolids.cpp

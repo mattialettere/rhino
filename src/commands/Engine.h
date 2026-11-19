@@ -58,6 +58,8 @@ struct CommandInfo {
   std::string description;  // descrizione italiana breve
   CommandFn fn;
   bool modifiesModel = true;
+  // Opzioni mostrate (e cliccabili) sulla riga di comando: "Nome=A|B" o "Nome=#numero"
+  std::vector<std::string> options;
 };
 
 class Engine {
@@ -102,6 +104,15 @@ public:
   bool RunCommand(const std::string& name, TokenStream& ts);
 
   const std::map<std::string, CommandInfo>& Commands() const { return m_commands; }
+  // Comando per nome inglese o italiano (alias); nullptr se sconosciuto.
+  const CommandInfo* FindCommand(const std::string& name) const;
+  bool IsCommand(const std::string& name) const { return FindCommand(name) != nullptr; }
+  void SetCommandOptions(const std::string& name, std::vector<std::string> options) {
+    auto it = m_commands.find(NormalizeName(name));
+    if (it != m_commands.end()) it->second.options = std::move(options);
+  }
+  // Nomi italiani (normalizzati) -> nome normalizzato del comando inglese
+  const std::map<std::string, std::string>& Aliases() const { return m_aliases; }
   Document3dm& Document() { return m_doc; }
   void Register(CommandInfo info);
 
@@ -224,6 +235,8 @@ private:
   Document3dm& m_doc;
   std::ostream& m_out;
   std::map<std::string, CommandInfo> m_commands;  // chiave: nome normalizzato
+  std::map<std::string, std::string> m_aliases;   // nomi italiani
+  std::map<std::string, std::string> m_leadingOptions;  // opzioni dopo il nome del comando in corso
   std::set<ON_UUID, UuidLess> m_selection;
   std::vector<ON_UUID> m_selectionOrder, m_prevSelection;
   std::vector<ON_UUID> m_lastCreated, m_previousCreated;
@@ -287,6 +300,8 @@ void RegisterKernel5Commands(Engine& e);
 void RegisterKernel6Commands(Engine& e);
 void RegisterAnalysisCommands(Engine& e);
 void RegisterModelingCommands(Engine& e);
+const std::vector<std::pair<const char*, const char*>>& ItalianCommandNames();
+void RegisterCommandOptions(Engine& e);
 #endif
 
 // Utilita' geometriche condivise

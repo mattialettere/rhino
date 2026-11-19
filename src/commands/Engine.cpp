@@ -134,6 +134,24 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterAnalysisCommands(*this);
   RegisterModelingCommands(*this);
 #endif
+  RegisterCommandOptions(*this);
+  // nomi italiani: solo per i comandi presenti e senza coprire un nome inglese
+  for (const auto& [it, en] : ItalianCommandNames()) {
+    const std::string k = NormalizeName(it), v = NormalizeName(en);
+    if (m_commands.count(v) && !m_commands.count(k)) m_aliases[k] = v;
+  }
+}
+
+const CommandInfo* Engine::FindCommand(const std::string& name) const {
+  const std::string n = NormalizeName(name);
+  auto it = m_commands.find(n);
+  if (it != m_commands.end()) return &it->second;
+  // il prefisso "_" chiede il nome inglese: niente alias
+  if (!name.empty() && (name[0] == '_' || (name.size() > 1 && name[0] == '-' && name[1] == '_'))) return nullptr;
+  auto a = m_aliases.find(n);
+  if (a == m_aliases.end()) return nullptr;
+  it = m_commands.find(a->second);
+  return it != m_commands.end() ? &it->second : nullptr;
 }
 
 void Engine::Register(CommandInfo info) {
@@ -214,9 +232,9 @@ bool Engine::AtInputEnd(TokenStream& ts, const char* prompt) {
 }
 
 bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
-  auto it = m_commands.find(NormalizeName(name));
-  if (it == m_commands.end()) return Fail("Comando sconosciuto: \"" + name + "\"");
-  const CommandInfo& cmd = it->second;
+  const CommandInfo* found = FindCommand(name);
+  if (!found) return Fail("Comando sconosciuto: \"" + name + "\"");
+  const CommandInfo& cmd = *found;
   if (!interactive && !m_silent) m_out << "Comando: " << cmd.name << "\n";
   // Comandi annidati (es. rs.Command da uno script): un solo passo di annullamento,
   // quello del comando esterno; gli oggetti creati si sommano a quelli dell'esterno.
@@ -235,6 +253,20 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   if (wantHistory) { histInputs = Selection(); histHashes = HashObjects(histInputs); }
   m_lastCreated.clear();
   m_collectingCreated = true;
+  // opzioni dichiarate scritte subito dopo il nome (anche se il comando le legge piu' avanti)
+  auto outerOptions = std::move(m_leadingOptions);
+  m_leadingOptions.clear();
+  if (!cmd.options.empty()) {
+    std::set<std::string> known;
+    for (const auto& o : cmd.options) known.insert(NormalizeName(o.substr(0, o.find('='))));
+    while (!ts.AtEnd()) {
+      const std::string& t = ts.Peek();
+      const auto eq = t.find('=');
+      if (eq == std::string::npos || !known.count(NormalizeName(t.substr(0, eq)))) break;
+      m_leadingOptions[NormalizeName(t.substr(0, eq))] = NormalizeName(t.substr(eq + 1));
+      ts.Next();
+    }
+  }
   m_commandDepth++;
   bool ok = false;
   try {
@@ -245,6 +277,7 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
     ok = Fail("errore interno del motore geometrico");
   }
   m_commandDepth--;
+  m_leadingOptions = std::move(outerOptions);
   m_collectingCreated = outerCollecting;
   if (!m_lastCreated.empty()) m_previousCreated = m_lastCreated;
   if (nested) {
@@ -366,6 +399,8 @@ std::map<std::string, std::string> Engine::ReadOptions(TokenStream& ts, const st
       break;
     }
   }
+  // le opzioni scritte dopo il nome del comando valgono se non ripetute qui
+  for (const auto& [k, v] : m_leadingOptions) opts.emplace(k, v);
   return opts;
 }
 

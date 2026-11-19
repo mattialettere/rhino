@@ -95,6 +95,8 @@ private:
   QLineEdit* m_input = nullptr;
   QCompleter* m_completer = nullptr;
   QLabel* m_prompt = nullptr;
+  QLabel* m_options = nullptr;   // opzioni cliccabili del comando in corso
+  void OptionClicked(const QString& name);
   QPlainTextEdit* m_history = nullptr;
   QTreeWidget* m_layers = nullptr;
   QPlainTextEdit* m_props = nullptr;

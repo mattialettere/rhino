@@ -74,8 +74,14 @@ bool CmdGCon(Engine& e, TokenStream& ts) {
   const ON_Curve& b = *crv[1];
   // la scelta dell'estremo si puo' forzare: End1=Start|End, End2=Start|End
   int ea = -1, eb = -1;
-  if (auto it = opts.find("end1"); it != opts.end()) ea = NormalizeName(it->second) == "start" ? 0 : 1;
-  if (auto it = opts.find("end2"); it != opts.end()) eb = NormalizeName(it->second) == "start" ? 0 : 1;
+  auto endOpt = [&](const char* k) {
+    auto it = opts.find(k);
+    if (it == opts.end()) return -1;
+    const std::string v = NormalizeName(it->second);
+    return v == "start" ? 0 : v == "end" ? 1 : -1;
+  };
+  ea = endOpt("end1");
+  eb = endOpt("end2");
   double best = ON_DBL_MAX;
   int ba = 1, bb = 0;
   for (int i = 0; i < 2; i++)

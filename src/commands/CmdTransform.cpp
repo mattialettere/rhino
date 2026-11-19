@@ -186,7 +186,7 @@ bool CmdArrayPolar(Engine& e, TokenStream& ts) {
   if (!count) return false;
   if (*count < 2) return e.Fail("servono almeno 2 elementi");
   double total = 360.0;
-  if (!ts.AtEnd() && !IsEnter(ts.Peek()) && e.Commands().count(NormalizeName(ts.Peek())) == 0) {
+  if (!ts.AtEnd() && !IsEnter(ts.Peek()) && !e.IsCommand(ts.Peek())) {
     auto v = e.ReadNumber(ts, "angolo totale"); if (!v) return false;
     total = *v;
   }
