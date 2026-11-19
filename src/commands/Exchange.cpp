@@ -37,6 +37,27 @@ void ForEachTriangle(const ON_Mesh& m, F f) {
 }
 }  // namespace
 
+std::string UnitNameIt(ON::LengthUnitSystem u) {
+  using U = ON::LengthUnitSystem;
+  switch (u) {
+    case U::Millimeters: return "Millimetri";
+    case U::Centimeters: return "Centimetri";
+    case U::Decimeters: return "Decimetri";
+    case U::Meters: return "Metri";
+    case U::Kilometers: return "Chilometri";
+    case U::Microns: return "Micron";
+    case U::Nanometers: return "Nanometri";
+    case U::Inches: return "Pollici";
+    case U::Feet: return "Piedi";
+    case U::Yards: return "Iarde";
+    case U::Miles: return "Miglia";
+    case U::Mils: return "Mil";
+    case U::Microinches: return "Micropollici";
+    case U::None: return "Senza unita'";
+    default: return ToUtf8(ON_UnitSystem(u).UnitSystemName());
+  }
+}
+
 std::string FileExtension(const std::string& path) {
   std::string e = U8(fs::u8path(path).extension());
   if (!e.empty() && e[0] == '.') e.erase(0, 1);
@@ -820,7 +841,7 @@ bool ImportExchange(Engine& e, const std::string& path, const std::map<std::stri
   if (open && im.units != ON::LengthUnitSystem::None && im.units != units) {
     e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system = ON_UnitSystem(im.units);
     e.Model().m_settings.m_PageUnitsAndTolerances.m_unit_system = ON_UnitSystem(ON::LengthUnitSystem::Millimeters);
-    e.Out() << "  Unita' del documento: " << ToUtf8(ON_UnitSystem(im.units).UnitSystemName()) << " (dal file)\n";
+    e.Out() << "  Unita' del documento: " << UnitNameIt(im.units) << " (dal file)\n";
   }
   e.ClearSelection();
   ModelBuilder mb(e);

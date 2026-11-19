@@ -24,6 +24,8 @@
 #include <filesystem>
 #ifdef CAD_WITH_XCAF
 #include <IGESCAFControl_Reader.hxx>
+#include <IGESCAFControl_Writer.hxx>
+#include <STEPCAFControl_Writer.hxx>
 #include <Quantity_Color.hxx>
 #include <STEPCAFControl_Reader.hxx>
 #include <TColStd_HSequenceOfExtendedString.hxx>
@@ -318,35 +320,79 @@ bool ReadStepIges(const std::string& path, ON::LengthUnitSystem docUnits, double
 bool WriteStepIges(const std::string& path, const std::vector<ExportItem>& items, ON::LengthUnitSystem docUnits,
                    double tol, std::string& err) {
   Quiet();
-  const std::string unit = UnitName(docUnits);
+  const std::string unit = UnitName(Supported(docUnits));
   const std::string xunit = XstepUnit(Supported(docUnits));
-  BRep_Builder bb;
-  TopoDS_Compound comp;
-  bb.MakeCompound(comp);
-  int n = 0;
+  // forme con nome, colore e livello dell'oggetto
+  struct Item { TopoDS_Shape shape; const ExportItem* src; };
+  std::vector<Item> shapes;
   for (const auto& it : items) {
     if (ON_Mesh::Cast(it.geom) || ON_SubD::Cast(it.geom) || ON_Point::Cast(it.geom)) continue;
     TopoDS_Shape s;
     try { s = occt::GeometryToShape(*it.geom, tol); } catch (const Standard_Failure&) { continue; }
     if (s.IsNull()) continue;
-    bb.Add(comp, s);
-    n++;
+    shapes.push_back({s, &it});
   }
-  if (!n) { err = "nessuna curva, superficie o solido da esportare (mesh e SubD non vanno in STEP/IGES)"; return false; }
+  if (shapes.empty()) { err = "nessuna curva, superficie o solido da esportare (mesh e SubD non vanno in STEP/IGES)"; return false; }
+  const bool step = IsStep(path);
   try {
-    if (IsStep(path)) {
-      Interface_Static::SetCVal("write.step.unit", xunit.c_str());
-      Interface_Static::SetCVal("write.step.schema", "AP214IS");
+    Interface_Static::SetCVal("write.step.unit", xunit.c_str());
+    Interface_Static::SetCVal("write.step.schema", "AP214IS");
+    Interface_Static::SetCVal("write.iges.unit", xunit.c_str());
+    Interface_Static::SetIVal("write.iges.brep.mode", 0);  // superfici tagliate (tipo 144), le piu' compatibili
+#ifdef CAD_WITH_XCAF
+    Handle(TDocStd_Document) doc;
+    Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
+    app->NewDocument("MDTV-XCAF", doc);
+    XCAFDoc_DocumentTool::SetLengthUnit(doc, ON::UnitScale(Supported(docUnits), ON::LengthUnitSystem::Meters));
+    Handle(XCAFDoc_ShapeTool) st = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+    Handle(XCAFDoc_ColorTool) ct = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+    Handle(XCAFDoc_LayerTool) lt = XCAFDoc_DocumentTool::LayerTool(doc->Main());
+    for (const auto& s : shapes) {
+      const TDF_Label l = st->AddShape(s.shape, false);
+      if (!s.src->name.empty()) TDataStd_Name::Set(l, TCollection_ExtendedString(s.src->name.c_str(), true));
+      const ON_Color c = s.src->color;
+      if (c != ON_UNSET_COLOR)
+        ct->SetColor(l, Quantity_Color(c.Red() / 255.0, c.Green() / 255.0, c.Blue() / 255.0, Quantity_TOC_sRGB), XCAFDoc_ColorGen);
+      if (!s.src->layer.empty()) lt->SetLayer(l, TCollection_ExtendedString(s.src->layer.c_str(), true));
+    }
+    bool ok;
+    if (step) {
+      STEPCAFControl_Writer w;
+      w.SetColorMode(true);
+      w.SetNameMode(true);
+      w.SetLayerMode(true);
+      ok = w.Transfer(doc, STEPControl_AsIs);
+      if (!ok) err = "conversione STEP non riuscita";
+      else if (w.Write(path.c_str()) != IFSelect_RetDone) { ok = false; err = "impossibile scrivere " + path; }
+    } else {
+      IGESControl_Controller::Init();
+      IGESCAFControl_Writer w;
+      w.SetColorMode(true);
+      w.SetNameMode(true);
+      w.SetLayerMode(true);
+      ok = w.Transfer(doc);
+      if (!ok) err = "conversione IGES non riuscita";
+      else if (!w.Write(path.c_str())) { ok = false; err = "impossibile scrivere " + path; }
+    }
+    app->Close(doc);
+    if (!ok) return false;
+#else
+    BRep_Builder bb;
+    TopoDS_Compound comp;
+    bb.MakeCompound(comp);
+    for (const auto& s : shapes) bb.Add(comp, s.shape);
+    if (step) {
       STEPControl_Writer w;
       if (w.Transfer(comp, STEPControl_AsIs) != IFSelect_RetDone) { err = "conversione STEP non riuscita"; return false; }
       if (w.Write(path.c_str()) != IFSelect_RetDone) { err = "impossibile scrivere " + path; return false; }
     } else {
       IGESControl_Controller::Init();
-      IGESControl_Writer w(unit.c_str(), 0);  // 0: superfici tagliate (tipo 144), le piu' compatibili
+      IGESControl_Writer w(unit.c_str(), 0);
       if (!w.AddShape(comp)) { err = "conversione IGES non riuscita"; return false; }
       w.ComputeModel();
       if (!w.Write(path.c_str())) { err = "impossibile scrivere " + path; return false; }
     }
+#endif
   } catch (const Standard_Failure&) {
     err = "errore di OpenCASCADE durante la scrittura";
     return false;

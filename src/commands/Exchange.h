@@ -97,6 +97,9 @@ struct ExportItem {
 // Mesh per l'esportazione con le coordinate di texture della mappatura dell'oggetto.
 std::unique_ptr<ON_Mesh> ExportMeshFor(const ExportItem& item, double tolerance);
 
+// Nome italiano dell'unita' di lunghezza ("Millimetri", "Pollici", ...).
+std::string UnitNameIt(ON::LengthUnitSystem u);
+
 // Estensione in minuscolo senza il punto ("stl", "obj", ...).
 std::string FileExtension(const std::string& path);
 bool IsExchangeFormat(const std::string& ext);   // stl, obj, dxf, step/stp, iges/igs

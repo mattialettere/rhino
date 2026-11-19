@@ -607,6 +607,47 @@ std::string DescribeObject(const ON_Geometry* g) {
   return s.str();
 }
 
+// Units: unita' del documento (come Proprieta' documento > Unita' di Rhino).
+// -Units <Millimetri|Centimetri|Metri|Pollici|Piedi|...> [Scale=Yes]: con Scale gli oggetti si scalano.
+bool CmdUnits(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto name = e.ReadString(ts, "unita' (Millimetri, Centimetri, Metri, Pollici, Piedi, ...)");
+  if (!name) return false;
+  for (auto& [k, v] : e.ReadOptions(ts)) opts[k] = v;
+  std::string n;
+  for (char c : *name) n += (char)std::tolower((unsigned char)c);
+  using U = ON::LengthUnitSystem;
+  static const std::pair<const char*, U> table[] = {
+      {"millimeters", U::Millimeters}, {"millimetri", U::Millimeters}, {"mm", U::Millimeters},
+      {"centimeters", U::Centimeters}, {"centimetri", U::Centimeters}, {"cm", U::Centimeters},
+      {"decimeters", U::Decimeters}, {"decimetri", U::Decimeters}, {"meters", U::Meters}, {"metri", U::Meters}, {"m", U::Meters},
+      {"kilometers", U::Kilometers}, {"chilometri", U::Kilometers}, {"km", U::Kilometers},
+      {"microns", U::Microns}, {"micron", U::Microns}, {"inches", U::Inches}, {"pollici", U::Inches}, {"in", U::Inches},
+      {"feet", U::Feet}, {"piedi", U::Feet}, {"ft", U::Feet}, {"yards", U::Yards}, {"iarde", U::Yards},
+      {"miles", U::Miles}, {"miglia", U::Miles}, {"mils", U::Mils}, {"mil", U::Mils}};
+  U u = U::Unset;
+  for (const auto& [k, v] : table) if (n == k) u = v;
+  if (u == U::Unset) return e.Fail("unita' sconosciuta: " + *name);
+  auto& mu = e.Model().m_settings.m_ModelUnitsAndTolerances;
+  const U old = mu.m_unit_system.UnitSystem();
+  auto it = opts.find("scale");
+  const bool scale = it != opts.end() && (it->second == "yes" || it->second == "si" || it->second == "true");
+  if (scale && old != U::None && old != u) {
+    const double f = ON::UnitScale(old, u);
+    const ON_Xform xf = ON_Xform::DiagonalTransformation(f, f, f);
+    for (const auto& id : e.AllObjectIds(true))
+      if (const auto* o = e.Object(id))
+        if (const ON_Geometry* g = o->Geometry(nullptr)) {
+          ON_Geometry* copy = static_cast<ON_Geometry*>(g->Duplicate());
+          copy->Transform(xf);
+          e.ReplaceObject(id, copy);
+        }
+  }
+  mu.m_unit_system = ON_UnitSystem(u);
+  e.Out() << "  Unita' del documento: " << UnitNameIt(u) << (scale ? " (oggetti scalati)" : "") << "\n";
+  return true;
+}
+
 void RegisterDocumentCommands(Engine& e) {
   auto reg = [&](const char* n, const char* cat, const char* d, CommandFn f, bool mod) {
     CommandInfo i{n, cat, d, f};
@@ -639,6 +680,7 @@ void RegisterDocumentCommands(Engine& e) {
   reg("SelName", "Seleziona", "Seleziona gli oggetti per nome", CmdSelName, false);
   reg("SetObjectName", "Proprietà", "Nome degli oggetti selezionati", CmdSetObjectName, true);
   reg("SetObjectColor", "Proprietà", "Colore degli oggetti (ByLayer, ByParent, r,g,b)", CmdSetObjectColor, true);
+  reg("Units", "Proprietà", "Unità del documento (Millimetri, Metri, Pollici, ...), Scale=Yes per scalare gli oggetti", CmdUnits, true);
   reg("What", "Analisi", "Descrive gli oggetti selezionati", CmdWhat, false);
 }
 

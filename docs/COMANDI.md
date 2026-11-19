@@ -383,6 +383,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | LayerUnlock | ✔ |
 | Properties | ✔ |
 | SetObjectName | ✔ |
+| Units | ✔ (D-074) |
 | MatchProperties | ✔ |
 | SetUserText | ✔ |
 | SetObjectColor | ✔ |

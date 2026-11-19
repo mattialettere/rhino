@@ -52,7 +52,7 @@ const std::vector<std::pair<const char*, const char*>>& ItalianCommandNames() {
       {"QuotaArco", "DimArc"}, {"QuotaLunghezzaCurva", "DimCurveLength"}, {"QuotaCoordinata", "DimOrdinate"},
       {"Direttrice", "Leader"}, {"SegnoDelCentro", "Centermark"}, {"Retino", "Hatch"},
       // blocchi, livelli, documento
-      {"Blocco", "Block"}, {"Inserisci", "Insert"}, {"EsplodiBlocco", "ExplodeBlock"}, {"Livello", "Layer"},
+      {"Blocco", "Block"}, {"Unita", "Units"}, {"Inserisci", "Insert"}, {"EsplodiBlocco", "ExplodeBlock"}, {"Livello", "Layer"},
       {"TipiDiLinea", "Linetypes"}, {"Materiale", "SetMaterial"}, {"Proprieta", "Properties"}, {"Apri", "Open"},
       {"Salva", "Save"}, {"SalvaConNome", "SaveAs"}, {"Importa", "Import"}, {"Esporta", "Export"}, {"Nuovo", "New"},
       {"Stampa", "Print"}, {"SessioneDiLavoro", "Worksession"},

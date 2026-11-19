@@ -116,6 +116,7 @@ private:
   QPushButton* m_propSwatch = nullptr;
   QWidget* m_propForm = nullptr;
   QLabel* m_coords = nullptr;
+  QLabel* m_units = nullptr;  // unita' del documento nella barra di stato
   QGridLayout* m_grid = nullptr;
   Viewport* m_views[4] = {};
   Viewport* m_maximized = nullptr;

@@ -941,7 +941,8 @@ void MainWindow::BuildStatusBar() {
   m_coords = new QLabel("x 0.000   y 0.000   z 0.000");
   m_coords->setMinimumWidth(260);
   statusBar()->addWidget(m_coords);
-  statusBar()->addWidget(new QLabel("Millimetri"));
+  m_units = new QLabel("Millimetri");
+  statusBar()->addWidget(m_units);
   auto toggle = [&](const char* label, bool& flag) {
     auto* b = new QToolButton;
     b->setText(label);
@@ -1361,6 +1362,7 @@ void MainWindow::AfterCommand() {
   RefreshPanels();
   QString title = m_engine.currentPath.empty() ? "Senza titolo" : QString::fromStdString(m_engine.currentPath);
   setWindowTitle(title + " - Kurva3D");
+  if (m_units) m_units->setText(QString::fromStdString(UnitNameIt(m_engine.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem())));
   for (auto* v : m_views) v->update();
 }
 

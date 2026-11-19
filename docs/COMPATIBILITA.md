@@ -1,6 +1,6 @@
 # Matrice di compatibilità con Rhino 8
 
-Ultimo aggiornamento: 18/11/2026 · openNURBS v8.35.26251.13001
+Ultimo aggiornamento: 19/11/2026 · openNURBS v8.35.26251.13001
 
 ## Legenda
 
@@ -72,18 +72,24 @@ I file prodotti dai comandi vengono salvati in formato Rhino 8, riletti e
 confrontati in ogni test (nessuna differenza); i B-rep prodotti da OpenCASCADE
 passano anche il controllo `IsValid` di openNURBS. Resta da aprirli in Rhino 8.
 
-## Formati di scambio (0.9, 0.11)
+## Formati di scambio (0.9, 0.11, 0.15)
+
+Dalla 0.15 il doppio clic (o Apri) su DXF, STEP e IGES crea un documento con le unita'
+del file e con tutto quello che il formato contiene (vedi D-074). Test automatici
+(test "Scambio_file"): DXF R2018 testo, R2018 binario e R12 cp1252 scritti da
+[ezdxf](https://ezdxf.mozman.de) (`tests/exchange_files/`, script di generazione nel
+LEGGIMI della cartella), letti e controllati voce per voce, salvati come .3dm e riletti.
 
 | Formato | Import | Export | Verificato con | Note |
 |---|---|---|---|---|
-| STEP (.stp/.step) | ✔ | ✔ | andata e ritorno in Kurva3D (test "Scambio_file": solidi chiusi, ingombro identico) | ⬜ da provare con file di altri CAD e con Rhino 8 |
-| IGES (.igs/.iges) | ✔ | ✔ | andata e ritorno in Kurva3D | ⬜ come sopra |
+| STEP (.stp/.step) | ✔ nomi, colori, livelli, unita' | ✔ nomi, colori, livelli | andata e ritorno in Kurva3D (solidi chiusi, ingombro identico; nome, colore e livello; documento in pollici riaperto in pollici) | ⬜ da provare con file di altri CAD e con Rhino 8. Assiemi appiattiti |
+| IGES (.igs/.iges) | ✔ nomi, colori, unita' | ✔ nomi, colori | andata e ritorno in Kurva3D (nome, colore, pollici) | ⬜ come sopra. Livelli IGES numerici: il nome non torna |
 | STL | ✔ | ✔ (binario e ASCII) | andata e ritorno, mesh chiusa | ⬜ |
 | OBJ (+ .mtl) | ✔ | ✔ | andata e ritorno con materiali e texture (test "Formati mesh") | ⬜ da provare con Rhino 8, Blender |
 | glTF 2.0 (.gltf, .glb) | ✔ | ✔ | andata e ritorno con materiali PBR, trasparenza, texture incorporata, Y in alto e metri; struttura controllata (accessori, buffer, indici) | ⬜ da provare con il validatore Khronos, Rhino 8, Blender |
 | 3MF | ✔ | ✔ | andata e ritorno con colori e unita' | ⬜ da provare con un programma di stampa 3D (Cura, PrusaSlicer, Bambu Studio) e Rhino 8 |
 | PLY | ✔ | ✔ (binario e ASCII) | andata e ritorno con colori per vertice, nuvola di punti | ⬜ da provare con MeshLab, Rhino 8 |
-| DXF R12 | ✔ | ✔ | andata e ritorno, DXF scritto a mano (rigonfiamenti, SPLINE, 3DFACE, unita', blocchi INSERT esplosi, quote DIMENSION come geometria, MTEXT) | ⬜ da provare con AutoCAD/Rhino 8 |
+| DXF (lettura R12...R2018, testo e binario; scrittura R12) | ✔ livelli, tipi di linea, colori/spessori per oggetto, blocchi veri e attributi, testi, quote vere e stili di quota, retini, direttrici, gruppi, spazio carta, unita' | ✔ livelli, tipi di linea, colori, blocchi, testi; quote e retini come geometria | file di ezdxf (R2018, R2018 binario, R12 cp1252) controllati voce per voce; DXF esportato da Kurva3D riletto (blocchi, testi, livelli); DXF batterie dell'utente: quote "32", "4" e "4,4" come in AutoCAD | ⬜ da provare con file di AutoCAD e con Rhino 8. Non letti: solidi ACIS, immagini, xref (D-074) |
 | DWG, FBX | ⬜ | ⬜ | | richiedono librerie a pagamento (ODA, Autodesk) |
 | SketchUp (.skp), Collada (.dae) | ⬜ | ⬜ | | SketchUp: SDK con licenza propria, da valutare; Collada: possibile in futuro |
 

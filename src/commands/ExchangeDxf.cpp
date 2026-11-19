@@ -15,6 +15,7 @@
 #include "core/Document3dm.h"
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
