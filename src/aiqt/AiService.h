@@ -12,6 +12,7 @@
 #include <QProcess>
 #include <QString>
 #include <memory>
+#include <vector>
 
 namespace cad::aiqt {
 
@@ -39,13 +40,19 @@ class ModelDownloader : public QObject {
   void Fail(const QString& error);
   void GetInfo();
   void GetTree();
-  void Download();
 
   QNetworkAccessManager m_net;
   QPointer<QNetworkReply> m_reply;
+  void DownloadPart();
+  struct Part {
+    QString file, sha256;
+    qint64 size = 0;
+  };
   ai::ModelInfo m_model;
-  QString m_file, m_sha256, m_license;
-  qint64 m_size = 0;
+  QString m_license, m_dir;
+  std::vector<Part> m_parts;  // un file o le parti -0000k-of-0000n di un GGUF diviso
+  size_t m_part = 0;
+  qint64 m_doneBefore = 0, m_total = 0;
   std::unique_ptr<QFile> m_out;
   std::unique_ptr<QCryptographicHash> m_hash;
   bool m_busy = false;
@@ -85,9 +92,13 @@ class Generator : public QObject {
   Q_OBJECT
  public:
   Generator(cad::Engine& engine, QObject* parent = nullptr);
-  void Run(int port, const QString& request, int maxRepairs = 2);
+  // maxRepairs: nuovi tentativi se Kurva3D rifiuta lo script; con useGrammar il modello
+  // puo' scrivere solo comandi conosciuti nella forma giusta (grammatica GBNF di llama.cpp)
+  void Run(int port, const QString& request, int maxRepairs = 3, bool useGrammar = true);
   void Cancel();
   bool Busy() const { return m_reply != nullptr; }
+  int Attempts() const { return m_repairs + 1; }  // richieste fatte al modello nell'ultima Run
+  bool UsedGrammar() const { return m_grammar; }
 
  signals:
   void Status(const QString& text);
@@ -100,7 +111,8 @@ class Generator : public QObject {
   QNetworkAccessManager m_net;
   QPointer<QNetworkReply> m_reply;
   QJsonArray m_messages;
-  int m_port = 0, m_repairs = 0, m_maxRepairs = 2;
+  int m_port = 0, m_repairs = 0, m_maxRepairs = 3;
+  bool m_grammar = true;
 };
 
 }  // namespace cad::aiqt

@@ -2038,10 +2038,38 @@ int main(int argc, char** argv) {
       const auto lines = ai::ExtractScript(sp.substr(a, b + 3 - a));
       const auto v = ai::Validate(c.e, lines);
       if (!v.ok) std::printf("  esempio %d, riga %d: %s\n", blocks + 1, v.line + 1, v.error.c_str());
-      CHECK(v.ok && v.created == 1);
+      CHECK(v.ok && v.created >= 1 && v.created <= 3);  // la lampada lascia lo stelo curvo a parte
       blocks++;
     }
-    CHECK(blocks == 4);
+    CHECK(blocks == 6);
+    // tabella dei comandi: ogni esempio funziona e rispetta la forma degli argomenti
+    for (const auto& spec : ai::CommandSpecs()) {
+      CHECK(ai::ArgumentsMatch(spec.example));
+      if (!ai::ArgumentsMatch(spec.example)) std::printf("  forma: %s\n", spec.example);
+      CHECK(ai::FindSpec(std::string("_") + spec.name) == &spec);
+    }
+    CHECK(ai::ArgumentsMatch("_box   0,0,0  100,50.5 -30 => Top"));
+    CHECK(ai::ArgumentsMatch("_Polyline 0,0 1,0 1,1 _close"));
+    CHECK(!ai::ArgumentsMatch("_Box 0,0,0 100 30"));
+    CHECK(!ai::ArgumentsMatch("_Cylinder 0,0,0 r=20 60"));
+    CHECK(!ai::ArgumentsMatch("_Polyline 0,0 1,0 1,1"));
+    CHECK(!ai::ArgumentsMatch("_SelName"));
+    CHECK(ai::ArgumentsMatch("_Sweep1 qualunque cosa"));  // comando fuori tabella: lo controlla Kurva3D
+    {
+      const auto wrong = ai::Validate(c.e, {"_Box 0,0,0 100 30 => Top"});
+      CHECK(!wrong.ok && wrong.line == 0 && wrong.error.find("_Box 0,0,0 100,50 30") != std::string::npos);
+      const auto empty = ai::Validate(c.e, {"_Box 0,0,0 10,10 10", "_SelAll", "_Delete"});
+      CHECK(!empty.ok && empty.error.find("empty") != std::string::npos);
+    }
+    // grammatica GBNF per llama.cpp: tutti i comandi della tabella, nomi e commenti
+    {
+      const std::string g = ai::Grammar();
+      CHECK(g.rfind("root ::= \"```kurva\\n\"", 0) == 0);
+      for (const auto& spec : ai::CommandSpecs()) CHECK(g.find(std::string("\"_") + spec.name + "\"") != std::string::npos);
+      CHECK(g.find("comment ::=") != std::string::npos && g.find("named ::=") != std::string::npos);
+      CHECK(g.find("\"_Solid=_Yes\"") != std::string::npos && g.find("(\"_Close\" | \"_Enter\")") != std::string::npos);
+      CHECK(g.find("\"NumSides=\" int") != std::string::npos);
+    }
     // controlli di buon senso: pezzi uno dentro l'altro da unire, pezzi identici nello stesso posto
     {
       const auto bad = ai::Validate(c.e, {"_Cylinder 0,0,0 50 100 => Base", "_Cylinder 0,0,0 30 100 => Inner", "_SelNone",
@@ -2534,6 +2562,8 @@ int main(int argc, char** argv) {
     CHECK(pick(64, 0) == "qwen3-32b");
     CHECK(pick(16, 24) == "qwen3-14b");
     for (const auto& m : ai::Catalog()) CHECK(ai::LicenseAllowed(m.license));
+    // Qwen2.5-Coder 3B ha la licenza Qwen Research: non deve esserci
+    CHECK(ai::FindModel("qwen2.5-coder-7b") && !ai::FindModel("qwen2.5-coder-3b"));
     CHECK(!ai::LicenseAllowed("llama3.1") && !ai::LicenseAllowed("gemma") && !ai::LicenseAllowed("other"));
   }
 
