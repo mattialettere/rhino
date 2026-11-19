@@ -45,6 +45,10 @@ QString InstalledModelPath(const ai::ModelInfo& m) {
   QFile meta(dir + "/model.json");
   if (!meta.open(QIODevice::ReadOnly)) return {};
   const QJsonObject o = QJsonDocument::fromJson(meta.readAll()).object();
+  if (o.contains("path")) {  // file GGUF scelto dal disco (modello addestrato, non scaricato)
+    const QFileInfo fi(o.value("path").toString());
+    return fi.exists() && fi.size() == (qint64)o.value("size").toDouble() ? fi.absoluteFilePath() : QString();
+  }
   QJsonArray parts = o.value("parts").toArray();
   if (parts.isEmpty()) parts.append(QJsonObject{{"file", o.value("file")}, {"size", o.value("size")}});
   for (const auto& v : parts) {
@@ -54,6 +58,19 @@ QString InstalledModelPath(const ai::ModelInfo& m) {
   }
   // per un GGUF diviso llama.cpp apre la prima parte e trova le altre accanto
   return dir + "/" + parts.at(0).toObject().value("file").toString();
+}
+
+bool UseLocalModelFile(const ai::ModelInfo& m, const QString& ggufPath) {
+  const QFileInfo fi(ggufPath);
+  if (!fi.exists() || fi.size() < 1024) return false;
+  QFile head(ggufPath);  // un GGUF comincia con la parola "GGUF"
+  if (!head.open(QIODevice::ReadOnly) || head.read(4) != "GGUF") return false;
+  const QString dir = ModelsDir() + "/" + QString::fromStdString(m.id);
+  QDir().mkpath(dir);
+  QFile meta(dir + "/model.json");
+  if (!meta.open(QIODevice::WriteOnly | QIODevice::Truncate)) return false;
+  meta.write(QJsonDocument(QJsonObject{{"path", fi.absoluteFilePath()}, {"size", (double)fi.size()}}).toJson());
+  return true;
 }
 
 // --- ModelDownloader -------------------------------------------------------------------------

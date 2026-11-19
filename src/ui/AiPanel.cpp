@@ -8,6 +8,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -295,7 +296,8 @@ void AiPanel::ShowModelDialog() {
       if (&m == &ai::Catalog()[rec]) name += "  ★ consigliato";
       table->setItem(r, 0, new QTableWidgetItem(name));
       table->setItem(r, 1, new QTableWidgetItem(QString::number(m.sizeGB, 'f', 1) + " GB"));
-      QString st = !aiqt::InstalledModelPath(m).isEmpty() ? "scaricato"
+      QString st = !aiqt::InstalledModelPath(m).isEmpty() ? (m.repo.empty() ? "pronto (file dal disco)" : "scaricato")
+                   : m.repo.empty()                      ? "scegli il file con \"Usa un file…\""
                    : ai::ModelFits(m, hw)                ? "da scaricare"
                                                          : "da scaricare (troppo grande per questo computer)";
       if (QString::fromStdString(m.id) == CurrentModelId()) st += ", in uso";
@@ -316,6 +318,8 @@ void AiPanel::ShowModelDialog() {
   auto* useBtn = buttons->addButton("Usa questo modello", QDialogButtonBox::AcceptRole);
   auto* dlBtn = buttons->addButton("Scarica", QDialogButtonBox::ActionRole);
   auto* delBtn = buttons->addButton("Elimina dal disco", QDialogButtonBox::ActionRole);
+  auto* fileBtn = buttons->addButton("Usa un file…", QDialogButtonBox::ActionRole);
+  fileBtn->setToolTip("Per un modello che non si scarica (es. quello addestrato su Kurva3D): scegli il file .gguf dal disco");
   buttons->addButton("Chiudi", QDialogButtonBox::RejectRole);
   lay->addWidget(buttons);
   aiqt::ModelDownloader dl;
@@ -329,7 +333,9 @@ void AiPanel::ShowModelDialog() {
     useBtn->setEnabled(have && !dl.Busy());
     delBtn->setEnabled(have && !dl.Busy());
     dlBtn->setText(dl.Busy() ? "Annulla download" : "Scarica");
-    dlBtn->setEnabled(dl.Busy() || (m && !have));
+    const bool local = m && m->repo.empty();  // si sceglie il file dal disco, non si scarica
+    dlBtn->setEnabled(dl.Busy() || (m && !have && !local));
+    fileBtn->setEnabled(m && local && !dl.Busy());
   };
   connect(table->selectionModel(), &QItemSelectionModel::selectionChanged, &dlg, [&] { updateButtons(); });
   connect(&dl, &aiqt::ModelDownloader::Status, &dlg, [&](const QString& s) { status->setText(s); });
@@ -358,10 +364,25 @@ void AiPanel::ShowModelDialog() {
     dl.Start(*m);
     updateButtons();
   });
+  connect(fileBtn, &QPushButton::clicked, &dlg, [&] {
+    const ai::ModelInfo* m = selected();
+    if (!m) return;
+    const QString f = QFileDialog::getOpenFileName(&dlg, "Scegli il modello GGUF", QDir::homePath(), "Modelli GGUF (*.gguf)");
+    if (f.isEmpty()) return;
+    if (!aiqt::UseLocalModelFile(*m, f)) { status->setText("Il file scelto non e' un modello GGUF."); return; }
+    QSettings().setValue("ai/model", QString::fromStdString(m->id));
+    status->setText("Modello pronto: " + QDir::toNativeSeparators(f));
+    refresh();
+    updateButtons();
+    UpdateModelLabel();
+  });
   connect(delBtn, &QPushButton::clicked, &dlg, [&] {
     const ai::ModelInfo* m = selected();
     if (!m) return;
-    if (QMessageBox::question(&dlg, "Elimina modello", "Eliminare il modello dal disco?") != QMessageBox::Yes) return;
+    if (QMessageBox::question(&dlg, "Elimina modello",
+                              m->repo.empty() ? "Togliere il modello dall'elenco? Il file scelto resta dov'e'."
+                                              : "Eliminare il modello dal disco?") != QMessageBox::Yes)
+      return;
     if (m_server.ModelPath() == aiqt::InstalledModelPath(*m)) m_server.Stop();
     QDir(aiqt::ModelsDir() + "/" + QString::fromStdString(m->id)).removeRecursively();
     refresh();
