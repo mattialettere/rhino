@@ -621,6 +621,27 @@ int main(int argc, char** argv) {
       const auto* t = ON_Text::Cast(c.Last());
       CHECK(t && ToUtf8(t->PlainText()).find('\n') != std::string::npos);
     });
+    // Pannello Proprieta': altezza, carattere e testo delle annotazioni esistenti
+    Case("TextProperties", "_Text 0,0 \"Prima\" Height=3\n_Dim 0,-20 40,-20 20,-28\n_SelAll -_TextProperties Height=7 Font=\"Courier New\"",
+         [&](Ctx& c) {
+      int n = 0;
+      for (const auto* g : c.Objects()) {
+        const auto* a = ON_Annotation::Cast(g);
+        if (!a) continue;
+        n++;
+        const ON_DimStyle& st = a->DimensionStyle(ParentDimStyle(c.doc.Model(), *a));
+        CHECK(Near(a->TextHeight(&st), 7.0));
+        CHECK(ToUtf8(a->Font(&st).FamilyName()).find("Courier") != std::string::npos);
+        auto d = display(c, g);
+        CHECK(!d.labels.empty() && Near(d.labels[0].height, 7.0) && d.labels[0].font.find("Courier") != std::string::npos);
+      }
+      CHECK(n == 2);
+      CHECK(c.e.Run("_SelAll\n-_TextProperties Text=\"Pianta nuova\""));
+      bool found = false;
+      for (const auto* g : c.Objects())
+        if (const auto* t = ON_Text::Cast(g)) found = found || ToUtf8(t->PlainText()) == "Pianta nuova";
+      CHECK(found);
+    });
     Case("Dim_orizzontale", "_Dim 0,0 40,5 20,-8", [&](Ctx& c) {
       const auto* d = ON_DimLinear::Cast(c.Last());
       CHECK(d && Near(d->Measurement(), 40.0, 1e-9));
@@ -2207,26 +2228,225 @@ int main(int argc, char** argv) {
       o.close();
       Ctx back;
       CHECK(back.e.Run("_Import \"" + f + "\""));
-      const ON_LineCurve* tacca = nullptr;
-      const ON_TextDot* testo = nullptr;
+      // INSERT -> istanza vera del blocco TACCA; la quota senza punti di definizione -> geometria del blocco *D1
+      const ON_InstanceRef* ir = nullptr;
+      const ON_Text* testo = nullptr;
       int lines = 0;
       for (auto* g : back.Objects()) {
-        if (auto* l = ON_LineCurve::Cast(g)) { lines++; if (std::fabs(l->m_line.from.y - 5) > 1e-9) tacca = l; }
-        if (auto* d = ON_TextDot::Cast(g)) testo = d;
+        if (auto* r = ON_InstanceRef::Cast(g)) ir = r;
+        if (ON_LineCurve::Cast(g)) lines++;
+        if (auto* t = ON_Text::Cast(g)) testo = t;
       }
-      CHECK(lines == 2);
-      // blocco con base (1,0): linea 0..2 lungo X, scala 2 -> 0..4, ruotata di 90 gradi e spostata in (10,10)
-      CHECK(tacca && tacca->m_line.from.DistanceTo(ON_3dPoint(10, 10, 0)) < 1e-9 &&
-            tacca->m_line.to.DistanceTo(ON_3dPoint(10, 14, 0)) < 1e-9);
-      CHECK(testo && ToUtf8(testo->PrimaryText()) == "\xC3\x98" "50\nmm");
+      CHECK(lines == 1);  // la linea della quota (quella di TACCA e' nella definizione)
+      CHECK(ir != nullptr);
+      if (ir) {
+        // blocco con base (1,0): linea 0..2 lungo X, scala 2 -> 0..4, ruotata di 90 gradi e spostata in (10,10)
+        const ON_3dPoint p0 = ir->m_xform * ON_3dPoint(0, 0, 0), p1 = ir->m_xform * ON_3dPoint(2, 0, 0);
+        CHECK(p0.DistanceTo(ON_3dPoint(10, 10, 0)) < 1e-9 && p1.DistanceTo(ON_3dPoint(10, 14, 0)) < 1e-9);
+      }
+      std::string plain = testo ? ToUtf8(testo->PlainText()) : "";
+      plain.erase(std::remove(plain.begin(), plain.end(), '\r'), plain.end());
+      if (plain != "\xC3\x98" "50\nmm") std::printf("  testo MTEXT: [%s]\n", plain.c_str());
+      CHECK(plain == "\xC3\x98" "50\nmm");
       // gli oggetti delle quote vanno sul livello QUOTE
       int suQuote = 0;
       for (const auto& id : back.e.AllObjectIds(true)) {
-        const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(back.e.Object(id)->Attributes(nullptr)->m_layer_index).ModelComponent());
+        const auto* o = back.e.Object(id);
+        if (o->Attributes(nullptr)->Mode() == ON::object_mode::idef_object) continue;
+        const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(o->Attributes(nullptr)->m_layer_index).ModelComponent());
         if (l && ToUtf8(l->Name()) == "QUOTE") suQuote++;
       }
       CHECK(suQuote == 2);
     }
+    // DXF completi scritti da un altro programma (ezdxf): R2018 testo, R2018 binario, R12 in cp1252
+    for (const char* name : {"completo_r2018.dxf", "completo_r2018_binario.dxf", "completo_r12.dxf"}) {
+      const bool r12 = std::string(name) == "completo_r12.dxf";
+      const std::string f = std::string(KURVA3D_SOURCE_DIR) + "/tests/exchange_files/" + name;
+      Ctx c;
+      const bool ok = c.e.Run("_Open \"" + f + "\"");
+      if (!ok) std::printf("  %s: %s\n", name, c.log.str().c_str());
+      CHECK(ok);
+      ONX_Model& m = c.e.Model();
+      auto layer = [&](const char* n) -> const ON_Layer* {
+        ONX_ModelComponentIterator it(m, ON_ModelComponent::Type::Layer);
+        for (const ON_ModelComponent* x = it.FirstComponent(); x; x = it.NextComponent())
+          if (ToUtf8(x->Name()) == n) return ON_Layer::Cast(x);
+        return nullptr;
+      };
+      auto layerOf = [&](const ON_3dmObjectAttributes* a) { const auto* l = ON_Layer::Cast(m.LayerFromIndex(a->m_layer_index).ModelComponent()); return l ? ToUtf8(l->Name()) : std::string(); };
+      auto ltName = [&](int i) { const auto* l = ON_Linetype::Cast(m.LinePatternFromIndex(i).ModelComponent()); return l ? ToUtf8(l->Name()) : std::string(); };
+      // unita' (R12 non ha $INSUNITS: $MEASUREMENT metrico -> millimetri)
+      CHECK(m.m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem() == ON::LengthUnitSystem::Millimeters);
+      // livelli: colore, tipo di linea, spessore, spento, bloccato
+      const ON_Layer* muri = layer("MURI");
+      CHECK(muri && muri->Color() == ON_Color(255, 0, 0) && ltName(muri->LinetypeIndex()) == "DASHED");
+      if (!r12) CHECK(muri && std::fabs(muri->PlotWeight() - 0.5) < 1e-9);
+      CHECK(layer("SPENTO") && !layer("SPENTO")->IsVisible());
+      CHECK(layer("BLOCCATO") && layer("BLOCCATO")->IsLocked());
+      if (!r12) CHECK(layer("VERO_COLORE") && layer("VERO_COLORE")->Color() == ON_Color(12, 34, 56));
+      // oggetti
+      int lineGreen = 0, lineTrue = 0, texts = 0, dims = 0, hatches = 0, refs = 0, meshes = 0, leaders = 0;
+      double linear = 0, radius = 0, diameter = 0, angle = 0;
+      bool accent = false, userText = false, overText = false, ansi = false, island = false;
+      const ON_InstanceRef* piastra = nullptr;
+      for (const auto& id : c.e.AllObjectIds(true)) {
+        const auto* o = c.e.Object(id);
+        const ON_Geometry* g = o->Geometry(nullptr);
+        const ON_3dmObjectAttributes* a = o->Attributes(nullptr);
+        if (auto* l = ON_LineCurve::Cast(g)) {
+          if (std::fabs(l->m_line.from.y - 10) < 1e-9 && a->ColorSource() == ON::color_from_object && a->m_color == ON_Color(0, 255, 0) &&
+              a->LinetypeSource() == ON::linetype_from_object && ltName(a->m_linetype_index) == "CENTER" &&
+              (r12 || (a->PlotWeightSource() == ON::plot_weight_from_object && std::fabs(a->m_plot_weight_mm - 0.35) < 1e-9)))
+            lineGreen++;
+          if (std::fabs(l->m_line.from.y - 20) < 1e-9 && a->m_color == ON_Color(200, 100, 50)) lineTrue++;
+        }
+        if (auto* t = ON_Text::Cast(g)) {
+          texts++;
+          if (ToUtf8(t->PlainText()) == "Perch\xC3\xA9 \xC3\xA8 cos\xC3\xAC: 30\xC2\xB0") accent = std::fabs(t->TextHeight(&ParentDimStyle(m, *t)) - 5) < 1e-9;
+        }
+        if (auto* d = ON_Dimension::Cast(g)) {
+          dims++;
+          if (auto* dl = ON_DimLinear::Cast(d)) {
+            if (std::fabs(dl->Measurement() - 100) < 1e-9) linear = 100;
+            ON_wString ut = d->UserText();
+            if (ToUtf8(ut).find("LUNGHEZZA") != std::string::npos) overText = true;
+          }
+          if (auto* dr = ON_DimRadial::Cast(d)) (dr->Type() == ON::AnnotationType::Diameter ? diameter : radius) = dr->Measurement();
+          if (auto* da = ON_DimAngular::Cast(d)) angle = da->Measurement() * 180 / ON_PI;
+        }
+        if (ON_Leader::Cast(g)) leaders++;
+        if (auto* h = ON_Hatch::Cast(g)) {
+          hatches++;
+          const auto* hp = ON_HatchPattern::Cast(m.ComponentFromIndex(ON_ModelComponent::Type::HatchPattern, h->PatternIndex()).ModelComponent());
+          if (hp && ToUtf8(hp->Name()) == "ANSI31" && hp->HatchLineCount() == 1) ansi = true;
+          if (h->LoopCount() == 3) island = true;
+        }
+        if (ON_Mesh::Cast(g)) meshes++;
+        if (auto* r = ON_InstanceRef::Cast(g)) {
+          refs++;
+          if (layerOf(a) == "BLOCCATO") {
+            piastra = r;
+            ON_wString v;
+            userText = a->GetUserString(L"CODICE", v) && ToUtf8(v) == "P-001";
+            CHECK(a->ColorSource() == ON::color_from_object && a->m_color == ON_Color(255, 0, 0));
+          }
+        }
+      }
+      CHECK(lineGreen == 1);
+      if (!r12) CHECK(lineTrue == 1);
+      CHECK(accent);
+      CHECK(refs == 2 && piastra && userText);
+      if (piastra) {
+        // PIASTRA in (300,0), scala 2, ruotata di 30 gradi: (40,0) del blocco -> 300 + 80*(cos30, sin30)
+        const ON_3dPoint q = piastra->m_xform * ON_3dPoint(40, 0, 0);
+        CHECK(q.DistanceTo(ON_3dPoint(300 + 80 * std::cos(ON_PI / 6), 80 * std::sin(ON_PI / 6), 0)) < 1e-9);
+        const auto* idef = ON_InstanceDefinition::Cast(m.ComponentFromId(ON_ModelComponent::Type::InstanceDefinition, piastra->m_instance_definition_uuid).ModelComponent());
+        CHECK(idef && ToUtf8(idef->Name()) == "PIASTRA" && idef->InstanceGeometryIdList().Count() == 3);  // contorno + 2 VITE annidate
+      }
+      // blocco annidato VITE: il cerchio sul livello 0 prende il colore dell'istanza (DaBlocco)
+      {
+        ONX_ModelComponentIterator it(m, ON_ModelComponent::Type::InstanceDefinition);
+        bool vite = false;
+        for (const ON_ModelComponent* x = it.FirstComponent(); x; x = it.NextComponent()) {
+          const auto* d = ON_InstanceDefinition::Cast(x);
+          if (!d || ToUtf8(d->Name()) != "VITE") continue;
+          const auto& ids = d->InstanceGeometryIdList();
+          for (int k = 0; k < ids.Count(); k++) {
+            const auto* o = ON_ModelGeometryComponent::Cast(m.ComponentFromId(ON_ModelComponent::Type::ModelGeometry, ids[k]).ModelComponent());
+            if (o && ON_ArcCurve::Cast(o->Geometry(nullptr)) && o->Attributes(nullptr)->ColorSource() == ON::color_from_parent) vite = true;
+          }
+        }
+        CHECK(vite);
+      }
+      CHECK(meshes == 2);
+      if (!r12) {
+        CHECK(texts == 4);  // 2 TEXT + MTEXT + attributo visibile
+        CHECK(dims == 6 && std::fabs(linear - 100) < 1e-9 && std::fabs(radius - 10) < 1e-9 && std::fabs(diameter - 20) < 1e-9);
+        CHECK(std::fabs(angle - 90) < 1e-6);
+        CHECK(overText);
+        CHECK(hatches == 2 && ansi && island);
+        CHECK(leaders == 1);
+        // gruppo COPPIA con le due linee
+        int inGroup = 0;
+        int gi = -1;
+        ONX_ModelComponentIterator git(m, ON_ModelComponent::Type::Group);
+        for (const ON_ModelComponent* x = git.FirstComponent(); x; x = git.NextComponent()) if (ToUtf8(x->Name()) == "COPPIA") gi = x->Index();
+        for (const auto& id : c.e.AllObjectIds(true)) if (c.e.Object(id)->Attributes(nullptr)->IsInGroup(gi)) inGroup++;
+        CHECK(gi >= 0 && inGroup == 2);
+        // spazio carta: una tavola con il cartiglio
+        int pages = 0;
+        ON_UUID page = ON_nil_uuid;
+        for (int k = 0; k < m.m_settings.m_views.Count(); k++)
+          if (m.m_settings.m_views[k].m_view_type == ON::view_type::page_view_type) { pages++; page = m.m_settings.m_views[k].m_vp.ViewportId(); }
+        CHECK(pages == 1 && c.e.ObjectIdsInSpace(page, true).size() == 2);
+      } else {
+        CHECK(texts == 3);
+      }
+      // salvato come Rhino 8 e riletto: stessi oggetti
+      const std::string out3dm = dir + "/" + name + ".3dm";
+      CHECK(c.e.Run("_Save \"" + out3dm + "\""));
+      Ctx back;
+      CHECK(back.e.Run("_Open \"" + out3dm + "\""));
+      CHECK(back.e.AllObjectIds(true).size() == c.e.AllObjectIds(true).size());
+    }
+    // unita' del file: Apri le usa, Importa scala nelle unita' del documento
+    {
+      const std::string f = std::string(KURVA3D_SOURCE_DIR) + "/tests/exchange_files/metri.dxf";
+      Ctx a;
+      CHECK(a.e.Run("_Open \"" + f + "\""));
+      CHECK(a.e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem() == ON::LengthUnitSystem::Meters);
+      CHECK(std::fabs(Len(a.Last()) - 1) < 1e-9);
+      Ctx b;
+      CHECK(b.e.Run("_Import \"" + f + "\""));
+      CHECK(b.e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem() == ON::LengthUnitSystem::Millimeters);
+      CHECK(std::fabs(Len(b.Last()) - 1000) < 1e-6);
+    }
+    // DXF esportato da Kurva3D: livelli, colori, blocchi, testi e quote riletti
+    {
+      Ctx c;
+      CHECK(c.e.Run("-_Layer New Rossi\n-_Layer Color Rossi 255,0,0\n-_Layer Current Rossi\n_Circle 0,0,0 5\n_SelAll\n_Block Name=Ruota 0,0,0\n"
+                    "_Insert Ruota 20,0,0 2 0\n_Text 0,20,0 \"Ciao \xC3\xA8\"\n_Dim 0,-10,0 10,-10,0 5,-15,0\n_Line 0,30,0 10,30,0"));
+      CHECK(c.e.Run("_SelAll\n_Export \"" + dir + "/kurva.dxf\""));
+      Ctx back;
+      CHECK(back.e.Run("_Open \"" + dir + "/kurva.dxf\""));
+      int refs = 0, texts = 0;
+      bool red = false;
+      for (const auto& id : back.e.AllObjectIds(true)) {
+        const auto* o = back.e.Object(id);
+        if (ON_InstanceRef::Cast(o->Geometry(nullptr))) refs++;
+        if (auto* t = ON_Text::Cast(o->Geometry(nullptr)); t && ToUtf8(t->PlainText()).find("Ciao \xC3\xA8") != std::string::npos) texts++;
+        const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(o->Attributes(nullptr)->m_layer_index).ModelComponent());
+        if (l && ToUtf8(l->Name()) == "Rossi" && l->Color() == ON_Color(255, 0, 0)) red = true;
+      }
+      CHECK(refs == 2);  // istanza creata da Block + Insert
+      CHECK(texts == 1);
+      CHECK(red);
+      CHECK(nearBox(c.BBox(), back.BBox(), 0.5));
+    }
+#ifdef CAD_WITH_XCAF
+    // STEP e IGES: nomi, colori e livelli in andata e ritorno; Apri usa le unita' del file
+    for (const char* ext : {"stp", "igs"}) {
+      Ctx c;
+      CHECK(c.e.Run("-_Units Inches\n-_Layer New Telaio\n-_Layer Color Telaio 0,0,255\n-_Layer Current Telaio\n_Box 0,0,0 10,20 5\n_SelAll\n_SetObjectName Scatola"));
+      const std::string f = dir + "/nomi." + ext;
+      CHECK(c.e.Run(std::string("_SelAll\n_Export \"") + f + "\""));
+      Ctx back;
+      CHECK(back.e.Run("_Open \"" + f + "\""));
+      CHECK(back.e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem() == ON::LengthUnitSystem::Inches);
+      CHECK(nearBox(c.BBox(), back.BBox(), 1e-3));
+      bool named = false, blue = false, layered = false;
+      for (const auto& id : back.e.AllObjectIds(true)) {
+        const auto* a = back.e.Object(id)->Attributes(nullptr);
+        if (ToUtf8(a->Name()) == "Scatola") named = true;
+        if (a->ColorSource() == ON::color_from_object && a->m_color == ON_Color(0, 0, 255)) blue = true;
+        const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(a->m_layer_index).ModelComponent());
+        if (l && ToUtf8(l->Name()) == "Telaio") layered = true;
+      }
+      if (!named || !blue || !layered) std::printf("  %s: nome %d colore %d livello %d\n", ext, named, blue, layered);
+      CHECK(named && blue);
+      if (std::string(ext) == "stp") CHECK(layered);
+    }
+#endif
     // formato sconosciuto ed errori
     Ctx bad;
     CHECK(!bad.e.Run("_Import \"" + dir + "/manca.stl\""));

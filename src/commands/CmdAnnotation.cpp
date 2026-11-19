@@ -364,6 +364,63 @@ bool CmdDimOrdinate(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// TextProperties: altezza, carattere e testo delle annotazioni selezionate
+// (come i campi Altezza / Carattere / Testo del pannello Proprieta' di Rhino 8).
+// I valori diventano sostituzioni dello stile dell'annotazione, che resta legata
+// al suo stile di quota. Height=, Font="Nome", Text="..." (solo per i testi).
+bool CmdTextProperties(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("TextProperties", "annotazioni da modificare");
+  if (sel.empty()) return false;
+  auto opts = e.ReadOptions(ts);
+  e.SkipEnter(ts);
+  double h = 0;
+  if (auto it = opts.find("height"); it != opts.end()) {
+    h = std::atof(it->second.c_str());
+    if (!(h > 0)) return e.Fail("altezza non valida");
+  }
+  std::string font, text;
+  bool hasText = false;
+  if (auto it = opts.find("font"); it != opts.end()) font = Unquote(it->second);
+  if (auto it = opts.find("text"); it != opts.end()) {
+    text = Unquote(it->second);
+    for (size_t i; (i = text.find("\\n")) != std::string::npos;) text.replace(i, 2, "\n");
+    hasText = true;
+  }
+  if (h <= 0 && font.empty() && !hasText) return e.Fail("indica Height=, Font= o Text=");
+  const ON_Font* mf = font.empty() ? nullptr : ON_Font::GetManagedFont(ON_wString(font.c_str()));
+  if (!font.empty() && !mf) return e.Fail("carattere non trovato");
+  int n = 0;
+  for (const auto& id : sel) {
+    const auto* o = e.Object(id);
+    const auto* src = o ? ON_Annotation::Cast(o->Geometry(nullptr)) : nullptr;
+    if (!src) continue;
+    ON_Annotation* a = ON_Annotation::Cast(src->Duplicate());
+    if (!a) continue;
+    const ON_DimStyle& parent = ParentDimStyle(e.Model(), *a);
+    if (h > 0) a->SetTextHeight(&parent, h);
+    if (mf) a->SetFont(&parent, *mf);
+    if (hasText) {
+      if (ON_Dimension::Cast(a)) ON_Dimension::Cast(a)->SetUserText(ON_wString(text.c_str()));
+      else a->ReplaceTextString(ON_wString(text.c_str()), &a->DimensionStyle(parent));
+    }
+    // il testo formattato tiene il carattere e l'altezza: lo ricostruiamo
+    if (auto* d = ON_Dimension::Cast(a)) {
+      if (auto* an = ON_DimAngular::Cast(d)) an->UpdateDimensionText(&d->DimensionStyle(parent));
+      else d->UpdateDimensionText(e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem(),
+                                  &d->DimensionStyle(parent));
+    } else if (!hasText && a->Text()) {
+      // con un nuovo carattere si riparte dal testo semplice (il carattere dei tratti RTF vincerebbe)
+      const ON_wString rtf = a->RichText();
+      a->ReplaceTextString(mf || rtf.IsEmpty() ? a->PlainText() : rtf, &a->DimensionStyle(parent));
+    }
+    e.ReplaceObject(id, a);
+    n++;
+  }
+  if (!n) return e.Fail("nessuna annotazione selezionata");
+  e.Out() << "  Proprieta' del testo cambiate su " << n << " annotazioni\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterAnnotationCommands(Engine& e) {
@@ -373,6 +430,7 @@ void RegisterAnnotationCommands(Engine& e) {
     e.Register(i);
   };
   reg("Text", "Testo (punto, \"testo\"; Height=)", CmdText);
+  reg("TextProperties", "Altezza, carattere e testo delle annotazioni selezionate (Height=, Font=, Text=)", CmdTextProperties);
   reg("Dim", "Quota lineare orizzontale o verticale (due punti, posizione)", CmdDim);
   reg("DimAligned", "Quota allineata (due punti, posizione)", CmdDimAligned);
   reg("DimRotated", "Quota ruotata (angolo, due punti, posizione)", CmdDimRotated);

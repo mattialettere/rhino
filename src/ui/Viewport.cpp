@@ -1214,8 +1214,10 @@ void Viewport::DrawLabels(QPainter& p) const {
         const double px = std::hypot(yx - ox, yy - oy);
         if (px < 2.0 || px > 4000) continue;  // troppo piccolo o enorme: non leggibile
         const double F = 100.0;  // corpo del carattere di riferimento, in pixel
-        QFont font("Arial");
+        QFont font(L.font.empty() ? QStringLiteral("Arial") : QString::fromUtf8(L.font.c_str()));
         font.setPixelSize(int(F));
+        font.setBold(L.bold);
+        font.setItalic(L.italic);
         const QFontMetricsF fm(font);
         const double capH = fm.capHeight() > 0 ? fm.capHeight() : 0.7 * F;  // altezza testo Rhino = maiuscole
         const double k = 1.0 / capH;

@@ -393,6 +393,15 @@ jobs:
           test -s screenshot-mac.png || { echo "screenshot non creato"; exit 1; }
           ls -la screenshot-mac.png
 
+      # Apertura di un DXF con quote e testi (annotazioni vere, nel carattere del file)
+      - name: Prova di apertura DXF
+        run: |
+          printf '%s\n' "_Open \"$PWD/tests/exchange_files/completo_r2018.dxf\"" > dxf.txt
+          ( dist/Kurva3D.app/Contents/MacOS/kurva3d --no-whats-new --script "$PWD/dxf.txt" --screenshot "$PWD/screenshot-mac-dxf.png" --wait 1500 & echo $! > pid )
+          for i in $(seq 1 120); do kill -0 $(cat pid) 2>/dev/null || break; sleep 1; done
+          if kill -0 $(cat pid) 2>/dev/null; then kill $(cat pid); echo "l'app non si e' chiusa entro 2 minuti"; exit 1; fi
+          test -s screenshot-mac-dxf.png || { echo "screenshot DXF non creato"; exit 1; }
+
       # Script Python con il Python dentro l'app (quello scaricato viene tolto di mezzo)
       - name: Prova degli script Python (Python incluso nell'app)
         run: |
@@ -445,6 +454,7 @@ jobs:
           path: |
             out
             screenshot-mac.png
+            screenshot-mac-dxf.png
 
   # Checkpoint: quando il file RELEASE contiene una versione nuova (es. v0.7.0) e
   # tutte le compilazioni e i test sono passati sul ramo main, si crea la Release.

@@ -16,6 +16,8 @@ struct AnnotationLabel {
   int halign = 0;          // 0 sinistra, 1 centro, 2 destra
   std::string text;        // UTF-8, righe separate da '\n'
   bool dot = false;        // punto di testo: dimensione fissa sullo schermo, su fondo colorato
+  std::string font;        // famiglia del carattere (UTF-8); vuota = carattere predefinito
+  bool bold = false, italic = false;
 };
 
 struct AnnotationDisplay {

@@ -224,6 +224,17 @@ bool BuildAnnotationDisplay(const ONX_Model& model, const ON_Annotation& a, Anno
   } else {
     return false;
   }
+  // carattere dello stile con le sostituzioni dell'annotazione (Font del pannello Proprieta')
+  const ON_Font& f = a.Font(&style);
+  ON_wString fam = f.FamilyName();
+  if (fam.IsEmpty()) fam = f.QuartetName();
+  const std::string family = fam.IsEmpty() ? std::string() : std::string(ON_String(fam).Array());
+  for (auto& L : out.labels) {
+    if (L.dot) continue;
+    L.font = family;
+    L.bold = f.IsBold();
+    L.italic = f.IsItalic();
+  }
   return true;
 }
 
