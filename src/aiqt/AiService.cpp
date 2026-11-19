@@ -280,13 +280,14 @@ void LlamaServer::Stop() {
 // --- Generator --------------------------------------------------------------------------------
 Generator::Generator(cad::Engine& engine, QObject* parent) : QObject(parent), m_engine(engine) {}
 
-void Generator::Run(int port, const QString& request, int maxRepairs, bool useGrammar) {
+void Generator::Run(int port, const QString& request, int maxRepairs, bool useGrammar, const QString& systemPrompt) {
   Cancel();
   m_port = port;
   m_repairs = 0;
   m_maxRepairs = maxRepairs;
   m_grammar = useGrammar;
-  m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", QString::fromStdString(ai::SystemPrompt())}},
+  const QString sys = systemPrompt.isEmpty() ? QString::fromStdString(ai::SystemPrompt()) : systemPrompt;
+  m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", sys}},
                           QJsonObject{{"role", "user"}, {"content", request}}};
   Send();
 }

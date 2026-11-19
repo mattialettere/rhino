@@ -173,7 +173,7 @@ void AiPanel::Generate() {
   if (req.isEmpty()) { m_status->setText("Scrivi prima che cosa vuoi creare."); return; }
   if (m_previewing) Discard();
   SetBusy(true, "Preparazione…");
-  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req); });
+  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req, 3, true, QString::fromStdString(ai::SystemPromptFor(ai::FindModel(CurrentModelId().toStdString())))); });
 }
 
 void AiPanel::ApplyPreview(const QStringList& script) {
@@ -252,7 +252,7 @@ void AiPanel::StartNextTask() {
   m_request->setPlainText(m_task->text);
   SetBusy(true, "Compito da " + m_task->from + "…");
   const QString req = m_task->text;
-  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req); }, [this](const QString& err) { FinishTask(err); });
+  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req, 3, true, QString::fromStdString(ai::SystemPromptFor(ai::FindModel(CurrentModelId().toStdString())))); }, [this](const QString& err) { FinishTask(err); });
 }
 
 void AiPanel::FinishTask(const QString& result) {

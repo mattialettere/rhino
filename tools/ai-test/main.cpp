@@ -6,11 +6,20 @@
 // riporta se lo script e' valido, quanti tentativi sono serviti, il tempo e se la
 // forma ottenuta e' plausibile (altezza totale, numero di oggetti).
 //   kurva3d-ai-test --bench --models qwen3-1.7b,qwen2.5-coder-1.5b [--no-grammar] [--both]
+// Modello addestrato (file GGUF locale, istruzioni brevi senza esempi):
+//   kurva3d-ai-test --bench --gguf kurva3d-qwen3-4b.gguf [--compact]
+// Verifica degli esempi di addestramento (tools/ai-train/generate_dataset.py):
+//   kurva3d-ai-test --validate-jsonl train.jsonl
 #include "aiqt/AiService.h"
 #include "commands/Engine.h"
 #include "core/Document3dm.h"
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTimer>
 #include <algorithm>
 #include <cstdio>
@@ -44,9 +53,7 @@ struct Outcome {
 };
 
 // Esegue lo script verificato su un documento nuovo e misura il risultato.
-void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
-  std::vector<std::string> lines;
-  for (const auto& l : script) lines.push_back(l.toStdString());
+void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome& out) {
   cad::Document3dm doc;
   std::ostringstream log;
   cad::Engine e(doc, log);
@@ -66,6 +73,59 @@ void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
   out.plausible = all.IsValid() && out.height >= bc.minHeight && out.height <= bc.maxHeight &&
                   out.width >= bc.minWidth && out.width <= bc.maxWidth;
 }
+void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
+  std::vector<std::string> lines;
+  for (const auto& l : script) lines.push_back(l.toStdString());
+  Measure(lines, bc, out);
+}
+
+// Verifica ogni esempio di addestramento: lo script dev'essere valido per Kurva3D e,
+// se l'esempio indica le misure attese, l'oggetto deve averle (tolleranza 1%).
+int ValidateJsonl(const QString& path) {
+  QFile f(path);
+  if (!f.open(QIODevice::ReadOnly)) { std::printf("non trovo %s\n", path.toUtf8().constData()); return 2; }
+  cad::Document3dm doc;
+  std::ostringstream log;
+  cad::Engine engine(doc, log);
+  int n = 0, bad = 0;
+  while (!f.atEnd()) {
+    const QByteArray line = f.readLine().trimmed();
+    if (line.isEmpty()) continue;
+    n++;
+    const QJsonObject row = QJsonDocument::fromJson(line).object();
+    const QJsonArray msgs = row["messages"].toArray();
+    if (msgs.size() < 3) { bad++; std::printf("riga %d: messaggi mancanti\n", n); continue; }
+    const std::string user = msgs[msgs.size() - 2].toObject()["content"].toString().toStdString();
+    const auto script = cad::ai::ExtractScript(msgs[msgs.size() - 1].toObject()["content"].toString().toStdString());
+    std::string why;
+    for (const auto& l : script) {
+      if (l.rfind("#", 0) == 0) continue;
+      if (!cad::ai::FindSpec(l.substr(0, l.find(' ')))) { why = "comando non nella tabella: " + l; break; }
+      if (!cad::ai::ArgumentsMatch(l)) { why = "argomenti non validi: " + l; break; }
+    }
+    if (why.empty()) {
+      const auto v = cad::ai::Validate(engine, script);
+      if (!v.ok) why = "riga " + std::to_string(v.line + 1) + ": " + v.error;
+    }
+    if (why.empty() && row.contains("check")) {
+      const QJsonObject c = row["check"].toObject();
+      BenchCase bc{"", 0, 1e9, 0, 1e9};
+      if (c.contains("h")) { const double h = c["h"].toDouble(); bc.minHeight = h * 0.99 - 0.5; bc.maxHeight = h * 1.01 + 0.5; }
+      if (c.contains("w")) { const double w = c["w"].toDouble(); bc.minWidth = w * 0.99 - 0.5; bc.maxWidth = w * 1.01 + 0.5; }
+      Outcome o;
+      Measure(script, bc, o);
+      if (!o.plausible)
+        why = "misure diverse: altezza " + std::to_string(int(o.height)) + " (attesa " + std::to_string(int(c["h"].toDouble())) +
+              "), pianta " + std::to_string(int(o.width)) + " (attesa " + std::to_string(int(c["w"].toDouble())) + ")";
+    }
+    if (!why.empty()) {
+      bad++;
+      if (bad <= 50) std::printf("ERRORE esempio %d \"%s\": %s\n", n, user.c_str(), why.c_str());
+    }
+  }
+  std::printf("%d esempi, %d validi, %d con errori\n", n, n - bad, bad);
+  return bad == 0 && n > 0 ? 0 : 1;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -73,19 +133,33 @@ int main(int argc, char** argv) {
   QCoreApplication::setApplicationName("Kurva3D");
   QString modelId = "qwen3-0.6b", prompt = "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro";
   QStringList models;
-  bool bench = false, grammar = true, both = false;
+  QString gguf, jsonl;
+  bool bench = false, grammar = true, both = false, compact = false;
   const QStringList a = app.arguments();
   for (int i = 1; i < a.size(); i++) {
     if (a[i] == "--bench") bench = true;
     else if (a[i] == "--no-grammar") grammar = false;
     else if (a[i] == "--both") both = true;
+    else if (a[i] == "--compact") compact = true;
+    else if (i + 1 < a.size() && a[i] == "--gguf") gguf = a[++i];
+    else if (i + 1 < a.size() && a[i] == "--validate-jsonl") jsonl = a[++i];
     else if (i + 1 < a.size() && a[i] == "--model") modelId = a[++i];
     else if (i + 1 < a.size() && a[i] == "--models") models = a[++i].split(',', Qt::SkipEmptyParts);
     else if (i + 1 < a.size() && a[i] == "--prompt") prompt = a[++i];
   }
+  if (!jsonl.isEmpty()) {
+    cad::InitLibrary();
+    const int r = ValidateJsonl(jsonl);
+    cad::ShutdownLibrary();
+    return r;
+  }
+  if (!gguf.isEmpty()) {
+    if (!QFileInfo::exists(gguf)) { std::printf("non trovo %s\n", gguf.toUtf8().constData()); return 2; }
+    models = QStringList{"gguf:" + QFileInfo(gguf).fileName()};
+  }
   if (models.isEmpty()) models << modelId;
   for (const auto& id : models)
-    if (!cad::ai::FindModel(id.toStdString())) { std::printf("modello sconosciuto: %s\n", id.toUtf8().constData()); return 2; }
+    if (gguf.isEmpty() && !cad::ai::FindModel(id.toStdString())) { std::printf("modello sconosciuto: %s\n", id.toUtf8().constData()); return 2; }
   const auto hw = cad::ai::DetectHardware();
   std::printf("%s\nConsigliato: %s\n", cad::ai::DescribeHardware(hw).c_str(),
               cad::ai::Catalog()[cad::ai::RecommendModel(hw)].label.c_str());
@@ -133,7 +207,8 @@ int main(int argc, char** argv) {
     say(QString("\n=== %1 | %2 | grammatica %3 ===")
             .arg(j.model, j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, j.grammar ? "si" : "no"));
     clock.start();
-    gen.Run(server.Port(), j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, 3, j.grammar);
+    gen.Run(server.Port(), j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, 3, j.grammar,
+            compact ? QString::fromStdString(cad::ai::CompactSystemPrompt()) : QString());
   };
   auto startServer = [&](const QString& path) { server.Start(path, hw.threads); };
   next = [&] {
@@ -142,6 +217,7 @@ int main(int argc, char** argv) {
     if (m == loaded && server.Ready()) { runJob(); return; }
     loaded = m;
     server.Stop();
+    if (!gguf.isEmpty()) { say("Modello locale: " + gguf); startServer(gguf); return; }
     const cad::ai::ModelInfo* mi = cad::ai::FindModel(m.toStdString());
     const QString path = cad::aiqt::InstalledModelPath(*mi);
     if (!path.isEmpty()) { say("Modello gia' presente: " + path); startServer(path); }
