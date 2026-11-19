@@ -23,6 +23,8 @@ class QComboBox;
 class QPushButton;
 class QStackedWidget;
 class QTabBar;
+class QDragEnterEvent;
+class QDropEvent;
 
 namespace cad::collab {
 class Session;
@@ -50,8 +52,14 @@ public:
 protected:
   void keyPressEvent(QKeyEvent* e) override;
   bool eventFilter(QObject* o, QEvent* e) override;
+  void dragEnterEvent(QDragEnterEvent* e) override;
+  void dropEvent(QDropEvent* e) override;
 
 private:
+  // File trascinati sulla finestra o sulla riga di comando: apre/importa i formati supportati.
+  bool OpenDroppedFiles(const QStringList& paths);
+  // Testo che non e' un comando (es. un testo incollato): messaggio chiaro invece di eseguirlo.
+  bool RejectNonCommandText(const std::string& text);
   void Run(const std::string& script);
   void Cancel();
   void AfterCommand();

@@ -9,6 +9,11 @@
 #include "ui/WhatsNew.h"
 #include "ui/LayoutView.h"
 #include "ui/RenderWindow.h"
+#include "commands/Exchange.h"
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
+#include <QUrl>
 #include <QActionGroup>
 #include <cstring>
 #include <QPrintDialog>
@@ -440,6 +445,7 @@ MainWindow::MainWindow(QWidget* parent)
   });
 #endif
   BuildStatusBar();
+  setAcceptDrops(true);  // file .3dm/.dxf/.stp... trascinati sulla finestra
   Log("Kurva3D - modello nuovo in millimetri. Scrivi un comando, ? per l'elenco.");
   AfterCommand();
 }
@@ -1220,6 +1226,7 @@ void MainWindow::Submit(const QString& text) {
       if (m_engine.LastCommandName().empty()) return;
       t = "_" + m_engine.LastCommandName();
     }
+    if (RejectNonCommandText(t)) return;
     script = t;
   } else if (m_engine.PendingInputKind() == Engine::InputKind::Objects) {
     // "Seleziona oggetti ... poi Invio": Invio fa ripartire il comando con la selezione fatta
@@ -1512,7 +1519,81 @@ bool MainWindow::eventFilter(QObject* o, QEvent* e) {
       return true;  // non deve arrivare anche alla finestra (sarebbe un secondo Invio)
     }
   }
+  // Un file trascinato sulla riga di comando si apre (invece di finire come testo nella riga).
+  if (o == m_input && (e->type() == QEvent::DragEnter || e->type() == QEvent::DragMove)) {
+    auto* d = static_cast<QDropEvent*>(e);
+    if (d->mimeData()->hasUrls()) { d->acceptProposedAction(); return true; }
+  }
+  if (o == m_input && e->type() == QEvent::Drop) {
+    auto* d = static_cast<QDropEvent*>(e);
+    if (d->mimeData()->hasUrls()) {
+      QStringList paths;
+      for (const QUrl& u : d->mimeData()->urls()) if (u.isLocalFile()) paths << u.toLocalFile();
+      d->acceptProposedAction();
+      OpenDroppedFiles(paths);
+      return true;
+    }
+  }
   return QMainWindow::eventFilter(o, e);
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* e) {
+  if (e->mimeData()->hasUrls()) e->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent* e) {
+  QStringList paths;
+  for (const QUrl& u : e->mimeData()->urls()) if (u.isLocalFile()) paths << u.toLocalFile();
+  if (paths.isEmpty()) return;
+  e->acceptProposedAction();
+  OpenDroppedFiles(paths);
+}
+
+bool MainWindow::OpenDroppedFiles(const QStringList& paths) {
+  bool any = false;
+  for (const QString& p : paths) {
+    const QFileInfo fi(p);
+    const std::string ext = fi.suffix().toLower().toStdString();
+    if (!fi.isFile() || (ext != "3dm" && !IsExchangeFormat(ext))) {
+      Log(QString("\"%1\" non e' un disegno: Kurva3D apre e importa %2.")
+              .arg(fi.fileName(), QString::fromStdString(ExchangeFormatsDescription())));
+      continue;
+    }
+    if (!m_pending.empty()) Cancel();
+    // come Rhino: in un modello vuoto il file si apre, altrimenti si importa nel modello corrente
+    if (m_scene.Objects().empty() && m_engine.currentPath.empty()) OpenFile(p);
+    else { Submit("_Import \"" + p + "\""); ZoomExtentsAll(); }
+    any = true;
+  }
+  return any;
+}
+
+bool MainWindow::RejectNonCommandText(const std::string& text) {
+  if (text.empty()) return false;
+  // percorso di un file (es. trascinato o incollato): si apre/importa
+  {
+    QString p = QString::fromStdString(text).trimmed();
+    if (p.size() > 1 && p.startsWith('"') && p.endsWith('"')) p = p.mid(1, p.size() - 2);
+    if (p.startsWith("file://")) p = QUrl(p).toLocalFile();
+    if (!p.contains('\n') && (p.startsWith('/') || (p.size() > 2 && p[1] == ':')) && QFileInfo(p).isFile()) {
+      OpenDroppedFiles({p});
+      return true;
+    }
+  }
+  // Una sola parola: ci pensa il completamento dei nomi (o l'errore "Comando sconosciuto").
+  const size_t first = text.find_first_of(" \t\r\n");
+  if (first == std::string::npos) return false;
+  const std::string head = text.substr(0, first);
+  if (m_engine.IsCommand(head) || head[0] == '\'' || head[0] == '!') return false;
+  // Testo libero (es. note incollate da un altro programma): non e' una serie di comandi.
+  QString line = QString::fromStdString(text.substr(0, text.find_first_of("\r\n")));
+  if (line.size() > 60) line = line.left(57) + "...";
+  const int lines = QString::fromStdString(text).count('\n') + 1;
+  Log(QString("Comando: ") + line + (lines > 1 ? QString(" (%1 righe incollate)").arg(lines) : QString()));
+  Log(QString("  \"%1\" non e' un comando: il testo non e' stato eseguito. Scrivi ? per l'elenco dei comandi; "
+              "per aprire un disegno usa File > Apri o File > Importa, oppure trascina il file sulla finestra.")
+          .arg(QString::fromStdString(head)));
+  return true;
 }
 
 }  // namespace cad::ui

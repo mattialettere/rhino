@@ -83,7 +83,7 @@ passano anche il controllo `IsValid` di openNURBS. Resta da aprirli in Rhino 8.
 | glTF 2.0 (.gltf, .glb) | ✔ | ✔ | andata e ritorno con materiali PBR, trasparenza, texture incorporata, Y in alto e metri; struttura controllata (accessori, buffer, indici) | ⬜ da provare con il validatore Khronos, Rhino 8, Blender |
 | 3MF | ✔ | ✔ | andata e ritorno con colori e unita' | ⬜ da provare con un programma di stampa 3D (Cura, PrusaSlicer, Bambu Studio) e Rhino 8 |
 | PLY | ✔ | ✔ (binario e ASCII) | andata e ritorno con colori per vertice, nuvola di punti | ⬜ da provare con MeshLab, Rhino 8 |
-| DXF R12 | ✔ | ✔ | andata e ritorno, DXF scritto a mano (rigonfiamenti, SPLINE, 3DFACE, unita') | ⬜ da provare con AutoCAD/Rhino 8 |
+| DXF R12 | ✔ | ✔ | andata e ritorno, DXF scritto a mano (rigonfiamenti, SPLINE, 3DFACE, unita', blocchi INSERT esplosi, quote DIMENSION come geometria, MTEXT) | ⬜ da provare con AutoCAD/Rhino 8 |
 | DWG, FBX | ⬜ | ⬜ | | richiedono librerie a pagamento (ODA, Autodesk) |
 | SketchUp (.skp), Collada (.dae) | ⬜ | ⬜ | | SketchUp: SDK con licenza propria, da valutare; Collada: possibile in futuro |
 
