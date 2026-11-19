@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(kurva3d VERSION 0.9.2 LANGUAGES C CXX)
+project(kurva3d VERSION 0.14.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -197,7 +197,7 @@ if(Qt6_FOUND)
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h src/ui/RenderWindow.cpp src/ui/RenderWindow.h
     src/ui/ScriptEditor.cpp src/ui/ScriptEditor.h src/ui/NodeEditor.cpp src/ui/NodeEditor.h
     src/ui/CollabPanel.cpp src/ui/CollabPanel.h
-    src/ui/Theme.cpp src/ui/Theme.h ${_kurva_res})
+    src/ui/Theme.cpp src/ui/Theme.h src/ui/WhatsNew.cpp src/ui/WhatsNew.h ${_kurva_res})
   if(APPLE)
     # versione minima di macOS: quella delle librerie Homebrew con cui si compila
     set(KURVA3D_MACOS_MIN "15.0" CACHE STRING "macOS minimo per Kurva3D.app")

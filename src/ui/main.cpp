@@ -5,6 +5,7 @@
 #include "collab/Session.h"
 #include "ui/NodeEditor.h"
 #include "ui/Theme.h"
+#include "ui/WhatsNew.h"
 #include <QApplication>
 #include <QFile>
 #include <QDockWidget>
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
   QString open, script, shot, panel, nodesFile, nodesShot, collabHost, collabJoin, collabChat, collabScript, collabTask;
   int wait = 800;
   bool keepPending = false;
+  bool whatsNew = true, forceWhatsNew = false;  // finestra delle novita' all'avvio
   const QStringList args = app.arguments();
   for (int i = 1; i < args.size(); i++) {
     if (args[i] == "--script" && i + 1 < args.size()) script = args[++i];
@@ -53,6 +55,8 @@ int main(int argc, char** argv) {
     else if (args[i] == "--panel" && i + 1 < args.size()) panel = args[++i];  // es. textureDock
     else if (args[i] == "--wait" && i + 1 < args.size()) wait = args[++i].toInt();  // ms prima della cattura
     else if (args[i] == "--keep-pending") keepPending = true;  // l'ultimo comando dello script resta in attesa
+    else if (args[i] == "--no-whats-new") whatsNew = false;
+    else if (args[i] == "--whats-new") forceWhatsNew = true;  // per le prove: la mostra sempre
     else if (args[i] == "--nodes" && i + 1 < args.size()) nodesFile = args[++i];        // grafo da aprire nell'editor a nodi
     else if (args[i] == "--nodes-screenshot" && i + 1 < args.size()) nodesShot = args[++i];
     // prove della collaborazione: ospitare (il codice va nel file indicato) o entrare (ip:porta:codice),
@@ -72,6 +76,10 @@ int main(int argc, char** argv) {
     app.installEventFilter(&fof);
     w.show();
     if (!open.isEmpty()) w.OpenFile(open);
+    // novita' della versione: all'avvio normale (non durante script, screenshot e prove di collaborazione)
+    const bool automated = !script.isEmpty() || !shot.isEmpty() || !nodesShot.isEmpty() || !collabHost.isEmpty() || !collabJoin.isEmpty();
+    if (forceWhatsNew || (whatsNew && !automated && cad::ui::WhatsNewWanted()))
+      QTimer::singleShot(0, &w, [&w] { cad::ui::ShowWhatsNew(&w); });
     if (!script.isEmpty()) {
       QFile f(script);
       if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {

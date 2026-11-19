@@ -7,6 +7,7 @@
 // Comandi speciali della console: "?" elenca i comandi, "esci" termina.
 #include "commands/Engine.h"
 #include "core/ModelCompare.h"
+#include "python/PythonHost.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -15,6 +16,15 @@
 
 int main(int argc, char** argv) {
   cad::InitLibrary();
+  {
+    // Python incluso accanto al programma (Windows) o in Kurva3D.app/Contents/Resources/python (Mac)
+    std::error_code ec;
+    const auto exe = std::filesystem::weakly_canonical(std::filesystem::path(argv[0]), ec);
+    if (!ec && exe.has_parent_path()) {
+      const auto u8 = exe.parent_path().u8string();  // PythonHost legge il percorso come UTF-8
+      cad::SetPythonProgramDir(std::string(u8.begin(), u8.end()));
+    }
+  }
   int rc = 0;
   {
     std::string script, outPath, openPath;
