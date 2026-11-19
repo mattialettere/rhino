@@ -24,6 +24,16 @@
       <key>CFBundleTypeRole</key><string>Editor</string>
       <key>LSHandlerRank</key><string>Alternate</string>
     </dict>
+    <dict>
+      <!-- formati di scambio: Kurva3D compare in "Apri con" e accetta i file trascinati sull'icona -->
+      <key>CFBundleTypeName</key><string>Disegno CAD</string>
+      <key>CFBundleTypeExtensions</key><array>
+        <string>dxf</string><string>stp</string><string>step</string><string>igs</string><string>iges</string>
+        <string>stl</string><string>obj</string><string>gltf</string><string>glb</string><string>3mf</string><string>ply</string>
+      </array>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+    </dict>
   </array>
 </dict>
 </plist>
