@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Addestra Qwen3 (licenza Apache 2.0) sui comandi di Kurva3D con LoRA e lo esporta in GGUF.
 
-Serve una GPU NVIDIA (Colab T4 gratuita: 4B in circa 1-2 ore; A100: circa 20-30 minuti).
+Serve una GPU NVIDIA (Colab T4 gratuita: 4B con 1200 esempi in circa 1 ora; A100: circa 10 minuti).
 Strumenti: unsloth, PEFT, TRL, transformers (Apache 2.0), llama.cpp per il GGUF (MIT).
 
     pip install unsloth
@@ -21,7 +21,10 @@ def main():
     ap.add_argument("--data", required=True)
     ap.add_argument("--base", default="unsloth/Qwen3-4B")
     ap.add_argument("--out", default="kurva3d-qwen3-4b")
-    ap.add_argument("--epochs", type=float, default=2)
+    # ogni esempio porta con se' le istruzioni (~1600 token): su una T4 gratuita
+    # 1200 esempi per 1 giro sono circa un'ora; 3000 x 2 giri sarebbero oltre 6 ore
+    ap.add_argument("--epochs", type=float, default=1)
+    ap.add_argument("--max-examples", type=int, default=1200)
     ap.add_argument("--rank", type=int, default=16)
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--max-len", type=int, default=4096)
@@ -35,6 +38,7 @@ def main():
 
     rows = [json.loads(l) for l in open(a.data, encoding="utf-8") if l.strip()]
     random.Random(1).shuffle(rows)
+    rows = rows[:a.max_examples]
     n_eval = max(1, int(len(rows) * a.eval_share))
 
     model, tok = FastLanguageModel.from_pretrained(a.base, max_seq_length=a.max_len, load_in_4bit=True)
@@ -53,7 +57,7 @@ def main():
         model=model, tokenizer=tok, train_dataset=train, eval_dataset=evals,
         args=SFTConfig(dataset_text_field="text", max_seq_length=a.max_len, per_device_train_batch_size=2,
                        gradient_accumulation_steps=8, num_train_epochs=a.epochs, learning_rate=a.lr,
-                       lr_scheduler_type="cosine", warmup_ratio=0.03, logging_steps=10, eval_strategy="epoch",
+                       lr_scheduler_type="cosine", warmup_steps=5, logging_steps=10, eval_strategy="epoch",
                        optim="adamw_8bit", seed=1, output_dir=a.out + "-run", report_to="none"))
     try:  # impara solo le risposte, non le istruzioni ripetute in ogni esempio
         from unsloth.chat_templates import train_on_responses_only

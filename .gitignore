@@ -4,3 +4,4 @@ out/
 *.user
 CMakeUserPresets.json
 commands_out/
+__pycache__/
