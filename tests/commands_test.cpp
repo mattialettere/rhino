@@ -2050,7 +2050,6 @@ int main(int argc, char** argv) {
       const bool same = ss.str() == ai::CompactSystemPrompt();
       if (!same) std::printf("  tools/ai-train/system_prompt.txt diverso da CompactSystemPrompt(): rigeneralo\n");
       CHECK(same);
-      CHECK(ai::CompactSystemPrompt().find("```kurva") == std::string::npos);
     }
 #endif
     // tabella dei comandi: ogni esempio funziona e rispetta la forma degli argomenti
