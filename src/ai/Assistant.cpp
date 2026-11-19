@@ -274,6 +274,14 @@ std::vector<std::string> ReferenceExamples() {
   return v;
 }
 
+std::string CompactSystemPrompt() {
+  const std::string full = SystemPrompt();
+  const size_t ex = full.find("\nExample: ");
+  return ex == std::string::npos ? full : full.substr(0, ex + 1);
+}
+
+std::string SystemPromptFor(const ModelInfo* m) { return m && m->finetuned ? CompactSystemPrompt() : SystemPrompt(); }
+
 std::string SystemPrompt() {
   std::ostringstream o;
   o << R"(You are the modelling assistant of Kurva3D, a NURBS CAD program similar to Rhino 8.

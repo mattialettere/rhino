@@ -141,6 +141,21 @@ jobs:
           & dist\kurva3d-ai-test.exe --model qwen3-0.6b --prompt "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro"
           if ($LASTEXITCODE -ne 0) { throw "prova dell'assistente AI fallita" }
 
+      # Esempi per addestrare il modello: generati e verificati uno per uno da Kurva3D
+      - name: Verifica degli esempi di addestramento AI
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          python tools/ai-train/generate_dataset.py --count 3000 --out "$env:RUNNER_TEMP\kurva3d-train.jsonl"
+          & dist\kurva3d-ai-test.exe --validate-jsonl "$env:RUNNER_TEMP\kurva3d-train.jsonl"
+          if ($LASTEXITCODE -ne 0) { throw "esempi di addestramento non validi" }
+
+      - name: Esempi di addestramento (file)
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-train-jsonl
+          path: ${{ runner.temp }}\kurva3d-train.jsonl
+
       # Confronto dei modelli (solo se il messaggio del commit contiene [ai-bench]): richieste
       # del banco di prova (tavolo con gamba centrale, sedia, lampada...), con e senza grammatica
       - name: Banco di prova AI (confronto dei modelli)

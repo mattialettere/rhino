@@ -217,6 +217,8 @@ endif()
 
 add_executable(commands-test tests/commands_test.cpp)
 target_link_libraries(commands-test PRIVATE cadcore)
+# le istruzioni brevi usate per addestrare il modello devono restare uguali a quelle del programma
+target_compile_definitions(commands-test PRIVATE KURVA3D_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 add_executable(3dm-roundtrip tools/3dm-roundtrip/main.cpp)
 target_link_libraries(3dm-roundtrip PRIVATE cadcore)

@@ -55,3 +55,27 @@ quando Kurva3D sapra' eseguire script CadQuery o tradurli nei suoi comandi.
    (corretto: ora si usa il box stretto).
 6. **Prossimo passo possibile**: addestramento (LoRA) di un modello Apache su esempi di comandi
    Kurva3D, per avere un modello dedicato e nostro.
+
+## Addestramento di un modello per Kurva3D
+
+Il passo successivo alla grammatica e agli esempi: insegnare i comandi al modello con
+un addestramento LoRA leggero, cosi' non deve piu' copiare gli esempi delle istruzioni.
+
+1. **Esempi** (`tools/ai-train/generate_dataset.py`, solo Python standard). Genera richieste
+   in italiano (tavoli, tavolo con gamba centrale, tavolini, sgabelli, sedie, mensole, librerie,
+   vasi, tazze, piastre forate, flange, lampade, panche, scale, solidi semplici) con misure a caso
+   e lo script giusto, calcolato dalle misure. Seme fisso: lo stesso comando da' lo stesso file.
+2. **Verifica** (`kurva3d-ai-test --validate-jsonl`). In CI ogni esempio viene eseguito da Kurva3D:
+   comandi e argomenti della tabella, script senza errori, altezza e ingombro uguali a quelli
+   attesi (tolleranza 1%). Il file verificato si scarica dagli artifact della CI (`kurva3d-train-jsonl`).
+3. **Addestramento** (`tools/ai-train/train_lora.py` o il notebook `kurva3d_train_colab.ipynb`).
+   Qwen3 4B (Apache 2.0), LoRA rank 16, 2 epoche, solo le risposte. Serve una GPU NVIDIA:
+   Colab gratuito (T4, circa 1-2 ore) oppure una GPU a noleggio (A100, circa 30 minuti, pochi euro).
+4. **GGUF** q4_k_m (circa 2,5 GB), esportato da unsloth con llama.cpp.
+5. **Prova** sui 9 oggetti del banco: `kurva3d-ai-test --bench --gguf modello.gguf --compact`.
+   Un modello addestrato riceve le istruzioni brevi (`CompactSystemPrompt()`, senza esempi):
+   sono le stesse di `tools/ai-train/system_prompt.txt`, e un test controlla che restino uguali.
+
+Licenze: Qwen3, unsloth, PEFT, TRL e transformers sono Apache 2.0, llama.cpp e' MIT; gli esempi
+sono generati da noi. Il modello addestrato si puo' quindi distribuire con Kurva3D.
+Nel catalogo un modello addestrato avra' `finetuned = true` (istruzioni brevi).

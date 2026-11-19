@@ -23,6 +23,7 @@ struct ModelInfo {
   bool listed = true;               // false: solo per le prove automatiche
   int layers = 0;                   // strati del modello (per dividere tra GPU e CPU)
   bool preferred = true;            // famiglia da cui si sceglie il modello consigliato
+  bool finetuned = false;           // addestrato su Kurva3D: istruzioni brevi, senza esempi
 };
 
 // Modelli consentiti (licenza Apache 2.0 o MIT), dal piu' piccolo al piu' grande.
@@ -76,6 +77,11 @@ std::string Grammar();
 
 // Istruzioni di sistema per il modello (linguaggio dei comandi ed esempi).
 std::string SystemPrompt();
+// Istruzioni senza gli script di esempio: per i modelli addestrati su Kurva3D
+// (uguali a tools/ai-train/system_prompt.txt, usato per l'addestramento).
+std::string CompactSystemPrompt();
+// Istruzioni adatte al modello (brevi per i modelli addestrati).
+std::string SystemPromptFor(const ModelInfo* m);
 // Righe di comando di esempio usate nelle istruzioni (verificate dai test).
 std::vector<std::string> ReferenceExamples();
 

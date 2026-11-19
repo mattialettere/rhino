@@ -2042,6 +2042,17 @@ int main(int argc, char** argv) {
       blocks++;
     }
     CHECK(blocks == 6);
+#ifdef KURVA3D_SOURCE_DIR
+    {  // istruzioni usate per l'addestramento = istruzioni brevi del programma
+      std::ifstream f(std::string(KURVA3D_SOURCE_DIR) + "/tools/ai-train/system_prompt.txt", std::ios::binary);
+      std::stringstream ss;
+      ss << f.rdbuf();
+      const bool same = ss.str() == ai::CompactSystemPrompt();
+      if (!same) std::printf("  tools/ai-train/system_prompt.txt diverso da CompactSystemPrompt(): rigeneralo\n");
+      CHECK(same);
+      CHECK(ai::CompactSystemPrompt().find("```kurva") == std::string::npos);
+    }
+#endif
     // tabella dei comandi: ogni esempio funziona e rispetta la forma degli argomenti
     for (const auto& spec : ai::CommandSpecs()) {
       CHECK(ai::ArgumentsMatch(spec.example));

@@ -94,7 +94,9 @@ class Generator : public QObject {
   Generator(cad::Engine& engine, QObject* parent = nullptr);
   // maxRepairs: nuovi tentativi se Kurva3D rifiuta lo script; con useGrammar il modello
   // puo' scrivere solo comandi conosciuti nella forma giusta (grammatica GBNF di llama.cpp)
-  void Run(int port, const QString& request, int maxRepairs = 3, bool useGrammar = true);
+  // systemPrompt vuoto: istruzioni complete con gli esempi (ai::SystemPrompt)
+  void Run(int port, const QString& request, int maxRepairs = 3, bool useGrammar = true,
+           const QString& systemPrompt = {});
   void Cancel();
   bool Busy() const { return m_reply != nullptr; }
   int Attempts() const { return m_repairs + 1; }  // richieste fatte al modello nell'ultima Run
