@@ -1,6 +1,6 @@
 ## Come provarlo
 
-**Mac** (macOS 15 o successivo): scarica il `.dmg` per il tuo Mac (`AppleSilicon` per M1/M2/M3/M4, `Intel` per i Mac Intel), aprilo e trascina Kurva3D in Applicazioni. I `.dmg` si aggiungono a questa release appena finisce la loro compilazione.
+**Mac** (macOS 15 o successivo): scarica il `.dmg` per il tuo Mac (`AppleSilicon` per M1/M2/M3/M4, `Intel` per i Mac Intel), aprilo e trascina Kurva3D in Applicazioni. La prima volta apri l'app con clic destro → Apri (non è ancora firmata da Apple). La versione per Mac ha le stesse funzioni di quella per Windows, compresi assistente AI, script Python, gli strumenti `cad-console` e `3dm-info` (in `Kurva3D.app/Contents/MacOS`) e la cartella `Esempi`.
 
 **Windows**:
 
@@ -16,6 +16,13 @@ Non serve installare nulla: Qt, OpenCASCADE e il runtime di Visual C++ sono già
 - Tutti i 303 comandi di Rhino 8 inventariati, più 5 di mappatura delle texture (elenco in `docs/COMANDI.md`): curve, superfici, solidi e booleane (OpenCASCADE), trasformazioni, Trim/Extend/Fillet/Chamfer, blocchi e gruppi, quote e testi (Text, Dim, DimAligned, DimRotated, DimRadius, DimDiameter, DimAngle, Leader, Centermark), analisi.
 - Osnap (Fine, Vicino, Punto, Medio, Centro, Intersezione, Perpendicolare, Quadrante, Nodo, Vertice), viste Top/Front/Right/Perspective e le altre dal menu del titolo, modalità Wireframe/Shaded/Ghosted/X-Ray.
 - Pannello Proprietà modificabile (nome, livello, colore).
+- Novità della 0.14 (all'avvio una finestra le riassume; si riapre dal menu ? → *Novità di questa versione*):
+  - **File**: Import/Export .3dm con blocchi annidati, materiali, tipi di linea, gruppi, quote e retini; formati **glTF/GLB**, **3MF**, **PLY** e **OBJ con materiali**; **Worksession** (file .3dm collegati come riferimento, oggetti bloccati).
+  - **Modellazione**: FilletEdge a raggio variabile, ChamferEdge asimmetrico, MergeSrf, SplitFace, MatchCrv, ShrinkWrap, OffsetMesh, MeshRepair, ExtractRenderMesh, DimArc, DimCurveLength; Make2D dalla vista attiva; Gumball allineato al mondo, al CPlane o all'oggetto.
+  - **Analisi**: GCon, EdgeContinuity, PointDeviation, CurvatureAnalysis a falsi colori, EMap, finestra Opzioni analisi.
+  - **Interfaccia**: comandi anche con i nomi italiani, opzioni cliccabili sulla riga di comando, finestra **Tipi di linea**.
+  - **Assistente AI** più preciso: solo comandi validi con argomenti controllati, nuovi tentativi automatici, esempi sedia e lampada, modelli Qwen2.5-Coder nel catalogo.
+  - **Mac** allineato a Windows: stessa versione, stessa release.
 - Novità della 0.9.2: **Assistente AI** con più senso delle proporzioni. Il modello riceve le misure tipiche dei mobili e la regola di dare a ogni pezzo la sua altezza (base a terra, piano in alto), più l'esempio del tavolo rotondo a gamba centrale. Se mette dei pezzi uno dentro l'altro o identici nello stesso punto, il programma glielo segnala e gli fa correggere lo script prima di mostrarlo.
 - Novità della 0.9.1: **Assistente AI** più affidabile. Se una riga dei comandi generati non funziona, l'anteprima mostra comunque le righe giuste, la riga sbagliata resta evidenziata e si può correggere e riprovare (prima non succedeva niente e Conferma restava spento). Istruzioni al modello migliorate per i pezzi piatti di forma qualsiasi (piani a rombo, triangolo, L) e per la posizione delle parti.
 - Novità della 0.9:
@@ -42,4 +49,4 @@ Non serve installare nulla: Qt, OpenCASCADE e il runtime di Visual C++ sono già
 
 ## Limiti noti
 
-È una versione di prova: nulla è ancora stato confrontato con Rhino 8 reale. Le differenze note sono in `docs/DIFFERENZE.md`, lo stato dei file `.3dm` in `docs/COMPATIBILITA.md`. Compilazione, test automatici e prova di avvio della finestra passati su Windows (GitHub Actions).
+È una versione di prova: nulla è ancora stato confrontato con Rhino 8 reale. Le differenze note sono in `docs/DIFFERENZE.md`, lo stato dei file `.3dm` in `docs/COMPATIBILITA.md`. Compilazione, test automatici e prova di avvio della finestra passati su Windows e su Mac (GitHub Actions).

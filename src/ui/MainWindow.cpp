@@ -6,6 +6,7 @@
 #include "ui/ScriptEditor.h"
 #include "ui/NodeEditor.h"
 #include "ui/Theme.h"
+#include "ui/WhatsNew.h"
 #include "ui/LayoutView.h"
 #include "ui/RenderWindow.h"
 #include <QActionGroup>
@@ -693,6 +694,7 @@ void MainWindow::BuildMenus() {
   });
   aiMenu->addAction("Modello dell'assistente…", this, [this] { m_ai->ShowModelDialog(); });
   auto* help = menuBar()->addMenu("&?");
+  help->addAction("Novità di questa versione", this, [this] { ShowWhatsNew(this); });
   help->addAction("Elenco comandi", this, [this] { Submit("?"); });
   help->addAction("Licenza d'uso", this, [this] { ShowTextFile("EULA.txt", "Licenza d'uso di Kurva3D"); });
   help->addAction("Componenti di terze parti", this, [this] { ShowTextFile("THIRD_PARTY_NOTICES.txt", "Componenti di terze parti"); });

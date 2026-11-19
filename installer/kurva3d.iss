@@ -1,5 +1,5 @@
 ; Installer di Kurva3D (Inno Setup 6). Compilato dalla CI Windows:
-;   ISCC.exe /DAppVersion=0.9.2 /DSourceDir=..\dist /DOutputDir=..\out installer\kurva3d.iss
+;   ISCC.exe /DAppVersion=0.14.0 /DSourceDir=..\dist /DOutputDir=..\out installer\kurva3d.iss
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif

@@ -1,6 +1,7 @@
 <RCC>
   <qresource prefix="/">
     <file>kurva3d.png</file>
+    <file>novita.html</file>
     <file>theme/check.png</file>
     <file>theme/check@2x.png</file>
     <file>theme/up.png</file>

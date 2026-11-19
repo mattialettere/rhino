@@ -1,6 +1,6 @@
 # Compilazione di Kurva3D: Windows 64 bit a ogni push; macOS (Apple Silicon e
-# Intel) solo a mano (Actions -> Build -> Run workflow, "mac" attivo), quando
-# il titolare decide di convertire la versione piu' avanzata.
+# Intel) a mano (Actions -> Build -> Run workflow, "mac" attivo) oppure quando il
+# messaggio del commit contiene [mac]: cosi' Windows e Mac escono nella stessa Release.
 # Se il file RELEASE contiene una versione nuova si crea la Release; se esiste
 # gia' e si e' compilato anche per Mac, i dmg si aggiungono alla Release.
 name: Build
@@ -160,7 +160,7 @@ jobs:
       - name: Prova dell'interfaccia
         shell: pwsh
         run: |
-          $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList '--script', "$PWD\tests\ui_smoke.txt", '--screenshot', "$PWD\dist\screenshot-avvio.png" -PassThru
+          $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList '--whats-new', '--script', "$PWD\tests\ui_smoke.txt", '--screenshot', "$PWD\dist\screenshot-avvio.png" -PassThru
           if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "kurva3d.exe non si e' chiuso entro 2 minuti" }
           Write-Host "Codice di uscita: $($p.ExitCode)"
           if (-not (Test-Path dist\screenshot-avvio.png)) { throw "screenshot non creato: la finestra non si e' aperta" }
@@ -211,7 +211,7 @@ jobs:
           path: dist
 
   macos:
-    if: github.event_name == 'workflow_dispatch' && inputs.mac
+    if: (github.event_name == 'workflow_dispatch' && inputs.mac) || contains(github.event.head_commit.message, '[mac]')
     strategy:
       fail-fast: false
       matrix:
@@ -266,6 +266,8 @@ jobs:
         run: |
           mkdir -p dist
           cp -R build/kurva3d.app dist/Kurva3D.app
+          # strumenti a riga di comando, come nello zip per Windows
+          cp build/cad-console build/3dm-info dist/Kurva3D.app/Contents/MacOS/
           # Python dentro l'app: libpython in Frameworks, libreria standard in Resources/python
           C=dist/Kurva3D.app/Contents
           mkdir -p "$C/Frameworks" "$C/Resources/python/lib"
@@ -273,15 +275,20 @@ jobs:
           install_name_tool -id @executable_path/../Frameworks/libpython3.12.dylib "$C/Frameworks/libpython3.12.dylib"
           old=$(otool -L "$C/MacOS/kurva3d" | awk '/libpython3\.12/{print $1}')
           [ -n "$old" ] || { echo "kurva3d non usa libpython"; exit 1; }
-          install_name_tool -change "$old" @executable_path/../Frameworks/libpython3.12.dylib "$C/MacOS/kurva3d"
+          for exe in kurva3d cad-console 3dm-info; do
+            o=$(otool -L "$C/MacOS/$exe" | awk '/libpython3\.12/{print $1}')
+            [ -z "$o" ] || install_name_tool -change "$o" @executable_path/../Frameworks/libpython3.12.dylib "$C/MacOS/$exe"
+          done
           rsync -a --exclude test --exclude idlelib --exclude tkinter --exclude turtledemo --exclude ensurepip \
             --exclude site-packages --exclude '__pycache__' --exclude '_tkinter*' --exclude 'config-3.12-*' \
             "$PBS/lib/python3.12" "$C/Resources/python/lib/"
           mkdir -p "$C/Resources/python/lib/python3.12/site-packages"
           du -sh "$C/Resources/python"
-          "$(brew --prefix qt)/bin/macdeployqt" dist/Kurva3D.app -always-overwrite
+          "$(brew --prefix qt)/bin/macdeployqt" dist/Kurva3D.app -always-overwrite \
+            -executable=dist/Kurva3D.app/Contents/MacOS/cad-console -executable=dist/Kurva3D.app/Contents/MacOS/3dm-info
           R=dist/Kurva3D.app/Contents/Resources
-          cp EULA.txt LICENSE.txt THIRD_PARTY_NOTICES.txt "$R/"
+          cp EULA.txt LICENSE.txt THIRD_PARTY_NOTICES.txt README.md "$R/"
+          cp -R examples "$R/examples"
           cp -R licenses "$R/licenses"
           cp "$PBS/lib/python3.12/LICENSE.txt" "$R/licenses/Python-PSF-LICENSE.txt"
           # nessuna libreria deve restare collegata a Homebrew
@@ -350,13 +357,13 @@ jobs:
             ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | awk '{print $2}')
             if [ -z "$ID" ]; then echo "certificato Developer ID Application non trovato"; exit 1; fi
             # prima gli eseguibili e le librerie di llama.cpp e i moduli di Python (non coperti da --deep)
-            find dist/Kurva3D.app/Contents/Helpers dist/Kurva3D.app/Contents/Resources/python -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
+            find dist/Kurva3D.app/Contents/Helpers dist/Kurva3D.app/Contents/Resources/python dist/Kurva3D.app/Contents/MacOS/cad-console dist/Kurva3D.app/Contents/MacOS/3dm-info -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec \
               codesign --force --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" {} \;
             codesign --force --deep --options runtime --timestamp --entitlements res/entitlements.plist -s "$ID" dist/Kurva3D.app
             echo "FIRMATA=1" >> "$GITHUB_ENV"
           else
             echo "Nessun certificato nei Secrets: firma ad hoc (app non firmata da Apple)"
-            find dist/Kurva3D.app/Contents/Helpers dist/Kurva3D.app/Contents/Resources/python -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec codesign --force -s - {} \;
+            find dist/Kurva3D.app/Contents/Helpers dist/Kurva3D.app/Contents/Resources/python dist/Kurva3D.app/Contents/MacOS/cad-console dist/Kurva3D.app/Contents/MacOS/3dm-info -type f \( -perm -111 -o -name "*.dylib" -o -name "*.so" \) -exec codesign --force -s - {} \;
             codesign --force --deep -s - dist/Kurva3D.app
           fi
           codesign --verify --deep --strict --verbose=2 dist/Kurva3D.app
@@ -364,7 +371,7 @@ jobs:
       # Avvio reale dell'app impacchettata: script, screenshot e uscita
       - name: Prova dell'interfaccia
         run: |
-          ( dist/Kurva3D.app/Contents/MacOS/kurva3d --script "$PWD/tests/ui_smoke.txt" --screenshot "$PWD/screenshot-mac.png" & echo $! > pid )
+          ( dist/Kurva3D.app/Contents/MacOS/kurva3d --whats-new --script "$PWD/tests/ui_smoke.txt" --screenshot "$PWD/screenshot-mac.png" & echo $! > pid )
           for i in $(seq 1 120); do kill -0 $(cat pid) 2>/dev/null || break; sleep 1; done
           if kill -0 $(cat pid) 2>/dev/null; then kill $(cat pid); echo "l'app non si e' chiusa entro 2 minuti"; exit 1; fi
           test -s screenshot-mac.png || { echo "screenshot non creato"; exit 1; }
@@ -379,9 +386,14 @@ jobs:
           ( env -u KURVA3D_PYTHONHOME dist/Kurva3D.app/Contents/MacOS/kurva3d --script "$PWD/pytest.txt" --screenshot "$RUNNER_TEMP/py.png" & echo $! > pid )
           for i in $(seq 1 120); do kill -0 $(cat pid) 2>/dev/null || break; sleep 1; done
           kill $(cat pid) 2>/dev/null || true
-          mv "$PBS.via" "$PBS"
           cat "$RUNNER_TEMP/py-ok.txt" || true
-          grep -q "python-ok 1" "$RUNNER_TEMP/py-ok.txt" || { echo "lo script Python non e' partito con il Python dell'app"; exit 1; }
+          grep -q "python-ok 1" "$RUNNER_TEMP/py-ok.txt" || { mv "$PBS.via" "$PBS"; echo "lo script Python non e' partito con il Python dell'app"; exit 1; }
+          # anche cad-console dentro l'app (come la prova su Windows)
+          printf '%s\n' '-_RunPythonScript (import rhinoscriptsyntax as rs, json; rs.AddCircle(rs.WorldXYPlane(), 5); print("python-ok", json.dumps(len(rs.AllObjects()))))' > pytest2.txt
+          out=$(env -u KURVA3D_PYTHONHOME dist/Kurva3D.app/Contents/MacOS/cad-console pytest2.txt 2>&1 || true)
+          mv "$PBS.via" "$PBS"
+          echo "$out"
+          echo "$out" | grep -q "python-ok 1" || { echo "cad-console: Python dell'app non partito"; exit 1; }
 
       - name: Crea il dmg
         run: |
@@ -391,6 +403,7 @@ jobs:
           cp -R dist/Kurva3D.app dmg/
           ln -s /Applications dmg/Applicazioni
           cp EULA.txt "dmg/Licenza d'uso.txt"
+          cp -R examples dmg/Esempi
           hdiutil create -volname "Kurva3D $VER" -srcfolder dmg -ov -format UDZO "out/$DMG"
           echo "DMG=out/$DMG" >> "$GITHUB_ENV"
 
