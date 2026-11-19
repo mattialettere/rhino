@@ -5,6 +5,7 @@
 #include "ui/Theme.h"
 #include "ui/Viewport.h"
 #include <QMainWindow>
+#include <QFontComboBox>
 #include <functional>
 #include <sstream>
 #include <utility>
@@ -115,6 +116,10 @@ private:
   QComboBox* m_propColor = nullptr;
   QPushButton* m_propSwatch = nullptr;
   QWidget* m_propForm = nullptr;
+  QWidget* m_propTextForm = nullptr;  // testo, altezza e carattere delle annotazioni
+  QLineEdit* m_propText = nullptr;
+  QLineEdit* m_propHeight = nullptr;
+  QFontComboBox* m_propFont = nullptr;
   QLabel* m_coords = nullptr;
   QLabel* m_units = nullptr;  // unita' del documento nella barra di stato
   QGridLayout* m_grid = nullptr;

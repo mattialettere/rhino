@@ -399,6 +399,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Comando | Stato |
 |---|---|
 | Text | ✔ |
+| TextProperties | ✔ (D-074: in Rhino 8 si usa il pannello Proprieta', qui anche come comando) |
 | TextObject | ✔ |
 | Dim | ✔ |
 | DimAligned | ✔ |

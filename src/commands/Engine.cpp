@@ -392,7 +392,7 @@ std::map<std::string, std::string> Engine::ReadOptions(TokenStream& ts, const st
       // Name="Con spazi": il valore tra virgolette e' il token successivo
       if (val.empty() && !ts.AtEnd() && !IsEnter(ts.Peek())) { val = ts.Peek(); ts.Next(); }
       // nomi e caratteri mantengono maiuscole e minuscole
-      opts[key] = key == "name" || key == "font" || key == "file" ? val : NormalizeName(val);
+      opts[key] = key == "name" || key == "font" || key == "file" || key == "text" ? val : NormalizeName(val);
     } else if (switches.count(NormalizeName(t))) {
       opts[NormalizeName(t)] = "yes";
       ts.Next();

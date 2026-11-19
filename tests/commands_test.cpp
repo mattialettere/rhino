@@ -621,6 +621,27 @@ int main(int argc, char** argv) {
       const auto* t = ON_Text::Cast(c.Last());
       CHECK(t && ToUtf8(t->PlainText()).find('\n') != std::string::npos);
     });
+    // Pannello Proprieta': altezza, carattere e testo delle annotazioni esistenti
+    Case("TextProperties", "_Text 0,0 \"Prima\" Height=3\n_Dim 0,-20 40,-20 20,-28\n_SelAll -_TextProperties Height=7 Font=\"Courier New\"",
+         [&](Ctx& c) {
+      int n = 0;
+      for (const auto* g : c.Objects()) {
+        const auto* a = ON_Annotation::Cast(g);
+        if (!a) continue;
+        n++;
+        const ON_DimStyle& st = a->DimensionStyle(ParentDimStyle(c.doc.Model(), *a));
+        CHECK(Near(a->TextHeight(&st), 7.0));
+        CHECK(ToUtf8(a->Font(&st).FamilyName()).find("Courier") != std::string::npos);
+        auto d = display(c, g);
+        CHECK(!d.labels.empty() && Near(d.labels[0].height, 7.0) && d.labels[0].font.find("Courier") != std::string::npos);
+      }
+      CHECK(n == 2);
+      CHECK(c.e.Run("_SelAll\n-_TextProperties Text=\"Pianta nuova\""));
+      bool found = false;
+      for (const auto* g : c.Objects())
+        if (const auto* t = ON_Text::Cast(g)) found = found || ToUtf8(t->PlainText()) == "Pianta nuova";
+      CHECK(found);
+    });
     Case("Dim_orizzontale", "_Dim 0,0 40,5 20,-8", [&](Ctx& c) {
       const auto* d = ON_DimLinear::Cast(c.Last());
       CHECK(d && Near(d->Measurement(), 40.0, 1e-9));

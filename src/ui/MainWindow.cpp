@@ -10,6 +10,7 @@
 #include "ui/LayoutView.h"
 #include "ui/RenderWindow.h"
 #include "commands/Exchange.h"
+#include "commands/Annotation.h"
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
@@ -28,6 +29,7 @@
 #include <QColorDialog>
 #include <QComboBox>
 #include <QFormLayout>
+#include <QFontComboBox>
 #include <QPushButton>
 #include <QCompleter>
 #include <QStringListModel>
@@ -324,6 +326,19 @@ MainWindow::MainWindow(QWidget* parent)
   form->addRow("Livello", m_propLayer);
   form->addRow("Colore", colorRow);
   pv->addWidget(m_propForm);
+  // Testo, quote e direttrici: come la sezione Testo del pannello Proprieta' di Rhino 8
+  m_propTextForm = new QWidget;
+  auto* tform = new QFormLayout(m_propTextForm);
+  tform->setContentsMargins(0, 6, 0, 0);
+  m_propText = new QLineEdit;
+  m_propText->setPlaceholderText("testo (\\n per andare a capo)");
+  m_propHeight = new QLineEdit;
+  m_propFont = new QFontComboBox;
+  tform->addRow("Testo", m_propText);
+  tform->addRow("Altezza", m_propHeight);
+  tform->addRow("Carattere", m_propFont);
+  m_propTextForm->setVisible(false);
+  pv->addWidget(m_propTextForm);
   m_props = new QPlainTextEdit;
   m_props->setReadOnly(true);
   pv->addWidget(m_props, 1);
@@ -333,6 +348,26 @@ MainWindow::MainWindow(QWidget* parent)
     m_propName->setModified(false);
     const QString n = m_propName->text();
     PropertyCommand("-_SetObjectName \"" + n + "\"");
+  });
+  connect(m_propText, &QLineEdit::editingFinished, this, [this] {
+    if (m_engine.Selection().empty() || !m_propText->isModified()) return;
+    m_propText->setModified(false);
+    QString t = m_propText->text();
+    t.replace('"', "'");
+    PropertyCommand("-_TextProperties Text=\"" + t + "\"");
+  });
+  connect(m_propHeight, &QLineEdit::editingFinished, this, [this] {
+    if (m_engine.Selection().empty() || !m_propHeight->isModified()) return;
+    m_propHeight->setModified(false);
+    bool ok = false;
+    const double h = QLocale().toDouble(m_propHeight->text(), &ok);
+    const double h2 = ok ? h : m_propHeight->text().replace(',', '.').toDouble(&ok);
+    if (ok && h2 > 0) PropertyCommand(QString("-_TextProperties Height=%1").arg(h2, 0, 'g', 10));
+    else RefreshPanels();
+  });
+  connect(m_propFont, &QFontComboBox::activated, this, [this](int) {
+    if (!m_engine.Selection().empty())
+      PropertyCommand("-_TextProperties Font=\"" + m_propFont->currentFont().family() + "\"");
   });
   connect(m_propLayer, &QComboBox::activated, this, [this](int) {
     if (!m_engine.Selection().empty()) PropertyCommand("-_ChangeLayer \"" + m_propLayer->currentText() + "\"");
@@ -1426,6 +1461,41 @@ void MainWindow::RefreshPanels() {
     const QColor qc = color == ON_Color::UnsetColor ? QColor(Qt::transparent) : QColor(color.Red(), color.Green(), color.Blue());
     m_propSwatch->setStyleSheet(QString("background-color: %1; border: 1px solid #555;").arg(qc.name(QColor::HexArgb)));
     m_propSwatch->setPalette(QPalette(qc));
+  }
+  // sezione Testo: visibile quando tutti gli oggetti selezionati sono annotazioni
+  {
+    const QSignalBlocker b1(m_propText), b2(m_propHeight), b3(m_propFont);
+    bool allAnn = !sel.empty(), first = true;
+    QString text, family;
+    double height = 0;
+    for (const auto& id : sel) {
+      const auto* o = m_engine.Object(id);
+      const auto* a = o ? ON_Annotation::Cast(o->Geometry(nullptr)) : nullptr;
+      if (!a) { allAnn = false; break; }
+      const ON_DimStyle& st = a->DimensionStyle(ParentDimStyle(m, *a));
+      QString t;
+      if (const auto* d = ON_Dimension::Cast(a)) {
+        t = QString::fromStdString(ToUtf8(ON_wString(d->PlainUserText())));
+        if (t.isEmpty()) t = "<>";  // come Rhino: <> e' il valore misurato
+      }
+      else t = QString::fromStdString(ToUtf8(a->PlainText())).remove('\r').replace('\n', "\\n");
+      const double h = a->TextHeight(&st);
+      ON_wString fw = a->Font(&st).FamilyName();
+      const QString f = QString::fromStdString(ToUtf8(fw));
+      if (first) { text = t; height = h; family = f; first = false; continue; }
+      if (t != text) text.clear();
+      if (std::fabs(h - height) > 1e-12) height = 0;
+      if (f != family) family.clear();
+    }
+    m_propTextForm->setVisible(allAnn);
+    if (allAnn) {
+      m_propText->setText(text);
+      m_propText->setModified(false);
+      m_propHeight->setText(height > 0 ? QLocale().toString(height, 'g', 6) : QString());
+      m_propHeight->setModified(false);
+      if (family.isEmpty()) m_propFont->setCurrentIndex(-1);
+      else m_propFont->setCurrentFont(QFont(family));
+    }
   }
   for (const auto& id : sel) {
     const auto* o = m_engine.Object(id);
