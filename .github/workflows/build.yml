@@ -140,7 +140,22 @@ jobs:
           $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
           & dist\kurva3d-ai-test.exe --model qwen3-0.6b --prompt "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro"
           if ($LASTEXITCODE -ne 0) { throw "prova dell'assistente AI fallita" }
-          Remove-Item dist\kurva3d-ai-test.exe
+
+      # Confronto dei modelli (solo se il messaggio del commit contiene [ai-bench]): richieste
+      # del banco di prova (tavolo con gamba centrale, sedia, lampada...), con e senza grammatica
+      - name: Banco di prova AI (confronto dei modelli)
+        if: contains(github.event.head_commit.message, '[ai-bench]')
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 200
+        run: |
+          $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
+          & dist\kurva3d-ai-test.exe --bench --both --models qwen3-1.7b,qwen2.5-coder-1.5b
+          & dist\kurva3d-ai-test.exe --bench --models qwen3-4b,qwen2.5-coder-7b,qwen3-8b
+
+      - name: Togli lo strumento di prova AI dalla distribuzione
+        shell: pwsh
+        run: Remove-Item dist\kurva3d-ai-test.exe
 
       # Avvio reale di kurva3d.exe dalla cartella dello zip: script, screenshot e uscita
       - name: Prova dell'interfaccia

@@ -22,6 +22,7 @@ struct ModelInfo {
   std::string license;              // "apache-2.0" o "mit" (verificata anche al download)
   bool listed = true;               // false: solo per le prove automatiche
   int layers = 0;                   // strati del modello (per dividere tra GPU e CPU)
+  bool preferred = true;            // famiglia da cui si sceglie il modello consigliato
 };
 
 // Modelli consentiti (licenza Apache 2.0 o MIT), dal piu' piccolo al piu' grande.
@@ -50,6 +51,28 @@ double ModelBudgetGB(const HardwareInfo& hw, bool* useGpu = nullptr);
 int RecommendModel(const HardwareInfo& hw);
 // Il modello entra nella memoria disponibile?
 bool ModelFits(const ModelInfo& m, const HardwareInfo& hw);
+
+// Comandi che l'assistente conosce, con la forma dei loro argomenti. Da questa
+// tabella vengono l'elenco nelle istruzioni, la grammatica che vincola il modello
+// e il controllo degli argomenti. Codici degli argomenti (separati da spazi):
+//   P punto x,y[,z]   P+ uno o piu' punti   N numero   I intero   S testo tra virgolette
+//   W+ uno o piu' nomi   C colore r,g,b   Chiave=N|I|S opzione con valore
+//   a|b una delle parole indicate   altro: parola fissa (es. _Solid=_Yes)
+struct CommandSpec {
+  const char* name;
+  const char* args;
+  bool named;           // ammette " => Nome"
+  bool creates;         // elencato tra i comandi che creano oggetti
+  const char* example;  // riga d'esempio (verificata dai test)
+  const char* note;     // spiegazione per il modello
+};
+const std::vector<CommandSpec>& CommandSpecs();
+const CommandSpec* FindSpec(const std::string& commandName);
+// La riga rispetta la forma degli argomenti del suo comando? (comandi fuori tabella: true)
+bool ArgumentsMatch(const std::string& line);
+// Grammatica GBNF di llama.cpp: la risposta puo' essere solo un blocco ```kurva
+// con righe di commento "# ..." e comandi della tabella scritti nella forma giusta.
+std::string Grammar();
 
 // Istruzioni di sistema per il modello (linguaggio dei comandi ed esempi).
 std::string SystemPrompt();

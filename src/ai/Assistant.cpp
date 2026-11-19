@@ -5,6 +5,9 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <map>
+#include <regex>
 #include <set>
 #include <sstream>
 
@@ -21,6 +24,12 @@ const std::vector<ModelInfo>& Catalog() {
       {"qwen3-8b", "Qwen3 8B (16 GB di memoria)", "Qwen/Qwen3-8B-GGUF", {"Q4_K_M", "Q5_K_M", "Q8_0"}, 5.0, "apache-2.0", true, 36},
       {"qwen3-14b", "Qwen3 14B (32 GB di memoria)", "Qwen/Qwen3-14B-GGUF", {"Q4_K_M", "Q5_K_M", "Q8_0"}, 9.0, "apache-2.0", true, 40},
       {"qwen3-32b", "Qwen3 32B (workstation, 64 GB o GPU da 24 GB)", "Qwen/Qwen3-32B-GGUF", {"Q4_K_M", "Q5_K_M", "Q8_0"}, 19.8, "apache-2.0", true, 64},
+      // Qwen2.5-Coder, addestrati sul codice: 0.5B, 1.5B, 7B, 14B e 32B sono Apache 2.0
+      // (il 3B no: licenza Qwen Research, quindi escluso). Alcuni file GGUF sono divisi in parti.
+      {"qwen2.5-coder-1.5b", "Qwen2.5-Coder 1.5B (codice, meno di 8 GB)", "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", {"Q8_0"}, 1.9, "apache-2.0", true, 28, false},
+      {"qwen2.5-coder-7b", "Qwen2.5-Coder 7B (codice, 16 GB di memoria)", "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF", {"Q4_K_M", "Q5_K_M"}, 4.7, "apache-2.0", true, 28, false},
+      {"qwen2.5-coder-14b", "Qwen2.5-Coder 14B (codice, 32 GB di memoria)", "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF", {"Q4_K_M", "Q5_K_M"}, 9.0, "apache-2.0", true, 48, false},
+      {"qwen2.5-coder-32b", "Qwen2.5-Coder 32B (codice, workstation)", "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF", {"Q4_K_M", "Q5_K_M"}, 19.9, "apache-2.0", true, 64, false},
   };
   return c;
 }
@@ -65,38 +74,204 @@ int RecommendModel(const HardwareInfo& hw) {
   const auto& c = Catalog();
   int best = -1, smallest = -1;
   for (int i = 0; i < (int)c.size(); i++) {
-    if (!c[i].listed) continue;
+    if (!c[i].listed || !c[i].preferred) continue;
     if (smallest < 0) smallest = i;
     if (ModelFits(c[i], hw)) best = i;
   }
   return best >= 0 ? best : smallest;
 }
 
+// --- Comandi conosciuti dall'assistente ---------------------------------------------------
+const std::vector<CommandSpec>& CommandSpecs() {
+  static const std::vector<CommandSpec> s = {
+      // comandi che creano oggetti
+      {"Line", "P P", true, true, "_Line 0,0,0 100,0,0", "line from point to point"},
+      {"Polyline", "P P+ _Close|_Enter", true, true, "_Polyline 0,0 50,0 50,30 0,30 _Close",
+       "polyline through points, _Close closes it (or _Enter to leave it open)"},
+      {"Rectangle", "P P", true, true, "_Rectangle 0,0 80,40", "rectangle on the XY plane from corner to opposite corner"},
+      {"RoundedRectangle", "P P N", true, true, "_RoundedRectangle 0,0 80,40 5",
+       "rectangle with rounded corners (last number = corner radius)"},
+      {"Circle", "P N", true, true, "_Circle 0,0,0 25", "circle: centre, radius"},
+      {"Arc", "P P P", true, true, "_Arc 0,0 10,0 0,10", "arc: centre, start point, end point (counterclockwise)"},
+      {"Ellipse", "P P P", true, true, "_Ellipse 0,0 30,0 0,15", "ellipse: centre, end of first axis, end of second axis"},
+      {"Polygon", "NumSides=I P P", true, true, "_Polygon NumSides=6 0,0 20,0", "regular polygon: centre, a corner"},
+      {"InterpCrv", "P P+ _Enter", true, true, "_InterpCrv 0,0 20,10 40,0 60,10 _Enter",
+       "smooth curve through the points (3D points allowed), _Enter to finish"},
+      {"Helix", "Turns=N P P P", true, true, "_Helix Turns=5 0,0,0 0,0,50 10,0,0",
+       "helix: axis start, axis end, point at the radius"},
+      {"Box", "P P N", true, true, "_Box 0,0,0 100,50 30", "box: base corner, opposite base corner (x,y), height"},
+      {"Sphere", "P N", true, true, "_Sphere 0,0,50 25", "sphere: centre, radius"},
+      {"Cylinder", "P N N", true, true, "_Cylinder 0,0,0 20 60", "cylinder: base centre, radius, height (along +Z)"},
+      {"Cone", "P N N", true, true, "_Cone 0,0,0 20 40", "cone: base centre, base radius, height (along +Z)"},
+      {"TruncatedCone", "P N N N", true, true, "_TruncatedCone 0,0,0 20 30 10",
+       "truncated cone: base centre, base radius, height, top radius"},
+      {"Tube", "P N N N", true, true, "_Tube 0,0,0 20 17 50",
+       "tube (hollow cylinder): base centre, outer radius, inner radius, height"},
+      {"Torus", "P N N", true, true, "_Torus 0,0,0 40 5", "torus lying on the XY plane: centre, major radius, minor radius"},
+      {"Pyramid", "NumSides=I P P N", true, true, "_Pyramid NumSides=4 0,0,0 20,20 30", "pyramid: base centre, base corner, height"},
+      {"Ellipsoid", "P N N N", true, true, "_Ellipsoid 0,0,0 30 20 10", "ellipsoid: centre, radius x, radius y, radius z"},
+      {"Wedge", "P P N", true, true, "_Wedge 0,0,0 40,20 15", "wedge: base corner, opposite base corner, height"},
+      {"Text", "P S Height=N", true, true, "_Text 0,0,0 \"Kurva3D\" Height=10", "text: insertion point, text, height"},
+      // selezione
+      {"SelNone", "", false, false, "_SelNone", "clear the selection"},
+      {"SelName", "W+", false, false, "_SelName Body Hole", "select objects by name (in this order)"},
+      {"SelLast", "", false, false, "_SelLast", "select what the previous command created"},
+      {"SelAll", "", false, false, "_SelAll", "select everything"},
+      // comandi che agiscono sugli oggetti selezionati
+      {"BooleanUnion", "", true, false, "_BooleanUnion", "join the selected solids into one"},
+      {"BooleanDifference", "", true, false, "_BooleanDifference",
+       "subtract: the FIRST selected object is kept, the others are cut away"},
+      {"BooleanIntersection", "", true, false, "_BooleanIntersection", "keep only the common part"},
+      {"FilletEdge", "N", false, false, "_FilletEdge 2", "round all edges of the selected solid with radius 2"},
+      {"ChamferEdge", "N", false, false, "_ChamferEdge 1", "bevel all edges of the selected solid"},
+      {"Move", "P P", false, false, "_Move 0,0,0 10,0,0", "move from point to point"},
+      {"Copy", "P P+ _Enter", false, false, "_Copy 0,0,0 50,0,0 100,0,0 _Enter", "copies (one per destination point)"},
+      {"Rotate", "P N", false, false, "_Rotate 0,0,0 45", "rotate around the vertical axis through the point (degrees)"},
+      {"Rotate3D", "P P N", false, false, "_Rotate3D 0,0,0 1,0,0 90", "rotate around the axis from point to point"},
+      {"Scale", "P N", false, false, "_Scale 0,0,0 2", "scale from the point"},
+      {"Mirror", "P P", false, false, "_Mirror 0,0,0 0,10,0",
+       "mirror across the vertical plane through the two points (makes a copy)"},
+      {"ArrayPolar", "P I", false, false, "_ArrayPolar 0,0,0 6", "6 copies around the vertical axis through the point"},
+      {"ArrayLinear", "I P P", false, false, "_ArrayLinear 4 0,0,0 30,0,0",
+       "4 copies, spacing from the first to the second point"},
+      {"ExtrudeCrv", "_Solid=_Yes N", true, false, "_ExtrudeCrv _Solid=_Yes 20",
+       "extrude the selected closed curve into a solid 20 high"},
+      {"Revolve", "P P", true, false, "_Revolve 0,0,0 0,0,1", "revolve the selected curve 360 degrees around the axis"},
+      {"Loft", "", true, false, "_Loft", "surface through the selected curves (in order)"},
+      {"Pipe", "N", true, false, "_Pipe 2", "pipe of radius 2 around the selected curve"},
+      {"SetObjectColor", "C", false, false, "_SetObjectColor 200,30,30", "colour as r,g,b"},
+      {"Delete", "", false, false, "_Delete", "delete the selected objects"},
+  };
+  return s;
+}
+
+namespace {
+std::string LowerAscii(std::string s) {
+  for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+  return s;
+}
+std::vector<std::string> Words(const std::string& s) {
+  std::vector<std::string> w;
+  std::istringstream in(s);
+  for (std::string t; in >> t;) w.push_back(t);
+  return w;
+}
+bool IsValueCode(const std::string& c) { return c == "N" || c == "I" || c == "S"; }
+
+// Stessi elementi in GBNF e come espressione regolare (per il controllo e i test).
+const char* kNumRe = "-?[0-9]{1,8}(\\.[0-9]{1,6})?";
+const char* kIntRe = "[0-9]{1,4}";
+const char* kStrRe = "\"[^\"\\n]{1,400}\"";  // byte, non caratteri: piu' largo della grammatica
+const char* kNameRe = "[A-Za-z][A-Za-z0-9_]{0,31}";
+std::string PointRe() { return std::string(kNumRe) + "," + kNumRe + "(," + kNumRe + ")?"; }
+
+std::string QuoteGbnf(const std::string& s) {
+  std::string o = "\"";
+  for (char c : s) {
+    if (c == '"' || c == '\\') o += '\\';
+    o += c;
+  }
+  return o + "\"";
+}
+std::string EscapeRe(const std::string& s) {
+  std::string o;
+  for (char c : s) {
+    if (std::strchr("\\^$.|?*+()[]{}", c)) o += '\\';
+    o += c;
+  }
+  return o;
+}
+
+// Un codice d'argomento in GBNF (gbnf=true) o in espressione regolare.
+std::string ArgPattern(const std::string& code, bool gbnf) {
+  auto alt = [&](const std::vector<std::string>& v) {
+    std::string o = "(";
+    for (size_t i = 0; i < v.size(); i++) o += (i ? " | " : "") + (gbnf ? QuoteGbnf(v[i]) : EscapeRe(v[i]));
+    if (!gbnf) o.erase(std::remove(o.begin(), o.end(), ' '), o.end());
+    return o + ")";
+  };
+  if (code == "P") return gbnf ? "pt" : "(" + PointRe() + ")";
+  if (code == "P+") return gbnf ? "pt (\" \" pt)*" : "(" + PointRe() + ")( " + PointRe() + ")*";
+  if (code == "N") return gbnf ? "num" : std::string("(") + kNumRe + ")";
+  if (code == "I") return gbnf ? "int" : std::string("(") + kIntRe + ")";
+  if (code == "S") return gbnf ? "str" : std::string("(") + kStrRe + ")";
+  if (code == "W+") return gbnf ? "name (\" \" name)*" : std::string("(") + kNameRe + ")( " + kNameRe + ")*";
+  if (code == "C") return gbnf ? "int \",\" int \",\" int" : std::string(kIntRe) + "," + kIntRe + "," + kIntRe;
+  const size_t eq = code.find('=');
+  if (eq != std::string::npos && IsValueCode(code.substr(eq + 1))) {
+    const std::string key = code.substr(0, eq + 1);
+    return (gbnf ? QuoteGbnf(key) + " " : EscapeRe(key)) + ArgPattern(code.substr(eq + 1), gbnf);
+  }
+  if (code.find('|') != std::string::npos) {
+    std::vector<std::string> v;
+    std::istringstream in(code);
+    for (std::string t; std::getline(in, t, '|');) v.push_back(t);
+    return alt(v);
+  }
+  return gbnf ? QuoteGbnf(code) : EscapeRe(code);
+}
+
+std::string ArgsPattern(const CommandSpec& c, bool gbnf) {
+  std::string o;
+  for (const auto& w : Words(c.args)) o += gbnf ? " \" \" " + ArgPattern(w, true) : " " + ArgPattern(w, false);
+  return o;
+}
+}  // namespace
+
+const CommandSpec* FindSpec(const std::string& commandName) {
+  std::string n = LowerAscii(commandName);
+  n.erase(0, n.find_first_not_of("_-!"));
+  for (const auto& c : CommandSpecs())
+    if (LowerAscii(c.name) == n) return &c;
+  return nullptr;
+}
+
+bool ArgumentsMatch(const std::string& lineIn) {
+  std::string line = lineIn;
+  const size_t arrow = line.find("=>");
+  if (arrow != std::string::npos) line = line.substr(0, arrow);
+  const auto w = Words(line);  // spazi multipli ridotti a uno
+  if (w.empty()) return false;
+  const CommandSpec* c = FindSpec(w[0]);
+  if (!c) return true;
+  std::string norm;
+  for (size_t i = 1; i < w.size(); i++) norm += " " + w[i];
+  static std::map<std::string, std::regex> cache;
+  auto it = cache.find(c->name);
+  if (it == cache.end())
+    it = cache.emplace(c->name, std::regex(ArgsPattern(*c, false), std::regex::ECMAScript | std::regex::icase)).first;
+  return std::regex_match(norm, it->second);
+}
+
+std::string Grammar() {
+  std::ostringstream o;
+  o << "root ::= \"```kurva\\n\" (item \"\\n\"){1,120} \"```\"\n";
+  o << "item ::= comment | command\n";
+  o << "comment ::= \"# \" [^\\n]{1,160}\n";
+  o << "command ::= ";
+  const auto& s = CommandSpecs();
+  for (size_t i = 0; i < s.size(); i++) o << (i ? " | " : "") << "cmd" << i;
+  o << "\n";
+  for (size_t i = 0; i < s.size(); i++) {
+    o << "cmd" << i << " ::= " << QuoteGbnf(std::string("_") + s[i].name) << ArgsPattern(s[i], true);
+    if (s[i].named) o << " named?";
+    o << "\n";
+  }
+  o << "named ::= \" => \" name\n";
+  o << "name ::= [A-Za-z] [A-Za-z0-9_]{0,31}\n";
+  o << "num ::= \"-\"? [0-9]{1,6} (\".\" [0-9]{1,3})?\n";
+  o << "int ::= [0-9]{1,4}\n";
+  o << "pt ::= num \",\" num (\",\" num)?\n";
+  o << "str ::= \"\\\"\" [^\"\\n]{1,80} \"\\\"\"\n";
+  return o.str();
+}
+
 // --- Istruzioni per il modello -----------------------------------------------------------
 std::vector<std::string> ReferenceExamples() {
-  return {
-      "_Line 0,0,0 100,0,0",
-      "_Polyline 0,0 50,0 50,30 0,30 _Close",
-      "_Rectangle 0,0 80,40",
-      "_RoundedRectangle 0,0 80,40 5",
-      "_Circle 0,0,0 25",
-      "_Arc 0,0 10,0 0,10",
-      "_Ellipse 0,0 30,0 0,15",
-      "_Polygon NumSides=6 0,0 20,0",
-      "_InterpCrv 0,0 20,10 40,0 60,10 _Enter",
-      "_Helix Turns=5 0,0,0 0,0,50 10,0,0",
-      "_Box 0,0,0 100,50 30",
-      "_Sphere 0,0,50 25",
-      "_Cylinder 0,0,0 20 60",
-      "_Cone 0,0,0 20 40",
-      "_TruncatedCone 0,0,0 20 30 10",
-      "_Tube 0,0,0 20 17 50",
-      "_Torus 0,0,0 40 5",
-      "_Pyramid NumSides=4 0,0,0 20,20 30",
-      "_Ellipsoid 0,0,0 30 20 10",
-      "_Wedge 0,0,0 40,20 15",
-      "_Text 0,0,0 \"Kurva3D\" Height=10",
-  };
+  std::vector<std::string> v;
+  for (const auto& c : CommandSpecs())
+    if (c.creates) v.push_back(c.example);
+  return v;
 }
 
 std::string SystemPrompt() {
@@ -108,61 +283,24 @@ inside one code block that starts with ```kurva and ends with ```. No explanatio
 Rules of the command language:
 - One command per line. Units are millimetres. Points are x,y,z (x,y means z=0). Z is up.
 - Numbers use a dot for decimals. Text with spaces goes in double quotes.
+- Lines starting with "# " are comments: use a few of them first to plan the parts.
 - Commands that create objects:
 )";
-  const char* notes[] = {
-      "line from point to point",
-      "polyline through points, _Close closes it (or _Enter to leave it open)",
-      "rectangle on the XY plane from corner to opposite corner",
-      "rectangle with rounded corners (last number = corner radius)",
-      "circle: centre, radius",
-      "arc: centre, start point, end point (counterclockwise)",
-      "ellipse: centre, end of first axis, end of second axis",
-      "regular polygon: centre, a corner",
-      "smooth curve through the points, _Enter to finish",
-      "helix: axis start, axis end, point at the radius",
-      "box: base corner, opposite base corner (x,y), height",
-      "sphere: centre, radius",
-      "cylinder: base centre, radius, height (along +Z)",
-      "cone: base centre, base radius, height (along +Z)",
-      "truncated cone: base centre, base radius, height, top radius",
-      "tube (hollow cylinder): base centre, outer radius, inner radius, height",
-      "torus lying on the XY plane: centre, major radius, minor radius",
-      "pyramid: base centre, base corner, height",
-      "ellipsoid: centre, radius x, radius y, radius z",
-      "wedge: base corner, opposite base corner, height",
-      "text: insertion point, text, height",
-  };
-  const auto ex = ReferenceExamples();
-  for (size_t i = 0; i < ex.size(); i++) o << "  " << ex[i] << "    (" << notes[i] << ")\n";
+  auto pad = [](const std::string& s, size_t w) { return s.size() >= w ? s + "  " : s + std::string(w - s.size(), ' '); };
+  for (const auto& c : CommandSpecs())
+    if (c.creates) o << "  " << pad(c.example, 40) << "(" << c.note << ")\n";
   o << R"(- Naming: add " => Name" (one word, no spaces) at the end of a creating command to name what it creates, e.g.
   _Box 0,0,0 100,50 30 => Body
 - Commands that act on objects need a selection first:
-  _SelNone                clear the selection
-  _SelName Body Hole      select objects by name (in this order)
-  _SelLast                select what the previous command created
-  _SelAll                 select everything
-  then one of:
-  _BooleanUnion           join the selected solids into one
-  _BooleanDifference      subtract: the FIRST selected object is kept, the others are cut away
-  _BooleanIntersection    keep only the common part
-  _FilletEdge 2           round all edges of the selected solid with radius 2
-  _ChamferEdge 1          bevel all edges of the selected solid
-  _Move 0,0,0 10,0,0      move from point to point
-  _Copy 0,0,0 50,0,0 100,0,0 _Enter    copies (one per destination point)
-  _Rotate 0,0,0 45        rotate around the vertical axis through the point (degrees)
-  _Rotate3D 0,0,0 1,0,0 90             rotate around the axis from point to point
-  _Scale 0,0,0 2          scale from the point
-  _Mirror 0,0,0 0,10,0    mirror across the vertical plane through the two points (makes a copy)
-  _ArrayPolar 0,0,0 6     6 copies around the vertical axis through the point
-  _ArrayLinear 4 0,0,0 30,0,0          4 copies, spacing from the first to the second point
-  _ExtrudeCrv _Solid=_Yes 20           extrude the selected closed curve into a solid 20 high
-  _Revolve 0,0,0 0,0,1    revolve the selected curve 360 degrees around the axis
-  _Loft                   surface through the selected curves (in order)
-  _Pipe 2                 pipe of radius 2 around the selected curve
-  _SetObjectColor 200,30,30            colour as r,g,b
-  _Delete                 delete the selected objects
-- Never use commands for files, undo, layers or settings.
+)";
+  bool acting = false;
+  for (const auto& c : CommandSpecs()) {
+    if (c.creates) continue;
+    const bool sel = std::string(c.name).rfind("Sel", 0) == 0;
+    if (!sel && !acting) { o << "  then one of:\n"; acting = true; }
+    o << "  " << pad(c.example, 40) << c.note << "\n";
+  }
+  o << R"(- Never use commands for files, undo, layers or settings.
 - Build solids from simple primitives, then combine them with the boolean commands.
 - Place parts so that solids to be joined overlap a little (at least 0.5 mm).
 - Compute every coordinate from the requested size: each part must be at its final position.
@@ -171,16 +309,19 @@ Rules of the command language:
 - Flat parts with a non-rectangular outline (rhombus, triangle, L shape, ...): draw the closed outline
   with _Polyline ... _Close at the right height, then _ExtrudeCrv _Solid=_Yes thickness. Then delete the curve.
 - _Revolve is only for round objects (vases, bottles, wheels); never revolve a flat shape to make a plate.
+- Bent rods and stems: draw the path with _InterpCrv through 3D points, then _Pipe radius. Then delete the path.
 - Use _BooleanUnion only on solids that really touch or overlap; if unsure, leave the parts separate.
 - Before writing, plan the parts with real proportions and their height range in Z: the base on the floor
   (z = 0), what stands on it above, the top part at the top. Every part has its own Z: never put all the
   parts at 0,0,0. A part that is completely inside another one adds nothing.
 - Typical sizes when the user gives none: table height 750 (top 25-40 thick), dining table top 1200x800 or
-  diameter 900-1200, coffee table height 400, chair seat height 450, desk 1400x700, shelf thickness 20,
-  table leg 40-60 wide, central column diameter 80-120 with a base diameter 400-600.
+  diameter 900-1200, coffee table height 400, chair seat height 450 and backrest top 850-900, desk 1400x700,
+  shelf thickness 20, table leg 40-60 wide, central column diameter 80-120 with a base diameter 400-600,
+  desk lamp height 400-550 with a base diameter 150-250.
 
 Example: "un tavolo 120x80 alto 75 cm" (cm -> mm)
 ```kurva
+# Top 1200x800, z 710-750. Four legs 60x60, z 0-710, at the corners
 _Box 0,0,710 1200,800 40 => Top
 _Box 40,40,0 100,100 710 => Leg
 _SelNone
@@ -192,6 +333,7 @@ _BooleanUnion
 
 Example: "un tavolo a forma di rombo con le gambe sotto ogni vertice" (diagonals 1200 and 800, height 750)
 ```kurva
+# Rhombus top z 720-750 from a closed outline. Four round legs z 0-725 near the vertices
 _Polyline 600,0,720 0,400,720 -600,0,720 0,-400,720 _Close => Outline
 _SelNone
 _SelName Outline
@@ -209,8 +351,8 @@ _BooleanUnion
 ```
 
 Example: "un tavolo rotondo con una gamba centrale a cilindro e la base larga"
-(top diameter 900 from z=720 to 750, column from z=50 to 725, wide flat base disc on the floor)
 ```kurva
+# Top diameter 900, z 720-750. Column diameter 80, z 50-725. Base disc diameter 500, z 0-55
 _Cylinder 0,0,720 450 30 => Top
 _Cylinder 0,0,50 40 675 => Column
 _Cylinder 0,0,0 250 55 => Base
@@ -219,8 +361,46 @@ _SelName Top Column Base
 _BooleanUnion
 ```
 
+Example: "una sedia"
+```kurva
+# Seat 450x450, z 420-450. Four legs 40x40, z 0-425. Two rear posts and a back panel up to z 900
+_Box 0,0,420 450,450 30 => Seat
+_Box 0,0,0 40,40 425 => Leg
+_SelNone
+_SelName Leg
+_Copy 0,0,0 410,0,0 410,410,0 0,410,0 _Enter
+_Box 0,410,445 40,450 455 => PostL
+_Box 410,410,445 450,450 455 => PostR
+_Box 0,420,650 450,445 250 => Back
+_SelAll
+_BooleanUnion
+```
+
+Example: "una lampada da tavolo ad arco"
+```kurva
+# Base disc diameter 220, z 0-20. Bent stem: pipe along a curve from the base up and forward.
+# Shade: hollow truncated cone around the end of the stem, z 300-440
+_Cylinder 0,0,0 110 20 => Base
+_InterpCrv 0,0,10 0,40,250 0,160,420 0,300,430 _Enter => Path
+_SelNone
+_SelName Path
+_Pipe 8 => Stem
+_SelNone
+_SelName Path
+_Delete
+_TruncatedCone 0,300,300 90 140 30 => Shade
+_TruncatedCone 0,300,295 86 140 26 => Inside
+_SelNone
+_SelName Base Stem Shade
+_BooleanUnion => Lamp
+_SelNone
+_SelName Lamp Inside
+_BooleanDifference
+```
+
 Example: "una tazza"
 ```kurva
+# Body diameter 80, z 0-95, hollowed from z 6. Handle: torus turned upright on the side
 _Cylinder 0,0,0 40 95 => Body
 _Cylinder 0,0,6 35 95 => Inside
 _Torus 0,0,0 22 5 => Handle
@@ -381,6 +561,12 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
           }
     }
     const auto idsBefore = se.AllObjectIds(true);
+    if (const CommandSpec* spec = FindSpec(name); spec && (i == 0 || origin[i] != origin[i - 1]) &&
+                                                  !ArgumentsMatch(lines[origin[i]])) {
+      v.line = origin[i];
+      v.error = std::string("wrong arguments for ") + spec->name + ": write it like " + spec->example + " (" + spec->note + ")";
+      return v;
+    }
     if (!se.Commands().count(name)) {
       v.line = origin[i];
       v.error = "unknown command " + name + ": use only the commands listed in the reference";
@@ -408,6 +594,11 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
     }
   }
   v.created = (int)se.AllObjectIds(true).size() - (int)before;
+  if (se.AllObjectIds(true).empty()) {
+    v.line = (int)lines.size() - 1;
+    v.error = "the script leaves the model empty: create the parts and do not delete them all";
+    return v;
+  }
   v.ok = true;
   return v;
 }
