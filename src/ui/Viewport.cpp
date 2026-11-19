@@ -824,7 +824,12 @@ void Viewport::paintGL() {
     if ((int)m_rt->img.size() == m_rt->w * m_rt->h * 3 && m_rt->w == std::max(8, w) && m_rt->h == std::max(8, h)) {
       gl->glDisable(GL_DEPTH_TEST);
       gl->glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-      gl->glRasterPos2f(-1.f, 1.f);
+      // posizione raster nel centro (sempre valida) e poi spostata all'angolo in alto a sinistra con
+      // glBitmap: una posizione proprio sul bordo (-1, 1) puo' risultare fuori dal volume di vista su
+      // alcuni driver e glDrawPixels allora non disegna niente (vista Raytraced vuota)
+      gl->glRasterPos2f(0.f, 0.f);
+      const int vw = int(w * devicePixelRatio()), vh = int(h * devicePixelRatio());  // come glViewport
+      gl->glBitmap(0, 0, 0.f, 0.f, -0.5f * vw, 0.5f * vh, nullptr);
       gl->glPixelZoom((float)devicePixelRatioF(), -(float)devicePixelRatioF());
       gl->glDrawPixels(m_rt->w, m_rt->h, GL_RGB, GL_UNSIGNED_BYTE, m_rt->img.data());
       gl->glPixelZoom(1.f, 1.f);
