@@ -14,7 +14,7 @@ on:
         type: boolean
         default: false
       gguf_url:
-        description: "Link a un modello GGUF addestrato (es. Google Drive): banco di prova dei 9 oggetti"
+        description: "Link a un modello GGUF addestrato (es. Google Drive), oppure 'catalogo' per il modello addestrato di Kurva3D: banco dei 9 oggetti"
         type: string
         default: ""
 
@@ -182,15 +182,21 @@ jobs:
         env:
           GGUF_URL: ${{ inputs.gguf_url }}
         run: |
-          Write-Output "::add-mask::$env:GGUF_URL"
-          python -m pip install -q gdown
-          python -m gdown "$env:GGUF_URL" -O "$env:RUNNER_TEMP\kurva3d-finetuned.gguf"
-          if ($LASTEXITCODE -ne 0) { throw "download del modello non riuscito" }
-          Get-Item "$env:RUNNER_TEMP\kurva3d-finetuned.gguf" | Format-Table Name, Length
           $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
+          if ($env:GGUF_URL -eq "catalogo") {
+            # il modello addestrato del catalogo, scaricato come in Kurva3D (link diretto)
+            $model = @("--models", "kurva3d-qwen3-4b")
+          } else {
+            Write-Output "::add-mask::$env:GGUF_URL"
+            python -m pip install -q gdown
+            python -m gdown "$env:GGUF_URL" -O "$env:RUNNER_TEMP\kurva3d-finetuned.gguf"
+            if ($LASTEXITCODE -ne 0) { throw "download del modello non riuscito" }
+            Get-FileHash "$env:RUNNER_TEMP\kurva3d-finetuned.gguf" -Algorithm SHA256 | Format-List
+            $model = @("--gguf", "$env:RUNNER_TEMP\kurva3d-finetuned.gguf", "--compact")
+          }
           # un processo per richiesta: se uno si ferma, le altre continuano
           foreach ($k in 0..8) {
-            & dist\kurva3d-ai-test.exe --bench --case $k --gguf "$env:RUNNER_TEMP\kurva3d-finetuned.gguf" --compact
+            & dist\kurva3d-ai-test.exe --bench --case $k @model
             if ($LASTEXITCODE -ne 0) { Write-Output "RICHIESTA ${k}: il programma si e' fermato (codice $LASTEXITCODE)" }
           }
           foreach ($k in 0..8) {
