@@ -2775,6 +2775,33 @@ int main(int argc, char** argv) {
       const size_t k = (32 * 64 + 32) * 3;
       CHECK(img.size() == 64 * 64 * 3 && img[k] > img[k + 1] + 40 && img[k] > img[k + 2] + 40);
     }
+    // modello senza luci (luce predefinita): l'immagine non e' vuota, gli oggetti si vedono sullo sfondo
+    {
+      Ctx d;
+      CHECK(d.e.Run("_Box 0,0,0 40,30 20\n_Sphere 70,10,10 10"));
+      ui::Scene sc(d.e);
+      sc.fixedSpace = true;
+      sc.Rebuild();
+      RenderOptions ro;
+      ro.width = 80;
+      ro.height = 60;
+      RenderScene rsc;
+      rsc.Build(d.e, sc, ro);
+      CHECK(rsc.TriangleCount() > 100 && rsc.Lights().size() == 1);
+      ON_3dmView v = StandardView("Perspective", sc.Bounds(), 80.0 / 60);
+      FitView(v, 80, 60, 0, ON::LengthUnitSystem::Millimeters, sc.Bounds());
+      RenderCamera cam;
+      CHECK(cam.Init(v, 80.0 / 60));
+      PathTracer pt(rsc, cam, ro);
+      for (int i = 0; i < 4; i++) CHECK(pt.Pass());
+      std::vector<unsigned char> img;
+      pt.Image(img);
+      // pixel diversi dallo sfondo (angolo in alto a sinistra): almeno il 10% dell'immagine
+      int diff = 0;
+      for (size_t k = 0; k + 2 < img.size(); k += 3)
+        if (std::abs(img[k] - img[0]) + std::abs(img[k + 1] - img[1]) + std::abs(img[k + 2] - img[2]) > 30) diff++;
+      CHECK(diff > 80 * 60 / 10);
+    }
     // impostazioni e luci restano nel .3dm
     const std::string path = dir + "/luci.3dm";
     CHECK(c.doc.Save(path));
