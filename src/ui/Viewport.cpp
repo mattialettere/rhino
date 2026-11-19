@@ -1261,6 +1261,64 @@ bool Viewport::GumballFrame(ON_3dPoint& center, double& size) const {
   return true;
 }
 
+// Assi del Gumball: mondo, CPlane della vista o oggetto (un solo oggetto selezionato: piano
+// della curva piana, profilo dell'estrusione, prima faccia piana, trasformazione del blocco).
+void Viewport::GumballAxes(ON_3dVector ax[3]) const {
+  for (int i = 0; i < 3; i++) ax[i] = kAxes[i];
+  const Settings& S = Shared();
+  ON_Plane pl;
+  bool ok = false;
+  if (S.gumballAlign == 1) {
+    pl = m_cam.CPlane();
+    ok = pl.IsValid();
+  } else if (S.gumballAlign == 2) {
+    const DisplayObject* only = nullptr;
+    int n = 0;
+    for (const auto& o : m_scene.Objects())
+      if (o.selected) { only = &o; n++; }
+    const ON_Geometry* g = (n == 1 && only) ? m_scene.Geometry(only->id) : nullptr;
+    if (const auto* ir = ON_InstanceRef::Cast(g)) {
+      ON_3dVector x(ir->m_xform[0][0], ir->m_xform[1][0], ir->m_xform[2][0]);
+      ON_3dVector y(ir->m_xform[0][1], ir->m_xform[1][1], ir->m_xform[2][1]);
+      if (x.Unitize() && y.Unitize()) { pl = ON_Plane(ON_3dPoint::Origin, x, y); ok = pl.IsValid(); }
+    } else if (const auto* x = ON_Extrusion::Cast(g)) {
+      ON_3dVector z = x->m_path.Direction(), y = x->m_up;
+      if (z.Unitize() && y.Unitize()) { pl = ON_Plane(ON_3dPoint::Origin, ON_CrossProduct(y, z), y); ok = pl.IsValid(); }
+    } else if (const auto* c = ON_Curve::Cast(g)) {
+      if (c->IsPlanar(&pl, 1e-6) && !c->IsLinear(1e-6)) {
+        // asse x lungo la tangente iniziale (nel piano della curva)
+        ON_3dVector t = c->TangentAt(c->Domain()[0]);
+        t = t - pl.zaxis * (t * pl.zaxis);
+        if (t.Unitize()) pl = ON_Plane(pl.origin, t, ON_CrossProduct(pl.zaxis, t));
+        ok = pl.IsValid();
+      } else if (c->IsLinear(1e-6)) {
+        ON_3dVector t = c->PointAtEnd() - c->PointAtStart();
+        if (t.Unitize()) {
+          ON_3dVector y = std::fabs(t.z) < 0.9 ? ON_CrossProduct(ON_3dVector::ZAxis, t) : ON_CrossProduct(t, ON_3dVector::XAxis);
+          if (y.Unitize()) { pl = ON_Plane(ON_3dPoint::Origin, t, y); ok = pl.IsValid(); }
+        }
+      }
+    } else if (const auto* b = ON_Brep::Cast(g)) {
+      for (int i = 0; i < b->m_F.Count() && !ok; i++) {
+        ON_Plane fp;
+        if (b->m_F[i].IsPlanar(&fp, 1e-6)) {
+          pl = fp;
+          if (b->m_F[i].m_bRev) pl.Flip();
+          ok = pl.IsValid();
+        }
+      }
+    } else if (const auto* an = ON_Annotation::Cast(g)) {
+      pl = an->Plane();
+      ok = pl.IsValid();
+    }
+  }
+  if (ok) {
+    ax[0] = pl.xaxis;
+    ax[1] = pl.yaxis;
+    ax[2] = pl.zaxis;
+  }
+}
+
 static double SegDist(double px, double py, double ax, double ay, double bx, double by) {
   const double dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
   double t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
@@ -1269,8 +1327,8 @@ static double SegDist(double px, double py, double ax, double ay, double bx, dou
 }
 
 // Arco di rotazione attorno all'asse i: quarto di cerchio tra gli altri due assi.
-static std::vector<ON_3dPoint> GumballArc(const ON_3dPoint& c, int i, double r) {
-  const ON_3dVector u = kAxes[(i + 1) % 3], v = kAxes[(i + 2) % 3];
+static std::vector<ON_3dPoint> GumballArc(const ON_3dPoint& c, int i, double r, const ON_3dVector* ax) {
+  const ON_3dVector u = ax[(i + 1) % 3], v = ax[(i + 2) % 3];
   std::vector<ON_3dPoint> pts;
   for (int k = 0; k <= 16; k++) {
     const double a = 0.5 * ON_PI * k / 16;
@@ -1284,16 +1342,18 @@ Viewport::GumballHit Viewport::GumballPick(const QPoint& pos) const {
   double L;
   GumballHit best;
   if (!GumballFrame(c, L)) return best;
+  ON_3dVector kAx[3];
+  GumballAxes(kAx);
   const int W = width(), H = height();
   double cx, cy;
   if (!m_cam.Project(c, W, H, cx, cy)) return best;
   double bestD = 7.0;
   for (int i = 0; i < 3; i++) {
     double tx, ty, sx, sy;
-    if (!m_cam.Project(c + kAxes[i] * L, W, H, tx, ty)) continue;
+    if (!m_cam.Project(c + kAx[i] * L, W, H, tx, ty)) continue;
     if (std::hypot(tx - cx, ty - cy) < 12) continue;  // asse visto di punta: non utilizzabile
     // quadratino di scala a 0.6 della freccia
-    if (m_cam.Project(c + kAxes[i] * (0.6 * L), W, H, sx, sy)) {
+    if (m_cam.Project(c + kAx[i] * (0.6 * L), W, H, sx, sy)) {
       const double d = std::max(std::fabs(sx - pos.x()), std::fabs(sy - pos.y()));
       if (d <= 6 && d < bestD) { bestD = d; best = {3, i}; }
     }
@@ -1302,7 +1362,7 @@ Viewport::GumballHit Viewport::GumballPick(const QPoint& pos) const {
   }
   if (best.mode) return best;
   for (int i = 0; i < 3; i++) {
-    const auto arc = GumballArc(c, i, 0.8 * L);
+    const auto arc = GumballArc(c, i, 0.8 * L, kAx);
     for (size_t k = 0; k + 1 < arc.size(); k++) {
       double ax, ay, bx, by;
       if (!m_cam.Project(arc[k], W, H, ax, ay) || !m_cam.Project(arc[k + 1], W, H, bx, by)) continue;
@@ -1317,14 +1377,14 @@ bool Viewport::GumballValue(const QPoint& pos, double& value) const {
   ON_3dPoint o;
   ON_3dVector d;
   m_cam.Ray(pos.x(), pos.y(), width(), height(), o, d);
-  const ON_3dVector a = kAxes[m_gbDrag.axis];
+  const ON_3dVector a = m_gbAxes[m_gbDrag.axis];
   if (m_gbDrag.mode == 2) {
     // angolo nel piano perpendicolare all'asse
     const double den = d * a;
     if (std::fabs(den) < 1e-6) return false;
     const double t = ((m_gbCenter - o) * a) / den;
     const ON_3dVector v = (o + d * t) - m_gbCenter;
-    const ON_3dVector u1 = kAxes[(m_gbDrag.axis + 1) % 3], u2 = kAxes[(m_gbDrag.axis + 2) % 3];
+    const ON_3dVector u1 = m_gbAxes[(m_gbDrag.axis + 1) % 3], u2 = m_gbAxes[(m_gbDrag.axis + 2) % 3];
     value = std::atan2(v * u2, v * u1);
     return true;
   }
@@ -1338,7 +1398,7 @@ bool Viewport::GumballValue(const QPoint& pos, double& value) const {
 }
 
 ON_Xform Viewport::GumballXform() const {
-  const ON_3dVector a = kAxes[std::max(0, m_gbDrag.axis)];
+  const ON_3dVector a = m_gbAxes[std::max(0, m_gbDrag.axis)];
   if (m_gbDrag.mode == 1) return ON_Xform::TranslationTransformation(a * (m_gbCurrent - m_gbStart));
   if (m_gbDrag.mode == 2) {
     ON_Xform r;
@@ -1346,10 +1406,18 @@ ON_Xform Viewport::GumballXform() const {
     return r;
   }
   if (m_gbDrag.mode == 3 && std::fabs(m_gbStart) > 1e-12) {
+    // scala lungo l'asse a (qualsiasi direzione): X = c + (I + (f-1) a a^T)(P - c)
     const double f = m_gbCurrent / m_gbStart;
-    double s[3] = {1, 1, 1};
-    s[m_gbDrag.axis] = f;
-    return ON_Xform::ScaleTransformation(m_gbCenter, s[0], s[1], s[2]);
+    ON_Xform x = ON_Xform::IdentityTransformation;
+    const double v[3] = {a.x, a.y, a.z};
+    for (int r = 0; r < 3; r++)
+      for (int k = 0; k < 3; k++) x[r][k] += (f - 1) * v[r] * v[k];
+    const ON_3dPoint c = m_gbCenter;
+    const ON_3dPoint xc = x * c;
+    x[0][3] = c.x - xc.x;
+    x[1][3] = c.y - xc.y;
+    x[2][3] = c.z - xc.z;
+    return x;
   }
   return ON_Xform::IdentityTransformation;
 }
@@ -1358,6 +1426,9 @@ void Viewport::DrawGumball(QPainter& p) const {
   ON_3dPoint c;
   double L;
   if (!GumballFrame(c, L)) return;
+  ON_3dVector kAx[3];
+  if (m_gbDrag.mode) for (int i = 0; i < 3; i++) kAx[i] = m_gbAxes[i];
+  else GumballAxes(kAx);
   const int W = width(), H = height();
   double cx, cy;
   if (!m_cam.Project(c, W, H, cx, cy)) return;
@@ -1367,14 +1438,14 @@ void Viewport::DrawGumball(QPainter& p) const {
   for (int i = 0; i < 3; i++) {
     const bool hot = hov.axis == i;
     // archi di rotazione
-    const auto arc = GumballArc(c, i, 0.8 * L);
+    const auto arc = GumballArc(c, i, 0.8 * L, kAx);
     QPolygonF poly;
     for (const auto& q : arc) { double x, y; if (m_cam.Project(q, W, H, x, y)) poly << QPointF(x, y); }
     p.setPen(QPen(col[i], (hot && hov.mode == 2) ? 4 : 2));
     p.setBrush(Qt::NoBrush);
     p.drawPolyline(poly);
     double tx, ty;
-    if (!m_cam.Project(c + kAxes[i] * L, W, H, tx, ty) || std::hypot(tx - cx, ty - cy) < 12) continue;
+    if (!m_cam.Project(c + kAx[i] * L, W, H, tx, ty) || std::hypot(tx - cx, ty - cy) < 12) continue;
     // freccia
     p.setPen(QPen(col[i], (hot && hov.mode == 1) ? 4 : 2));
     p.drawLine(QPointF(cx, cy), QPointF(tx, ty));
@@ -1387,7 +1458,7 @@ void Viewport::DrawGumball(QPainter& p) const {
     p.drawPolygon(QPolygonF({tip + dir * 4, base + nrm * 5, base - nrm * 5}));
     // quadratino di scala
     double sx, sy;
-    if (m_cam.Project(c + kAxes[i] * (0.6 * L), W, H, sx, sy)) {
+    if (m_cam.Project(c + kAx[i] * (0.6 * L), W, H, sx, sy)) {
       p.setPen(Qt::NoPen);
       const double r = (hot && hov.mode == 3) ? 6 : 4;
       p.drawRect(QRectF(sx - r, sy - r, 2 * r, 2 * r));
@@ -1730,6 +1801,7 @@ void Viewport::mousePressEvent(QMouseEvent* e) {
     if (h.mode && GumballFrame(m_gbCenter, size)) {
       m_gbDrag = h;
       m_gbSize = size;
+      GumballAxes(m_gbAxes);
       if (!GumballValue(e->pos(), m_gbStart)) m_gbDrag = {};
       m_gbCurrent = m_gbStart;
     }
@@ -1807,7 +1879,7 @@ void Viewport::mouseReleaseEvent(QMouseEvent* e) {
     m_dragButton = Qt::NoButton;
     const double dv = m_gbCurrent - m_gbStart;
     auto P = [](const ON_3dPoint& q) { return QString("%1,%2,%3").arg(q.x, 0, 'g', 12).arg(q.y, 0, 'g', 12).arg(q.z, 0, 'g', 12); };
-    const ON_3dVector a = kAxes[h.axis];
+    const ON_3dVector a = m_gbAxes[h.axis];
     if (wasDrag) {
       if (h.mode == 1 && std::fabs(dv) > 1e-12)
         emit GumballCommand("-_Move " + P(ON_3dPoint::Origin) + " " + P(ON_3dPoint::Origin + a * dv));

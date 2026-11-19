@@ -64,6 +64,7 @@ public:
     ON_3dPoint lastPoint = ON_3dPoint::Origin;
     bool hasLastPoint = false;
     bool gumball = true;          // Gumball sugli oggetti selezionati (barra di stato)
+    int gumballAlign = 0;         // assi del Gumball: 0 mondo, 1 CPlane della vista, 2 oggetto
     // Analisi attive (Zebra, DraftAngleAnalysis, CurvatureGraph, ShowEdges) per oggetto
     std::vector<ON_UUID> zebra, draft, curvature, edges;
     // CurvatureAnalysis (falsi colori) ed EMap (riflesso di un'immagine), per oggetto
@@ -150,6 +151,9 @@ private:
   // --- Gumball ---
   struct GumballHit { int mode = 0; int axis = -1; };  // mode: 1 sposta, 2 ruota, 3 scala
   bool GumballFrame(ON_3dPoint& center, double& size) const;
+  // Assi del Gumball secondo l'allineamento scelto (mondo, CPlane, oggetto)
+  void GumballAxes(ON_3dVector axes[3]) const;
+  ON_3dVector m_gbAxes[3];  // assi fissati all'inizio del trascinamento
   GumballHit GumballPick(const QPoint& pos) const;
   void DrawGumball(QPainter& p) const;
   bool GumballValue(const QPoint& pos, double& value) const;  // parametro sull'asse o angolo

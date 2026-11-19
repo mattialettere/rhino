@@ -944,6 +944,23 @@ void MainWindow::BuildStatusBar() {
   toggle("Snap griglia", S.gridSnap);
   toggle("Orto", S.ortho);
   toggle("Gumball", S.gumball);
+  {  // clic destro sul Gumball: allineamento (come il menu del Gumball di Rhino 8)
+    auto* gb = statusBar()->findChildren<QToolButton*>().last();
+    gb->setToolTip("Gumball (clic destro: allinea al mondo, al CPlane o all'oggetto)");
+    gb->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(gb, &QToolButton::customContextMenuRequested, this, [this, gb](const QPoint& pos) {
+      QMenu m;
+      const char* names[3] = {"Allinea al mondo", "Allinea al CPlane", "Allinea all'oggetto"};
+      const char* cmds[3] = {"GumballAlignment World", "GumballAlignment CPlane", "GumballAlignment Object"};
+      for (int i = 0; i < 3; i++) {
+        QAction* a = m.addAction(names[i]);
+        a->setCheckable(true);
+        a->setChecked(Viewport::Shared().gumballAlign == i);
+        connect(a, &QAction::triggered, this, [this, i, cmds] { Submit(cmds[i]); });
+      }
+      m.exec(gb->mapToGlobal(pos));
+    });
+  }
   toggle("Osnap", S.osnap);
   // Registra storia (History Record): i comandi che la supportano ricordano gli ingressi
   m_historyBtn = new QToolButton;
@@ -1163,6 +1180,20 @@ void MainWindow::Submit(const QString& text) {
     return;
   }
   if (HandleAnalysisCommand(t)) return;
+  if (m_pending.empty() && NormalizeName(t.substr(0, t.find(' '))) == "gumballalignment") {
+    // GumballAlignment World|CPlane|Object (senza valore: si passa al successivo)
+    auto& G = Viewport::Shared();
+    const std::string v = t.find(' ') == std::string::npos ? std::string() : NormalizeName(t.substr(t.find(' ') + 1));
+    if (v == "world" || v == "mondo") G.gumballAlign = 0;
+    else if (v == "cplane") G.gumballAlign = 1;
+    else if (v == "object" || v == "oggetto") G.gumballAlign = 2;
+    else if (v.empty()) G.gumballAlign = (G.gumballAlign + 1) % 3;
+    else { Log("GumballAlignment: World, CPlane o Object"); return; }
+    const char* names[3] = {"mondo", "CPlane", "oggetto"};
+    Log(QString("Gumball allineato: %1").arg(names[G.gumballAlign]));
+    for (auto* vw : m_views) vw->update();
+    return;
+  }
   if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
   if (norm == "blockmanager") { ShowBlockManager(); return; }
   if (norm == "about") { ShowAbout(); return; }
