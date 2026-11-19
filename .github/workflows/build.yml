@@ -184,7 +184,7 @@ jobs:
         run: |
           Write-Output "::add-mask::$env:GGUF_URL"
           python -m pip install -q gdown
-          python -m gdown --fuzzy "$env:GGUF_URL" -O "$env:RUNNER_TEMP\kurva3d-finetuned.gguf"
+          python -m gdown "$env:GGUF_URL" -O "$env:RUNNER_TEMP\kurva3d-finetuned.gguf"
           if ($LASTEXITCODE -ne 0) { throw "download del modello non riuscito" }
           Get-Item "$env:RUNNER_TEMP\kurva3d-finetuned.gguf" | Format-Table Name, Length
           $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
