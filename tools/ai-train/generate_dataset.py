@@ -344,7 +344,7 @@ def block_with_holes(r):
         D = r.step(40, W, 10)
         T = r.step(4, 20, 1)
         rh = r.step(2, 6, 1)
-        m = r.step(8, 20, 1)
+        m = r.step(8, min(20, D / 4), 1)  # fori distinti anche sulle piastre strette
         prompt = r.choice([
             "una piastra %s spessa %s con quattro fori agli angoli" % (dims_text(r, W, D, "mm"), size_text(r, T, "mm")),
             "piastra forata %s, spessore %s, fori di raggio %s ai 4 angoli" % (dims_text(r, W, D, "mm"), size_text(r, T, "mm"), size_text(r, rh, "mm")),
