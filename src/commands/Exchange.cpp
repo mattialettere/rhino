@@ -7,6 +7,8 @@
 #include "kernel/OcctConvert.h"
 #endif
 #include <algorithm>
+#include <cctype>
+#include <functional>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -646,6 +648,52 @@ ON_Curve* JoinSegments(std::vector<ON_Curve*>& segs) {
 }
 }  // namespace
 
+// Da coordinate OCS a coordinate del mondo.
+static ON_Xform OcsXform(const ON_Plane& ocs) {
+  ON_Xform x(ON_Xform::IdentityTransformation);
+  for (int r = 0; r < 3; r++) { x.m_xform[r][0] = ocs.xaxis[r]; x.m_xform[r][1] = ocs.yaxis[r]; x.m_xform[r][2] = ocs.zaxis[r]; }
+  return x;
+}
+
+// Testo MTEXT/TEXT senza i codici di formattazione (\P a capo, {\fArial;...}, %%d gradi...).
+static std::string DxfPlainText(const std::string& in) {
+  std::string o;
+  for (size_t i = 0; i < in.size(); i++) {
+    const char c = in[i];
+    if (c == '\\' && i + 1 < in.size()) {
+      const char k = in[i + 1];
+      if (k == 'P' || k == 'n') { o += '\n'; i++; }
+      else if (k == '~') { o += ' '; i++; }
+      else if (k == '\\' || k == '{' || k == '}') { o += k; i++; }
+      else if (std::strchr("LlOoKk", k)) { i++; }
+      else if (k == 'S') {  // frazioni impilate \S1^2; -> 1/2
+        size_t e = in.find(';', i + 2);
+        if (e == std::string::npos) e = in.size();
+        std::string f = in.substr(i + 2, e - i - 2);
+        for (auto& ch : f) if (ch == '^' || ch == '#') ch = '/';
+        o += f;
+        i = e;
+      } else if (std::strchr("fFHCcAWQTp", k)) {  // codici con parametro fino a ';'
+        const size_t e = in.find(';', i + 2);
+        i = e == std::string::npos ? in.size() : e;
+      } else { o += c; }
+    } else if (c == '{' || c == '}') {
+    } else if (c == '%' && i + 2 < in.size() && in[i + 1] == '%') {
+      const char k = (char)std::tolower((unsigned char)in[i + 2]);
+      if (k == 'd') o += "\xC2\xB0";        // gradi
+      else if (k == 'p') o += "\xC2\xB1";   // piu' o meno
+      else if (k == 'c') o += "\xC3\x98";   // diametro
+      else if (k == '%') o += '%';
+      else if (k == 'u' || k == 'o') {}    // sottolineato/sopralineato: ignorati
+      else { o += in.substr(i, 3); }
+      i += 2;
+    } else {
+      o += c;
+    }
+  }
+  return o;
+}
+
 bool ReadDXF(const std::string& path, ON::LengthUnitSystem docUnits, std::vector<ImportedObject>& out, std::string& err) {
   std::vector<DxfPair> pairs;
   if (!ReadPairs(path, pairs, err)) return false;
@@ -653,191 +701,242 @@ bool ReadDXF(const std::string& path, ON::LengthUnitSystem docUnits, std::vector
   std::map<std::string, ON_Color> layerColors;
   ON::LengthUnitSystem fileUnits = ON::LengthUnitSystem::None;
   std::vector<Entity> ents;
+  struct Block { ON_3dPoint base; std::vector<Entity> ents; };
+  std::map<std::string, Block> blocks;
+  Block* curBlock = nullptr;
   std::string section;
   for (size_t i = 0; i < pairs.size(); i++) {
     const auto& q = pairs[i];
     if (q.code == 0 && q.value == "SECTION" && i + 1 < pairs.size()) { section = pairs[i + 1].value; i++; continue; }
-    if (q.code == 0 && q.value == "ENDSEC") { section.clear(); continue; }
+    if (q.code == 0 && q.value == "ENDSEC") { section.clear(); curBlock = nullptr; continue; }
     if (section == "HEADER" && q.code == 9 && q.value == "$INSUNITS" && i + 1 < pairs.size()) fileUnits = InsUnits(Int(pairs[i + 1].value));
-    if ((section == "TABLES" || section == "ENTITIES") && q.code == 0) {
+    if ((section == "TABLES" || section == "ENTITIES" || section == "BLOCKS") && q.code == 0) {
       Entity e;
       e.type = q.value;
       size_t j = i + 1;
       for (; j < pairs.size() && pairs[j].code != 0; j++) e.p.push_back(pairs[j]);
-      if (section == "TABLES" && e.type == "LAYER") layerColors[e.S(2)] = AciColor(e.I(62, 7));
-      if (section == "ENTITIES") ents.push_back(std::move(e));
       i = j - 1;
+      if (section == "TABLES" && e.type == "LAYER") layerColors[e.S(2)] = AciColor(e.I(62, 7));
+      else if (section == "ENTITIES") ents.push_back(std::move(e));
+      else if (section == "BLOCKS") {
+        if (e.type == "BLOCK") {
+          curBlock = &blocks[e.S(2)];
+          curBlock->ents.clear();
+          curBlock->base = ON_3dPoint(e.D(10), e.D(20), e.D(30));
+        } else if (e.type == "ENDBLK") {
+          curBlock = nullptr;
+        } else if (curBlock) {
+          curBlock->ents.push_back(std::move(e));
+        }
+      }
     }
   }
   const double scale = (fileUnits != ON::LengthUnitSystem::None && docUnits != ON::LengthUnitSystem::None)
                            ? ON::UnitScale(fileUnits, docUnits) : 1.0;
   std::map<std::string, MeshBuilder> faces;  // 3DFACE per livello
   int skipped = 0;
-  auto add = [&](ON_Geometry* g, const Entity& e) {
-    if (!g) return;
-    ImportedObject o;
-    o.geom.reset(g);
-    o.layer = e.S(8);
-    if (o.layer.empty()) o.layer = "0";
-    auto lc = layerColors.find(o.layer);
-    o.color = lc != layerColors.end() ? lc->second : ON_Color::Black;
-    out.push_back(std::move(o));
-  };
-  auto P = [](const Entity& e, int c) { return ON_3dPoint(e.D(c), e.D(c + 10), e.D(c + 20)); };
-  for (size_t i = 0; i < ents.size(); i++) {
-    const Entity& e = ents[i];
-    const ON_Plane ocs = OcsPlane(e.Extrusion());
-    if (e.type == "LINE") add(new ON_LineCurve(P(e, 10), P(e, 11)), e);
-    else if (e.type == "POINT") add(new ON_Point(P(e, 10)), e);
-    else if (e.type == "CIRCLE" || e.type == "ARC") {
-      ON_Plane pl = ocs;
-      pl.origin = OcsToWcs(ocs, P(e, 10));
-      pl.UpdateEquation();
-      ON_Circle circ(pl, e.D(40));
-      if (e.type == "CIRCLE") add(new ON_ArcCurve(circ), e);
-      else {
-        double a0 = e.D(50) * ON_PI / 180, a1 = e.D(51) * ON_PI / 180;
-        while (a1 <= a0) a1 += 2 * ON_PI;
-        add(new ON_ArcCurve(ON_Arc(circ, ON_Interval(a0, a1))), e);
-      }
-    } else if (e.type == "ELLIPSE") {
-      const ON_3dPoint c = P(e, 10);
-      const ON_3dVector major(e.D(11), e.D(21), e.D(31));
-      ON_3dVector n = e.Extrusion();
-      n.Unitize();
-      ON_3dVector minor = ON_CrossProduct(n, major);
-      minor.Unitize();
-      minor *= major.Length() * e.D(40, 1);
-      ON_NurbsCurve nc;
-      ON_Ellipse el(ON_Plane(c, major, minor), major.Length(), minor.Length());
-      el.GetNurbForm(nc);
-      double t0 = e.D(41, 0), t1 = e.D(42, 2 * ON_PI);
-      auto* crv = new ON_NurbsCurve(nc);
-      if (std::fabs(t1 - t0 - 2 * ON_PI) > 1e-9) {
-        while (t1 <= t0) t1 += 2 * ON_PI;
-        // dominio di GetNurbForm: 0..2pi
-        if (t1 > 2 * ON_PI + 1e-12) {
-          ON_Curve* a = crv->DuplicateCurve();
-          a->Trim(ON_Interval(t0, 2 * ON_PI));
-          ON_Curve* b = crv->DuplicateCurve();
-          b->Trim(ON_Interval(0, t1 - 2 * ON_PI));
-          delete crv;
-          std::vector<ON_Curve*> segs{a, b};
-          add(JoinSegments(segs), e);
+  // Entita' di un blocco (INSERT) o di una quota (DIMENSION): trasformate ed esplose nel modello.
+  std::function<void(const std::vector<Entity>&, const ON_Xform&, const std::string&, int)> convert;
+  convert = [&](const std::vector<Entity>& list, const ON_Xform& xf, const std::string& parentLayer, int depth) {
+    // livello "0" dentro un blocco = livello dell'inserimento (regola DXF)
+    auto layerOf = [&](const Entity& e) {
+      std::string l = e.S(8);
+      if (l.empty() || (l == "0" && !parentLayer.empty())) l = parentLayer.empty() ? "0" : parentLayer;
+      return l;
+    };
+    auto add = [&](ON_Geometry* g, const Entity& e) {
+      if (!g) return;
+      if (!xf.IsIdentity()) g->Transform(xf);
+      ImportedObject o;
+      o.geom.reset(g);
+      o.layer = layerOf(e);
+      auto lc = layerColors.find(o.layer);
+      o.color = lc != layerColors.end() ? lc->second : ON_Color::Black;
+      out.push_back(std::move(o));
+    };
+    auto P = [](const Entity& e, int c) { return ON_3dPoint(e.D(c), e.D(c + 10), e.D(c + 20)); };
+    for (size_t i = 0; i < list.size(); i++) {
+      const Entity& e = list[i];
+      const ON_Plane ocs = OcsPlane(e.Extrusion());
+      if (e.type == "LINE") add(new ON_LineCurve(P(e, 10), P(e, 11)), e);
+      else if (e.type == "POINT") add(new ON_Point(P(e, 10)), e);
+      else if (e.type == "CIRCLE" || e.type == "ARC") {
+        ON_Plane pl = ocs;
+        pl.origin = OcsToWcs(ocs, P(e, 10));
+        pl.UpdateEquation();
+        ON_Circle circ(pl, e.D(40));
+        if (e.type == "CIRCLE") add(new ON_ArcCurve(circ), e);
+        else {
+          double a0 = e.D(50) * ON_PI / 180, a1 = e.D(51) * ON_PI / 180;
+          while (a1 <= a0) a1 += 2 * ON_PI;
+          add(new ON_ArcCurve(ON_Arc(circ, ON_Interval(a0, a1))), e);
+        }
+      } else if (e.type == "ELLIPSE") {
+        const ON_3dPoint c = P(e, 10);
+        const ON_3dVector major(e.D(11), e.D(21), e.D(31));
+        ON_3dVector n = e.Extrusion();
+        n.Unitize();
+        ON_3dVector minor = ON_CrossProduct(n, major);
+        minor.Unitize();
+        minor *= major.Length() * e.D(40, 1);
+        ON_NurbsCurve nc;
+        ON_Ellipse el(ON_Plane(c, major, minor), major.Length(), minor.Length());
+        el.GetNurbForm(nc);
+        double t0 = e.D(41, 0), t1 = e.D(42, 2 * ON_PI);
+        auto* crv = new ON_NurbsCurve(nc);
+        if (std::fabs(t1 - t0 - 2 * ON_PI) > 1e-9) {
+          while (t1 <= t0) t1 += 2 * ON_PI;
+          // dominio di GetNurbForm: 0..2pi
+          if (t1 > 2 * ON_PI + 1e-12) {
+            ON_Curve* a = crv->DuplicateCurve();
+            a->Trim(ON_Interval(t0, 2 * ON_PI));
+            ON_Curve* b = crv->DuplicateCurve();
+            b->Trim(ON_Interval(0, t1 - 2 * ON_PI));
+            delete crv;
+            std::vector<ON_Curve*> segs{a, b};
+            add(JoinSegments(segs), e);
+            continue;
+          }
+          crv->Trim(ON_Interval(t0, t1));
+        }
+        add(crv, e);
+      } else if (e.type == "LWPOLYLINE") {
+        std::vector<ON_3dPoint> pts;
+        std::vector<double> bulges;
+        const double elev = e.D(38);
+        double x = 0;
+        bool haveX = false;
+        for (const auto& q : e.p) {
+          if (q.code == 10) { x = Num(q.value); haveX = true; }
+          else if (q.code == 20 && haveX) { pts.emplace_back(x, Num(q.value), elev); bulges.push_back(0); haveX = false; }
+          else if (q.code == 42 && !bulges.empty()) bulges.back() = Num(q.value);
+        }
+        const bool closed = e.I(70) & 1;
+        std::vector<ON_Curve*> segs;
+        for (size_t k = 0; k + 1 < pts.size() + (closed ? 1 : 0); k++)
+          segs.push_back(BulgeSegment(pts[k], pts[(k + 1) % pts.size()], bulges[k], ocs));
+        add(JoinSegments(segs), e);
+      } else if (e.type == "POLYLINE") {
+        const int flags = e.I(70);
+        std::vector<Entity> verts;
+        size_t j = i + 1;
+        for (; j < list.size() && list[j].type == "VERTEX"; j++) verts.push_back(list[j]);
+        i = (j < list.size() && list[j].type == "SEQEND") ? j : j - 1;
+        if (flags & 64) {  // polyface mesh
+          MeshBuilder mb;
+          std::vector<int> idx;
+          for (const auto& v : verts)
+            if (v.I(70) & 64) idx.push_back(mb.Vertex((xf * P(v, 10)) * scale));
+          for (const auto& v : verts)
+            if ((v.I(70) & 128) && !(v.I(70) & 64)) {
+              int f[4] = {std::abs(v.I(71)) - 1, std::abs(v.I(72)) - 1, std::abs(v.I(73)) - 1, std::abs(v.I(74)) - 1};
+              auto ok = [&](int k) { return k >= 0 && k < (int)idx.size(); };
+              if (ok(f[0]) && ok(f[1]) && ok(f[2])) mb.Face(idx[f[0]], idx[f[1]], idx[f[2]], ok(f[3]) ? idx[f[3]] : -1);
+            }
+          if (!mb.Empty()) {
+            ImportedObject o;
+            o.geom = mb.Take();
+            o.layer = layerOf(e);
+            o.color = layerColors.count(o.layer) ? layerColors[o.layer] : ON_Color::Black;
+            out.push_back(std::move(o));
+          }
           continue;
         }
-        crv->Trim(ON_Interval(t0, t1));
-      }
-      add(crv, e);
-    } else if (e.type == "LWPOLYLINE") {
-      std::vector<ON_3dPoint> pts;
-      std::vector<double> bulges;
-      const double elev = e.D(38);
-      double x = 0;
-      bool haveX = false;
-      for (const auto& q : e.p) {
-        if (q.code == 10) { x = Num(q.value); haveX = true; }
-        else if (q.code == 20 && haveX) { pts.emplace_back(x, Num(q.value), elev); bulges.push_back(0); haveX = false; }
-        else if (q.code == 42 && !bulges.empty()) bulges.back() = Num(q.value);
-      }
-      const bool closed = e.I(70) & 1;
-      std::vector<ON_Curve*> segs;
-      for (size_t k = 0; k + 1 < pts.size() + (closed ? 1 : 0); k++)
-        segs.push_back(BulgeSegment(pts[k], pts[(k + 1) % pts.size()], bulges[k], ocs));
-      add(JoinSegments(segs), e);
-    } else if (e.type == "POLYLINE") {
-      const int flags = e.I(70);
-      std::vector<Entity> verts;
-      size_t j = i + 1;
-      for (; j < ents.size() && ents[j].type == "VERTEX"; j++) verts.push_back(ents[j]);
-      i = (j < ents.size() && ents[j].type == "SEQEND") ? j : j - 1;
-      if (flags & 64) {  // polyface mesh
-        MeshBuilder mb;
-        std::vector<int> idx;
-        for (const auto& v : verts)
-          if (v.I(70) & 64) idx.push_back(mb.Vertex(P(v, 10) * scale));
-        for (const auto& v : verts)
-          if ((v.I(70) & 128) && !(v.I(70) & 64)) {
-            int f[4] = {std::abs(v.I(71)) - 1, std::abs(v.I(72)) - 1, std::abs(v.I(73)) - 1, std::abs(v.I(74)) - 1};
-            auto ok = [&](int k) { return k >= 0 && k < (int)idx.size(); };
-            if (ok(f[0]) && ok(f[1]) && ok(f[2])) mb.Face(idx[f[0]], idx[f[1]], idx[f[2]], ok(f[3]) ? idx[f[3]] : -1);
+        if (flags & 16) { skipped++; continue; }  // mesh poligonale MxN: non gestita
+        const bool is3d = flags & 8;
+        std::vector<ON_3dPoint> pts;
+        std::vector<double> bulges;
+        for (const auto& v : verts) { pts.push_back(P(v, 10)); bulges.push_back(is3d ? 0 : v.D(42)); }
+        if (!is3d) for (auto& p : pts) p.z = e.D(30, p.z);
+        const bool closed = flags & 1;
+        std::vector<ON_Curve*> segs;
+        const ON_Plane frame = is3d ? ON_Plane(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::YAxis) : ocs;
+        for (size_t k = 0; pts.size() >= 2 && k + 1 < pts.size() + (closed ? 1 : 0); k++)
+          segs.push_back(BulgeSegment(pts[k], pts[(k + 1) % pts.size()], bulges[k], frame));
+        add(JoinSegments(segs), e);
+      } else if (e.type == "SPLINE") {
+        const int degree = e.I(71, 3);
+        const auto knots = e.All(40);
+        const auto weights = e.All(41);
+        std::vector<ON_3dPoint> cps, fits;
+        {
+          double x = 0, y = 0;
+          for (const auto& q : e.p) {
+            if (q.code == 10) x = Num(q.value);
+            else if (q.code == 20) y = Num(q.value);
+            else if (q.code == 30) cps.emplace_back(x, y, Num(q.value));
+            else if (q.code == 11) x = Num(q.value);
+            else if (q.code == 21) y = Num(q.value);
+            else if (q.code == 31) fits.emplace_back(x, y, Num(q.value));
           }
-        if (!mb.Empty()) {
-          ImportedObject o;
-          o.geom = mb.Take();
-          o.layer = e.S(8).empty() ? "0" : e.S(8);
-          o.color = layerColors.count(o.layer) ? layerColors[o.layer] : ON_Color::Black;
-          out.push_back(std::move(o));
         }
-        continue;
+        const int n = (int)cps.size();
+        if (n >= degree + 1 && (int)knots.size() == n + degree + 1) {
+          const bool rational = (int)weights.size() == n;
+          auto* nc = new ON_NurbsCurve(3, rational, degree + 1, n);
+          for (int k = 0; k < n; k++) {
+            if (rational) nc->SetCV(k, ON_4dPoint(cps[k].x * weights[k], cps[k].y * weights[k], cps[k].z * weights[k], weights[k]));
+            else nc->SetCV(k, cps[k]);
+          }
+          // DXF: n+degree+1 nodi; openNURBS: senza il primo e l'ultimo
+          for (int k = 1; k + 1 < (int)knots.size(); k++) nc->m_knot[k - 1] = knots[k];
+          if (nc->IsValid()) add(nc, e); else { delete nc; skipped++; }
+        } else if (fits.size() >= 2) {
+          // curva per i punti di passaggio: approssimata con una NURBS uniforme sui punti
+          ON_3dPointArray fp;
+          for (auto& p : fits) fp.Append(p);
+          auto* nc = new ON_NurbsCurve();
+          const int order = std::min(4, (int)fits.size());
+          if (nc->CreateClampedUniformNurbs(3, order, fp.Count(), fp.Array())) add(nc, e);
+          else { delete nc; add(new ON_PolylineCurve(fp), e); }
+        } else skipped++;
+      } else if (e.type == "3DFACE" || e.type == "SOLID") {
+        MeshBuilder& mb = faces[layerOf(e)];
+        ON_3dPoint q[4] = {P(e, 10), P(e, 11), P(e, 12), P(e, 13)};
+        if (e.type == "SOLID") { std::swap(q[2], q[3]); for (auto& p : q) p = OcsToWcs(ocs, p); }
+        int v[4];
+        for (int k = 0; k < 4; k++) v[k] = mb.Vertex((xf * q[k]) * scale);
+        mb.Face(v[0], v[1], v[2], v[3] == v[2] ? -1 : v[3]);
+      } else if (e.type == "TEXT" || e.type == "MTEXT") {
+        // testo come punto di testo (le annotazioni DXF non sono convertite)
+        std::string t;
+        for (const auto& q : e.p) if (q.code == 3) t += q.value;
+        t = DxfPlainText(t + e.S(1));
+        if (t.empty()) continue;
+        auto* dot = new ON_TextDot(OcsToWcs(e.type == "TEXT" ? ocs : OcsPlane(ON_3dVector::ZAxis), P(e, 10)),
+                                   ON_wString(t.c_str()), nullptr);
+        add(dot, e);
+      } else if (e.type == "INSERT" || e.type == "DIMENSION") {
+        // INSERT: blocco esploso; DIMENSION: le linee, frecce e testo del suo blocco anonimo (*D..)
+        auto bl = blocks.find(e.S(2));
+        if (bl == blocks.end() || depth > 16) { skipped++; continue; }
+        const std::string layer = layerOf(e);
+        if (e.type == "DIMENSION") {
+          // la geometria della quota e' gia' nella posizione finale (OCS della quota)
+          convert(bl->second.ents, xf * OcsXform(ocs), layer, depth + 1);
+          continue;
+        }
+        const ON_3dPoint ins = P(e, 10);
+        const double sx = e.D(41, 1), sy = e.D(42, 1), sz = e.D(43, 1), rot = e.D(50) * ON_PI / 180;
+        const int cols = std::max(1, e.I(70, 1)), rows = std::max(1, e.I(71, 1));
+        const double dc = e.D(44), dr = e.D(45);
+        const ON_Xform ocsXf = OcsXform(ocs);
+        ON_Xform R;
+        R.Rotation(rot, ON_3dVector::ZAxis, ON_3dPoint::Origin);
+        const ON_Xform S = ON_Xform::DiagonalTransformation(sx, sy, sz);
+        const ON_Xform B = ON_Xform::TranslationTransformation(ON_3dPoint::Origin - bl->second.base);
+        for (int r = 0; r < rows; r++)
+          for (int c = 0; c < cols; c++) {
+            const ON_3dVector off = R * ON_3dVector(c * dc, r * dr, 0);
+            const ON_Xform T = ON_Xform::TranslationTransformation(ON_3dVector(ins.x, ins.y, ins.z) + off);
+            convert(bl->second.ents, xf * ocsXf * T * R * S * B, layer, depth + 1);
+          }
+      } else if (e.type != "SEQEND" && e.type != "VERTEX" && e.type != "ATTRIB" && e.type != "ATTDEF") {
+        skipped++;
       }
-      if (flags & 16) { skipped++; continue; }  // mesh poligonale MxN: non gestita
-      const bool is3d = flags & 8;
-      std::vector<ON_3dPoint> pts;
-      std::vector<double> bulges;
-      for (const auto& v : verts) { pts.push_back(P(v, 10)); bulges.push_back(is3d ? 0 : v.D(42)); }
-      if (!is3d) for (auto& p : pts) p.z = e.D(30, p.z);
-      const bool closed = flags & 1;
-      std::vector<ON_Curve*> segs;
-      const ON_Plane frame = is3d ? ON_Plane(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::YAxis) : ocs;
-      for (size_t k = 0; pts.size() >= 2 && k + 1 < pts.size() + (closed ? 1 : 0); k++)
-        segs.push_back(BulgeSegment(pts[k], pts[(k + 1) % pts.size()], bulges[k], frame));
-      add(JoinSegments(segs), e);
-    } else if (e.type == "SPLINE") {
-      const int degree = e.I(71, 3);
-      const auto knots = e.All(40);
-      const auto weights = e.All(41);
-      std::vector<ON_3dPoint> cps, fits;
-      {
-        double x = 0, y = 0;
-        for (const auto& q : e.p) {
-          if (q.code == 10) x = Num(q.value);
-          else if (q.code == 20) y = Num(q.value);
-          else if (q.code == 30) cps.emplace_back(x, y, Num(q.value));
-          else if (q.code == 11) x = Num(q.value);
-          else if (q.code == 21) y = Num(q.value);
-          else if (q.code == 31) fits.emplace_back(x, y, Num(q.value));
-        }
-      }
-      const int n = (int)cps.size();
-      if (n >= degree + 1 && (int)knots.size() == n + degree + 1) {
-        const bool rational = (int)weights.size() == n;
-        auto* nc = new ON_NurbsCurve(3, rational, degree + 1, n);
-        for (int k = 0; k < n; k++) {
-          if (rational) nc->SetCV(k, ON_4dPoint(cps[k].x * weights[k], cps[k].y * weights[k], cps[k].z * weights[k], weights[k]));
-          else nc->SetCV(k, cps[k]);
-        }
-        // DXF: n+degree+1 nodi; openNURBS: senza il primo e l'ultimo
-        for (int k = 1; k + 1 < (int)knots.size(); k++) nc->m_knot[k - 1] = knots[k];
-        if (nc->IsValid()) add(nc, e); else { delete nc; skipped++; }
-      } else if (fits.size() >= 2) {
-        // curva per i punti di passaggio: approssimata con una NURBS uniforme sui punti
-        ON_3dPointArray fp;
-        for (auto& p : fits) fp.Append(p);
-        auto* nc = new ON_NurbsCurve();
-        const int order = std::min(4, (int)fits.size());
-        if (nc->CreateClampedUniformNurbs(3, order, fp.Count(), fp.Array())) add(nc, e);
-        else { delete nc; add(new ON_PolylineCurve(fp), e); }
-      } else skipped++;
-    } else if (e.type == "3DFACE" || e.type == "SOLID") {
-      std::string layer = e.S(8).empty() ? "0" : e.S(8);
-      MeshBuilder& mb = faces[layer];
-      ON_3dPoint q[4] = {P(e, 10), P(e, 11), P(e, 12), P(e, 13)};
-      if (e.type == "SOLID") { std::swap(q[2], q[3]); for (auto& p : q) p = OcsToWcs(ocs, p); }
-      int v[4];
-      for (int k = 0; k < 4; k++) v[k] = mb.Vertex(q[k] * scale);
-      mb.Face(v[0], v[1], v[2], v[3] == v[2] ? -1 : v[3]);
-    } else if (e.type == "TEXT" || e.type == "MTEXT") {
-      // testo come punto di testo (le annotazioni DXF non sono convertite)
-      std::string t = e.S(1);
-      for (const auto& q : e.p) if (q.code == 3) t = q.value + t;
-      auto* dot = new ON_TextDot(OcsToWcs(e.type == "TEXT" ? ocs : OcsPlane(ON_3dVector::ZAxis), P(e, 10)),
-                                 ON_wString(t.c_str()), nullptr);
-      add(dot, e);
-    } else if (e.type != "SEQEND" && e.type != "VERTEX" && e.type != "ATTRIB") {
-      skipped++;
     }
-  }
+  };
+  convert(ents, ON_Xform::IdentityTransformation, std::string(), 0);
   // scala delle unita' (le mesh di 3DFACE sono gia' scalate)
   if (std::fabs(scale - 1) > 1e-12)
     for (auto& o : out) if (!ON_Mesh::Cast(o.geom.get())) o.geom->Scale(scale);
@@ -850,7 +949,7 @@ bool ReadDXF(const std::string& path, ON::LengthUnitSystem docUnits, std::vector
     out.push_back(std::move(o));
   }
   if (out.empty()) { err = skipped ? "nessuna entita' DXF supportata nel file" : "il file DXF non contiene entita'"; return false; }
-  if (skipped) err = std::to_string(skipped) + " entita' non supportate (blocchi, retini, quote...) saltate";
+  if (skipped) err = std::to_string(skipped) + " entita' non supportate (retini, immagini, regioni...) saltate";
   return true;
 }
 

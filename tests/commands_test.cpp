@@ -2190,6 +2190,43 @@ int main(int argc, char** argv) {
       CHECK(nc && nc->Order() == 4 && nc->CVCount() == 4 && std::fabs(nc->PointAtEnd().x - 3000) < 1e-6);
       CHECK(m && m->m_F.Count() == 1 && m->m_F[0].IsQuad());
     }
+    // DXF con blocchi (INSERT ruotato e scalato), quota (DIMENSION con blocco anonimo) e MTEXT formattato
+    {
+      const std::string f = dir + "/blocchi.dxf";
+      std::ofstream o(f);
+      o << "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n0\nLAYER\n2\nQUOTE\n70\n0\n62\n1\n0\nENDTAB\n0\nENDSEC\n"
+           "0\nSECTION\n2\nBLOCKS\n"
+           "0\nBLOCK\n8\n0\n2\nTACCA\n70\n0\n10\n1\n20\n0\n30\n0\n0\nLINE\n8\n0\n10\n1\n20\n0\n30\n0\n11\n3\n21\n0\n31\n0\n0\nENDBLK\n"
+           "0\nBLOCK\n8\n0\n2\n*D1\n70\n1\n10\n0\n20\n0\n30\n0\n"
+           "0\nLINE\n8\n0\n10\n0\n20\n5\n30\n0\n11\n50\n21\n5\n31\n0\n"
+           "0\nMTEXT\n8\n0\n10\n25\n20\n6\n30\n0\n1\n{\\fArial|b0;%%c50}\\Pmm\n0\nENDBLK\n"
+           "0\nENDSEC\n0\nSECTION\n2\nENTITIES\n"
+           "0\nINSERT\n8\nINGOMBRO\n2\nTACCA\n10\n10\n20\n10\n30\n0\n41\n2\n42\n2\n43\n2\n50\n90\n"
+           "0\nDIMENSION\n8\nQUOTE\n2\n*D1\n10\n50\n20\n5\n30\n0\n70\n32\n"
+           "0\nENDSEC\n0\nEOF\n";
+      o.close();
+      Ctx back;
+      CHECK(back.e.Run("_Import \"" + f + "\""));
+      const ON_LineCurve* tacca = nullptr;
+      const ON_TextDot* testo = nullptr;
+      int lines = 0;
+      for (auto* g : back.Objects()) {
+        if (auto* l = ON_LineCurve::Cast(g)) { lines++; if (std::fabs(l->m_line.from.y - 5) > 1e-9) tacca = l; }
+        if (auto* d = ON_TextDot::Cast(g)) testo = d;
+      }
+      CHECK(lines == 2);
+      // blocco con base (1,0): linea 0..2 lungo X, scala 2 -> 0..4, ruotata di 90 gradi e spostata in (10,10)
+      CHECK(tacca && tacca->m_line.from.DistanceTo(ON_3dPoint(10, 10, 0)) < 1e-9 &&
+            tacca->m_line.to.DistanceTo(ON_3dPoint(10, 14, 0)) < 1e-9);
+      CHECK(testo && ToUtf8(testo->PrimaryText()) == "\xC3\x98" "50\nmm");
+      // gli oggetti delle quote vanno sul livello QUOTE
+      int suQuote = 0;
+      for (const auto& id : back.e.AllObjectIds(true)) {
+        const auto* l = ON_Layer::Cast(back.e.Model().LayerFromIndex(back.e.Object(id)->Attributes(nullptr)->m_layer_index).ModelComponent());
+        if (l && ToUtf8(l->Name()) == "QUOTE") suQuote++;
+      }
+      CHECK(suQuote == 2);
+    }
     // formato sconosciuto ed errori
     Ctx bad;
     CHECK(!bad.e.Run("_Import \"" + dir + "/manca.stl\""));
