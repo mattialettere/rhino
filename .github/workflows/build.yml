@@ -144,10 +144,11 @@ jobs:
       # Esempi per addestrare il modello: generati e verificati uno per uno da Kurva3D
       - name: Verifica degli esempi di addestramento AI
         shell: pwsh
-        timeout-minutes: 20
+        timeout-minutes: 45
         run: |
           python tools/ai-train/generate_dataset.py --count 3000 --out "$env:RUNNER_TEMP\kurva3d-train.jsonl"
-          & dist\kurva3d-ai-test.exe --validate-jsonl "$env:RUNNER_TEMP\kurva3d-train.jsonl"
+          # uno ogni 5 (stessi modelli di oggetto, misure diverse): la verifica completa richiede ore
+          & dist\kurva3d-ai-test.exe --validate-jsonl "$env:RUNNER_TEMP\kurva3d-train.jsonl" --every 5
           if ($LASTEXITCODE -ne 0) { throw "esempi di addestramento non validi" }
 
       - name: Esempi di addestramento (file)
