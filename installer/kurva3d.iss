@@ -58,5 +58,21 @@ Root: HKA; Subkey: "Software\Classes\Kurva3D.3dm"; ValueType: string; ValueName:
 Root: HKA; Subkey: "Software\Classes\Kurva3D.3dm\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\kurva3d.exe,0"; Tasks: assoc3dm
 Root: HKA; Subkey: "Software\Classes\Kurva3D.3dm\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\kurva3d.exe"" ""%1"""; Tasks: assoc3dm
 
+; formati di scambio: Kurva3D compare in "Apri con" senza cambiare il programma predefinito
+Root: HKA; Subkey: "Software\Classes\Kurva3D.Scambio"; ValueType: string; ValueName: ""; ValueData: "Disegno CAD"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\Kurva3D.Scambio\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\kurva3d.exe,0"
+Root: HKA; Subkey: "Software\Classes\Kurva3D.Scambio\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\kurva3d.exe"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\.dxf\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.stp\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.step\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.igs\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.iges\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.stl\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.obj\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.gltf\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.glb\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.3mf\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.ply\OpenWithProgids"; ValueType: string; ValueName: "Kurva3D.Scambio"; ValueData: ""; Flags: uninsdeletevalue
+
 [Run]
 Filename: "{app}\kurva3d.exe"; Description: "{cm:LaunchProgram,Kurva3D}"; Flags: nowait postinstall skipifsilent
