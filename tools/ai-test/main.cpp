@@ -9,7 +9,7 @@
 // Modello addestrato (file GGUF locale, istruzioni brevi senza esempi):
 //   kurva3d-ai-test --bench --gguf kurva3d-qwen3-4b.gguf [--compact]
 // Verifica degli esempi di addestramento (tools/ai-train/generate_dataset.py):
-//   kurva3d-ai-test --validate-jsonl train.jsonl
+//   kurva3d-ai-test --validate-jsonl train.jsonl [--every 5]   (uno ogni 5 esempi)
 #include "aiqt/AiService.h"
 #include "commands/Engine.h"
 #include "core/Document3dm.h"
@@ -21,6 +21,11 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
+#ifdef CAD_WITH_OCCT
+#include "kernel/OcctConvert.h"
+#include <BRepBndLib.hxx>
+#include <Bnd_Box.hxx>
+#endif
 #include <algorithm>
 #include <cstdio>
 #include <functional>
@@ -65,6 +70,23 @@ void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome
     if (const auto* o = e.Object(id))
       if (const ON_Geometry* g = o->Geometry(nullptr)) {
         ON_BoundingBox b;  // box stretto: quello normale di superfici e polisuperfici e' piu' largo
+#ifdef CAD_WITH_OCCT
+        // il box di openNURBS per i solidi usa le superfici non tagliate e i punti di
+        // controllo dei cerchi: OpenCASCADE misura la forma vera
+        if (g->ObjectType() == ON::brep_object || g->ObjectType() == ON::extrusion_object) {
+          const TopoDS_Shape sh = cad::occt::GeometryToShape(*g, 0.001);
+          if (!sh.IsNull()) {
+            Bnd_Box bb;
+            BRepBndLib::AddOptimal(sh, bb, Standard_False, Standard_False);
+            if (!bb.IsVoid()) {
+              double x0, y0, z0, x1, y1, z1;
+              bb.Get(x0, y0, z0, x1, y1, z1);
+              all.Union(ON_BoundingBox(ON_3dPoint(x0, y0, z0), ON_3dPoint(x1, y1, z1)));
+              continue;
+            }
+          }
+        }
+#endif
         if (g->GetTightBoundingBox(b)) all.Union(b);
       }
   out.objects = (int)ids.size();
@@ -81,7 +103,7 @@ void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
 
 // Verifica ogni esempio di addestramento: lo script dev'essere valido per Kurva3D e,
 // se l'esempio indica le misure attese, l'oggetto deve averle (tolleranza 1%).
-int ValidateJsonl(const QString& path) {
+int ValidateJsonl(const QString& path, int every) {
   QFile f(path);
   if (!f.open(QIODevice::ReadOnly)) { std::printf("non trovo %s\n", path.toUtf8().constData()); return 2; }
   cad::Document3dm doc;
@@ -91,7 +113,10 @@ int ValidateJsonl(const QString& path) {
   while (!f.atEnd()) {
     const QByteArray line = f.readLine().trimmed();
     if (line.isEmpty()) continue;
+    static int lineNo = 0;
+    if (lineNo++ % every) continue;
     n++;
+    if (n % 50 == 0) { std::printf("  %d esempi verificati, %d con errori\n", n, bad); std::fflush(stdout); }
     const QJsonObject row = QJsonDocument::fromJson(line).object();
     const QJsonArray msgs = row["messages"].toArray();
     if (msgs.size() < 3) { bad++; std::printf("riga %d: messaggi mancanti\n", n); continue; }
@@ -134,6 +159,7 @@ int main(int argc, char** argv) {
   QString modelId = "qwen3-0.6b", prompt = "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro";
   QStringList models;
   QString gguf, jsonl;
+  int every = 1;
   bool bench = false, grammar = true, both = false, compact = false;
   const QStringList a = app.arguments();
   for (int i = 1; i < a.size(); i++) {
@@ -143,13 +169,14 @@ int main(int argc, char** argv) {
     else if (a[i] == "--compact") compact = true;
     else if (i + 1 < a.size() && a[i] == "--gguf") gguf = a[++i];
     else if (i + 1 < a.size() && a[i] == "--validate-jsonl") jsonl = a[++i];
+    else if (i + 1 < a.size() && a[i] == "--every") every = std::max(1, a[++i].toInt());
     else if (i + 1 < a.size() && a[i] == "--model") modelId = a[++i];
     else if (i + 1 < a.size() && a[i] == "--models") models = a[++i].split(',', Qt::SkipEmptyParts);
     else if (i + 1 < a.size() && a[i] == "--prompt") prompt = a[++i];
   }
   if (!jsonl.isEmpty()) {
     cad::InitLibrary();
-    const int r = ValidateJsonl(jsonl);
+    const int r = ValidateJsonl(jsonl, every);
     cad::ShutdownLibrary();
     return r;
   }
