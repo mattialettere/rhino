@@ -380,20 +380,16 @@ _BooleanUnion
 Example: "una lampada da tavolo ad arco"
 ```kurva
 # Base disc diameter 220, z 0-20. Bent stem: pipe along a curve from the base up and forward.
-# Shade: hollow truncated cone around the end of the stem, z 300-440. The bent stem stays a separate part
+# Shade: open tube (diameter 180) at the end of the stem, z 320-440. The bent stem stays a separate part
 _Cylinder 0,0,0 110 20 => Base
-_InterpCrv 0,0,10 0,40,250 0,160,420 0,300,430 _Enter => Path
+_InterpCrv 0,0,10 0,40,250 0,160,430 0,300,440 _Enter => Path
 _SelNone
 _SelName Path
 _Pipe 8 => Stem
 _SelNone
 _SelName Path
 _Delete
-_TruncatedCone 0,300,300 90 140 30 => Shade
-_TruncatedCone 0,300,295 86 140 26 => Inside
-_SelNone
-_SelName Shade Inside
-_BooleanDifference
+_Tube 0,300,320 90 86 120 => Shade
 ```
 
 Example: "una tazza"
