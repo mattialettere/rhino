@@ -80,6 +80,7 @@ private:
   // e la finestra delle loro opzioni (AnalysisPanel.cpp). true se il testo era un comando di analisi.
   bool HandleAnalysisCommand(const std::string& text);
   void ShowAnalysisOptions(int page);
+  void ShowLinetypes();   // finestra dei tipi di linea (LinetypesDialog.cpp)
   QDialog* m_analysisDlg = nullptr;
   std::function<void()> m_analysisRefresh;
   void ShowAbout();

@@ -1281,6 +1281,9 @@ int main(int argc, char** argv) {
       CHECK(ci && !ci->options.empty() && ci->options[0].rfind("View=", 0) == 0);
       CHECK(c.e.FindCommand("Disegno2D") == ci);
     }
+    Case("Linetypes_modifica", "-_Linetypes New Tratteggio 5,-2\n-_Linetypes Edit Tratteggio 8,-2,0,-2\n-_Linetypes Rename Tratteggio AsseMio\n-_Linetypes List", [](Ctx& c) {
+      CHECK(c.log.str().find("AsseMio: 8 -2 0 -2") != std::string::npos);
+    });
     Case("Italiano_con_underscore", "_Linea 0,0 10,0", [](Ctx&) {}, false);  // "_" = solo nomi inglesi
     {
       Ctx c;

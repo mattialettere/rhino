@@ -512,6 +512,7 @@ void MainWindow::BuildMenus() {
   edit->addAction("Ripeti", QKeySequence::Redo, this, [this] { Submit("_Redo"); });
   edit->addSeparator();
   edit->addAction("Seleziona tutto", QKeySequence::SelectAll, this, [this] { Submit("_SelAll"); });
+  edit->addAction("Tipi di linea...", this, [this] { ShowLinetypes(); });
   edit->addAction("Elimina", QKeySequence::Delete, this, [this] { Submit("_Delete"); });
   edit->addAction("Taglia (Trim)", this, [this] { Submit("_Trim"); });
   edit->addAction("Estendi", this, [this] { Submit("_Extend"); });
@@ -1195,6 +1196,7 @@ void MainWindow::Submit(const QString& text) {
     return;
   }
   if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
+  if (m_pending.empty() && (norm == "linetypes" || norm == "tipidilinea")) { ShowLinetypes(); return; }
   if (norm == "blockmanager") { ShowBlockManager(); return; }
   if (norm == "about") { ShowAbout(); return; }
   if (norm == "properties") {  // pannello Proprieta'

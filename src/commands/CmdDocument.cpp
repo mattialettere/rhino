@@ -280,7 +280,7 @@ bool CmdLayer(Engine& e, TokenStream& ts) {
 //   motivo: lunghezze in mm separate da virgole, positive = tratto, negative = spazio
 //   (0 = punto), es. "5,-2" tratteggio, "0,-1.5" punti, "8,-2,0,-2" tratto e punto.
 bool CmdLinetypes(Engine& e, TokenStream& ts) {
-  auto action = e.ReadString(ts, "azione (New, Delete, List)");
+  auto action = e.ReadString(ts, "azione (New, Edit, Rename, Delete, List)");
   if (!action) return false;
   const std::string a = NormalizeName(*action);
   ONX_Model& m = e.Model();
@@ -301,6 +301,44 @@ bool CmdLinetypes(Engine& e, TokenStream& ts) {
   auto name = e.ReadString(ts, "nome del tipo di linea");
   if (!name) return false;
   const std::string n = Unquote(*name);
+  // motivo "5,-2,0,-2" -> segmenti
+  auto parsePattern = [&](const std::string& pat, ON_SimpleArray<ON_LinetypeSegment>& segs) {
+    std::stringstream ss(Unquote(pat));
+    std::string tok;
+    while (std::getline(ss, tok, ',')) {
+      char* end = nullptr;
+      const double v = std::strtod(tok.c_str(), &end);
+      if (end == tok.c_str()) return false;
+      segs.Append(ON_LinetypeSegment(std::fabs(v), v < 0 || (v == 0 && tok.find('-') != std::string::npos)
+                                                       ? ON_LinetypeSegment::eSegType::stSpace
+                                                       : ON_LinetypeSegment::eSegType::stLine));
+    }
+    return segs.Count() >= 2;
+  };
+  if (a == "edit" || a == "rename") {
+    // Edit <nome> <motivo> | Rename <nome> <nuovo nome>
+    const int idx = FindLinetype(e, n);
+    if (idx < 0) return e.Fail("tipo di linea inesistente o predefinito: " + n);
+    auto v = e.ReadString(ts, a == "edit" ? "nuovo motivo (es. 5,-2)" : "nuovo nome");
+    if (!v) return false;
+    const ON_ModelComponent* c = m.ComponentFromIndex(ON_ModelComponent::Type::LinePattern, idx).ModelComponent();
+    auto* lt = const_cast<ON_Linetype*>(ON_Linetype::Cast(c));
+    if (!lt) return e.Fail("tipo di linea non trovato");
+    if (a == "edit") {
+      ON_SimpleArray<ON_LinetypeSegment> segs;
+      if (!parsePattern(*v, segs)) return e.Fail("motivo non valido: " + *v);
+      if (lt->IsLocked()) return e.Fail("tipo di linea bloccato");
+      lt->ClearPattern();
+      for (int i = 0; i < segs.Count(); i++) lt->AppendSegment(segs[i]);
+      e.Out() << "  Motivo di " << n << " cambiato\n";
+    } else {
+      const std::string nn = Unquote(*v);
+      if (nn.empty() || FindLinetype(e, nn) != -2) return e.Fail("nome non valido o gia' usato: " + nn);
+      lt->SetName(ON_wString(nn.c_str()));
+      e.Out() << "  Tipo di linea " << n << " rinominato in " << nn << "\n";
+    }
+    return true;
+  }
   if (a == "new") {
     if (n.empty()) return e.Fail("nome non valido");
     if (FindLinetype(e, n) != -2) return e.Fail("il tipo di linea esiste gia': " + n);
@@ -308,17 +346,9 @@ bool CmdLinetypes(Engine& e, TokenStream& ts) {
     if (!pat) return false;
     ON_Linetype lt;
     lt.SetName(ON_wString(n.c_str()));
-    std::stringstream ss(Unquote(*pat));
-    std::string tok;
-    while (std::getline(ss, tok, ',')) {
-      char* end = nullptr;
-      const double v = std::strtod(tok.c_str(), &end);
-      if (end == tok.c_str()) return e.Fail("motivo non valido: " + *pat);
-      lt.AppendSegment(ON_LinetypeSegment(std::fabs(v), v < 0 || (v == 0 && tok.find('-') != std::string::npos)
-                                                              ? ON_LinetypeSegment::eSegType::stSpace
-                                                              : ON_LinetypeSegment::eSegType::stLine));
-    }
-    if (lt.SegmentCount() < 2) return e.Fail("servono almeno un tratto e uno spazio");
+    ON_SimpleArray<ON_LinetypeSegment> segs;
+    if (!parsePattern(*pat, segs)) return e.Fail("motivo non valido (servono almeno un tratto e uno spazio): " + *pat);
+    for (int i = 0; i < segs.Count(); i++) lt.AppendSegment(segs[i]);
     ON_ModelComponentReference ref = m.AddModelComponent(lt, true);
     if (!ref.ModelComponent()) return e.Fail("tipo di linea non creato");
     e.Out() << "  Creato tipo di linea " << n << "\n";
