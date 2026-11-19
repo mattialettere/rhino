@@ -23,8 +23,7 @@
 #include <QTimer>
 #ifdef CAD_WITH_OCCT
 #include "kernel/OcctConvert.h"
-#include <BRepBndLib.hxx>
-#include <Bnd_Box.hxx>
+#include <memory>
 #endif
 #include <algorithm>
 #include <cstdio>
@@ -76,16 +75,14 @@ void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome
         if (g->ObjectType() == ON::brep_object || g->ObjectType() == ON::extrusion_object) {
           bool done = false;
           try {
+            // misura sulla mesh fine: i vertici stanno sulla superficie vera (il box
+            // analitico di OpenCASCADE sui cerchi razionali e' piu' largo)
             const TopoDS_Shape sh = cad::occt::GeometryToShape(*g, 0.001);
-            if (!sh.IsNull()) {
-              Bnd_Box bb;
-              BRepBndLib::AddOptimal(sh, bb, Standard_False, Standard_False);
-              if (!bb.IsVoid()) {
-                double x0, y0, z0, x1, y1, z1;
-                bb.Get(x0, y0, z0, x1, y1, z1);
-                all.Union(ON_BoundingBox(ON_3dPoint(x0, y0, z0), ON_3dPoint(x1, y1, z1)));
-                done = true;
-              }
+            std::unique_ptr<ON_Mesh> m(sh.IsNull() ? nullptr : cad::occt::MeshShape(sh, 0.05, 0.05, false));
+            ON_BoundingBox mb;
+            if (m && m->VertexCount() > 0 && m->GetTightBoundingBox(mb)) {
+              all.Union(mb);
+              done = true;
             }
           } catch (...) {
           }
