@@ -30,6 +30,7 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include <QFontComboBox>
+#include <QFontDatabase>
 #include <QPushButton>
 #include <QCompleter>
 #include <QStringListModel>
@@ -734,6 +735,71 @@ void MainWindow::BuildMenus() {
       if (d->objectName() == "aiDock") { d->show(); d->raise(); }
   });
   aiMenu->addAction("Modello dell'assistente…", this, [this] { m_ai->ShowModelDialog(); });
+  // Testo: creazione e modifica di testi e quote (come la sezione Testo delle Proprieta' di Rhino 8)
+  {
+    auto* textMenu = menuBar()->addMenu("&Testo");
+    textMenu->addAction("Nuovo testo", this, [this] { Submit("_Text"); });
+    textMenu->addAction("Testo in curve (TextObject)", this, [this] { Submit("_TextObject"); });
+    textMenu->addAction("Punto di testo (Dot)", this, [this] { Submit("_Dot"); });
+    textMenu->addSeparator();
+    // valori della selezione (testo, altezza, carattere) per riempire le finestre
+    auto annotations = [this](QString* text, double* height, QString* family) {
+      int n = 0;
+      for (const auto& id : m_engine.Selection()) {
+        const auto* o = m_engine.Object(id);
+        const auto* a = o ? ON_Annotation::Cast(o->Geometry(nullptr)) : nullptr;
+        if (!a) continue;
+        if (n++ == 0) {
+          const ON_DimStyle& st = a->DimensionStyle(ParentDimStyle(m_engine.Model(), *a));
+          if (const auto* d = ON_Dimension::Cast(a)) {
+            *text = QString::fromStdString(ToUtf8(ON_wString(d->PlainUserText())));
+            if (text->isEmpty()) *text = "<>";
+          } else {
+            *text = QString::fromStdString(ToUtf8(a->PlainText())).remove('\r').replace('\n', "\\n");
+          }
+          *height = a->TextHeight(&st);
+          *family = QString::fromStdString(ToUtf8(a->Font(&st).FamilyName()));
+        }
+      }
+      if (!n) QMessageBox::information(this, "Testo", "Seleziona prima i testi o le quote da modificare.");
+      return n > 0;
+    };
+    textMenu->addAction("Modifica testo…", this, [this, annotations] {
+      QString t, f;
+      double h = 0;
+      if (!annotations(&t, &h, &f)) return;
+      bool ok = false;
+      QString v = QInputDialog::getText(this, "Modifica testo", "Testo (\\n per andare a capo; <> = misura della quota):",
+                                        QLineEdit::Normal, t, &ok);
+      if (!ok) return;
+      v.replace('"', "'");
+      PropertyCommand("-_TextProperties Text=\"" + v + "\"");
+    });
+    textMenu->addAction("Altezza del testo…", this, [this, annotations] {
+      QString t, f;
+      double h = 0;
+      if (!annotations(&t, &h, &f)) return;
+      bool ok = false;
+      const double v = QInputDialog::getDouble(this, "Altezza del testo", "Altezza (unità del modello):", h > 0 ? h : 1.0,
+                                               1e-6, 1e9, 4, &ok);
+      if (ok) PropertyCommand(QString("-_TextProperties Height=%1").arg(v, 0, 'g', 10));
+    });
+    textMenu->addAction("Carattere…", this, [this, annotations] {
+      QString t, f;
+      double h = 0;
+      if (!annotations(&t, &h, &f)) return;
+      const QStringList fams = QFontDatabase::families();
+      bool ok = false;
+      const QString v = QInputDialog::getItem(this, "Carattere", "Carattere:", fams, std::max(0, (int)fams.indexOf(f)), true, &ok);
+      if (ok && !v.isEmpty()) PropertyCommand("-_TextProperties Font=\"" + v + "\"");
+    });
+    textMenu->addSeparator();
+    textMenu->addAction("Stile di quota (DimStyle)", this, [this] { Submit("_DimStyle"); });
+    textMenu->addAction("Proprietà del testo (pannello)", this, [this] {
+      for (auto* d : findChildren<QDockWidget*>())
+        if (d->windowTitle() == "Proprietà") { d->show(); d->raise(); }
+    });
+  }
   auto* help = menuBar()->addMenu("&?");
   help->addAction("Novità di questa versione", this, [this] { ShowWhatsNew(this); });
   help->addAction("Elenco comandi", this, [this] { Submit("?"); });

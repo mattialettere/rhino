@@ -278,6 +278,13 @@ bool CmdRender(Engine& e, TokenStream& ts) {
   ui::Scene scene(e);
   scene.fixedSpace = true;
   scene.Rebuild();
+  // come Rhino 8: si renderizzano superfici, solidi, SubD e mesh; curve, testi e quote no
+  bool any = false;
+  for (const auto& o : scene.Objects())
+    if (o.shaded) { any = true; break; }
+  if (!any)
+    return e.Fail("niente da renderizzare: il rendering mostra solo superfici, solidi, SubD e mesh "
+                  "(curve, testi e quote non compaiono, come in Rhino 8). Per un disegno 2D usa Stampa o ViewCaptureToFile");
   if (!have) {
     const std::string proj = opts.count("view") ? Unq(opts["view"]) : "Perspective";
     v = StandardView(proj, scene.Bounds(), double(ro.width) / ro.height);

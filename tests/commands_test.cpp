@@ -2744,6 +2744,12 @@ int main(int argc, char** argv) {
     // immagine: PNG valido, la sfera rossa e' rossa, le ombre piu' scure del piano
     const std::string png = dir + "/render.png";
     CHECK(c.e.Run("_Render Width=160 Height=120 Samples=8 View=Top File=\"" + png + "\""));
+    {  // solo curve e testi (es. un DXF 2D): come Rhino 8 non c'e' niente da renderizzare, lo diciamo
+      Ctx c2;
+      CHECK(c2.e.Run("_Line 0,0 10,0\n_Text 0,5 \"ciao\""));
+      CHECK(!c2.e.Run("_Render Width=40 Height=30 Samples=1 File=\"" + dir + "/vuoto.png\""));
+      CHECK(c2.log.str().find("niente da renderizzare") != std::string::npos);
+    }
     {
       std::ifstream f(png, std::ios::binary);
       std::string d((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
