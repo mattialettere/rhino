@@ -1,4 +1,5 @@
 #include "commands/Exchange.h"
+#include "commands/ExchangeUtil.h"
 #include "commands/Engine.h"
 #include "core/Document3dm.h"
 #include "core/SubDLimit.h"
@@ -21,23 +22,9 @@
 
 namespace cad {
 
+using namespace xu;
 namespace {
 namespace fs = std::filesystem;
-
-std::string U8(const fs::path& p) {
-  const auto u = p.u8string();
-  return std::string(u.begin(), u.end());
-}
-std::string Lower(std::string s) {
-  for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-  return s;
-}
-std::string Trim(const std::string& s) {
-  size_t a = 0, b = s.size();
-  while (a < b && std::isspace((unsigned char)s[a])) a++;
-  while (b > a && std::isspace((unsigned char)s[b - 1])) b--;
-  return s.substr(a, b - a);
-}
 
 // Triangoli di una mesh (i quadrilateri divisi in due).
 template <class F>
@@ -47,88 +34,6 @@ void ForEachTriangle(const ON_Mesh& m, F f) {
     f(fc.vi[0], fc.vi[1], fc.vi[2]);
     if (fc.IsQuad()) f(fc.vi[0], fc.vi[2], fc.vi[3]);
   }
-}
-
-// Mesh con i vertici saldati per posizione esatta.
-class MeshBuilder {
- public:
-  int Vertex(const ON_3dPoint& p) {
-    auto key = std::make_tuple(p.x, p.y, p.z);
-    auto it = m_index.find(key);
-    if (it != m_index.end()) return it->second;
-    const int i = m_mesh->m_V.Count();
-    m_mesh->m_V.Append(ON_3fPoint(p));
-    m_index[key] = i;
-    return i;
-  }
-  void Face(int a, int b, int c, int d = -1) {
-    if (a == b || b == c || a == c) return;
-    if (d < 0 || d == c || d == a) m_mesh->SetTriangle(m_mesh->m_F.Count(), a, b, c);
-    else m_mesh->SetQuad(m_mesh->m_F.Count(), a, b, c, d);
-  }
-  bool Empty() const { return m_mesh->m_F.Count() == 0; }
-  std::unique_ptr<ON_Mesh> Take() {
-    auto m = std::move(m_mesh);
-    m_mesh = std::make_unique<ON_Mesh>();
-    m_index.clear();
-    m->ComputeVertexNormals();
-    m->Compact();
-    return m;
-  }
-
- private:
-  std::unique_ptr<ON_Mesh> m_mesh = std::make_unique<ON_Mesh>();
-  std::map<std::tuple<double, double, double>, int> m_index;
-};
-
-// --- Colori ACI (AutoCAD Color Index) ---------------------------------------------------------
-ON_Color AciColor(int aci) {
-  static const ON_Color base[10] = {ON_Color(0, 0, 0),       ON_Color(255, 0, 0),   ON_Color(255, 255, 0),
-                                    ON_Color(0, 255, 0),     ON_Color(0, 255, 255), ON_Color(0, 0, 255),
-                                    ON_Color(255, 0, 255),   ON_Color(0, 0, 0),     ON_Color(128, 128, 128),
-                                    ON_Color(192, 192, 192)};
-  aci = std::abs(aci);
-  if (aci < 10) return base[aci];
-  if (aci >= 250) {
-    const int g = 51 + (aci - 250) * 41;
-    return ON_Color(g, g, g);
-  }
-  const double hue = ((aci / 10) - 1) * 15.0;
-  const int k = aci % 10;
-  static const double val[5] = {1.0, 0.8, 0.6, 0.5, 0.3};
-  const double v = val[k / 2], s = (k % 2) ? 0.5 : 1.0;
-  ON_Color c;
-  c.SetHSV(hue * ON_PI / 180.0, s, v);
-  return c;
-}
-
-int NearestAci(const ON_Color& c) {
-  if (c.Red() == c.Green() && c.Green() == c.Blue() && (c.Red() < 30 || c.Red() > 225)) return 7;
-  int best = 7;
-  double bd = 1e18;
-  for (int i = 1; i < 256; i++) {
-    if (i == 7) continue;
-    const ON_Color a = AciColor(i);
-    const double d = std::pow(a.Red() - c.Red(), 2) + std::pow(a.Green() - c.Green(), 2) + std::pow(a.Blue() - c.Blue(), 2);
-    if (d < bd) { bd = d; best = i; }
-  }
-  return best;
-}
-
-// Algoritmo dell'asse arbitrario di AutoCAD (sistema OCS dalla direzione di estrusione).
-ON_Plane OcsPlane(const ON_3dVector& nIn) {
-  ON_3dVector n = nIn;
-  if (!n.Unitize()) n = ON_3dVector::ZAxis;
-  ON_3dVector ax = (std::fabs(n.x) < 1.0 / 64 && std::fabs(n.y) < 1.0 / 64) ? ON_CrossProduct(ON_3dVector::YAxis, n)
-                                                                          : ON_CrossProduct(ON_3dVector::ZAxis, n);
-  ax.Unitize();
-  ON_3dVector ay = ON_CrossProduct(n, ax);
-  ay.Unitize();
-  return ON_Plane(ON_3dPoint::Origin, ax, ay);
-}
-
-ON_3dPoint OcsToWcs(const ON_Plane& p, const ON_3dPoint& q) {
-  return ON_3dPoint::Origin + q.x * p.xaxis + q.y * p.yaxis + q.z * p.zaxis;
 }
 }  // namespace
 
@@ -554,499 +459,6 @@ bool WriteOBJ(const std::string& path, const std::vector<ExportItem>& items, dou
   return (bool)f || (err = "errore di scrittura", false);
 }
 
-// --- DXF --------------------------------------------------------------------------------------
-namespace {
-struct DxfPair { int code; std::string value; };
-
-bool ReadPairs(const std::string& path, std::vector<DxfPair>& pairs, std::string& err) {
-  std::ifstream f(fs::u8path(path), std::ios::binary);
-  if (!f) { err = "impossibile aprire " + path; return false; }
-  std::string head(22, '\0');
-  f.read(head.data(), 22);
-  if (head.rfind("AutoCAD Binary DXF", 0) == 0) { err = "DXF binario non supportato (salvalo come DXF di testo)"; return false; }
-  f.seekg(0);
-  std::string a, b;
-  while (std::getline(f, a) && std::getline(f, b)) {
-    if (!b.empty() && b.back() == '\r') b.pop_back();
-    try { pairs.push_back({std::stoi(Trim(a)), b}); } catch (...) { err = "file DXF non valido"; return false; }
-  }
-  return true;
-}
-
-double Num(const std::string& s) { try { return std::stod(Trim(s)); } catch (...) { return 0; } }
-int Int(const std::string& s) { try { return std::stoi(Trim(s)); } catch (...) { return 0; } }
-
-// Un'entita' DXF: tutte le coppie fino al prossimo codice 0.
-struct Entity {
-  std::string type;
-  std::vector<DxfPair> p;
-  double D(int code, double def = 0) const {
-    for (const auto& q : p) if (q.code == code) return Num(q.value);
-    return def;
-  }
-  int I(int code, int def = 0) const {
-    for (const auto& q : p) if (q.code == code) return Int(q.value);
-    return def;
-  }
-  std::string S(int code) const {
-    for (const auto& q : p) if (q.code == code) return q.value;
-    return "";
-  }
-  std::vector<double> All(int code) const {
-    std::vector<double> v;
-    for (const auto& q : p) if (q.code == code) v.push_back(Num(q.value));
-    return v;
-  }
-  ON_3dVector Extrusion() const { return ON_3dVector(D(210, 0), D(220, 0), D(230, 1)); }
-};
-
-ON::LengthUnitSystem InsUnits(int v) {
-  switch (v) {
-    case 1: return ON::LengthUnitSystem::Inches;
-    case 2: return ON::LengthUnitSystem::Feet;
-    case 4: return ON::LengthUnitSystem::Millimeters;
-    case 5: return ON::LengthUnitSystem::Centimeters;
-    case 6: return ON::LengthUnitSystem::Meters;
-    case 7: return ON::LengthUnitSystem::Kilometers;
-    case 8: return ON::LengthUnitSystem::Microinches;
-    case 9: return ON::LengthUnitSystem::Mils;
-    case 10: return ON::LengthUnitSystem::Yards;
-    case 13: return ON::LengthUnitSystem::Microns;
-    case 14: return ON::LengthUnitSystem::Decimeters;
-    default: return ON::LengthUnitSystem::None;
-  }
-}
-
-int InsUnitsCode(ON::LengthUnitSystem u) {
-  for (int v = 1; v <= 14; v++) if (InsUnits(v) == u) return v;
-  return 0;
-}
-
-// Segmento di polilinea con rigonfiamento (bulge) -> arco.
-ON_Curve* BulgeSegment(const ON_3dPoint& a, const ON_3dPoint& b, double bulge, const ON_Plane& ocs) {
-  const ON_3dPoint A = OcsToWcs(ocs, a), B = OcsToWcs(ocs, b);
-  if (std::fabs(bulge) < 1e-12 || a.DistanceTo(b) < 1e-12) return new ON_LineCurve(A, B);
-  // punto medio dell'arco nel piano OCS
-  const ON_2dVector chord(b.x - a.x, b.y - a.y);
-  const ON_2dVector perp(chord.y, -chord.x);  // a destra della corda
-  const double sagitta = bulge * chord.Length() / 2.0;
-  ON_2dVector pu = perp;
-  pu.Unitize();
-  const ON_3dPoint mid((a.x + b.x) / 2 + pu.x * sagitta, (a.y + b.y) / 2 + pu.y * sagitta, a.z);
-  ON_Arc arc;
-  if (!arc.Create(A, OcsToWcs(ocs, mid), B)) return new ON_LineCurve(A, B);
-  return new ON_ArcCurve(arc);
-}
-
-ON_Curve* JoinSegments(std::vector<ON_Curve*>& segs) {
-  if (segs.empty()) return nullptr;
-  if (segs.size() == 1) { ON_Curve* c = segs[0]; segs.clear(); return c; }
-  auto* pc = new ON_PolyCurve();
-  for (ON_Curve* c : segs) pc->Append(c);
-  segs.clear();
-  return pc;
-}
-}  // namespace
-
-// Da coordinate OCS a coordinate del mondo.
-static ON_Xform OcsXform(const ON_Plane& ocs) {
-  ON_Xform x(ON_Xform::IdentityTransformation);
-  for (int r = 0; r < 3; r++) { x.m_xform[r][0] = ocs.xaxis[r]; x.m_xform[r][1] = ocs.yaxis[r]; x.m_xform[r][2] = ocs.zaxis[r]; }
-  return x;
-}
-
-// Testo MTEXT/TEXT senza i codici di formattazione (\P a capo, {\fArial;...}, %%d gradi...).
-static std::string DxfPlainText(const std::string& in) {
-  std::string o;
-  for (size_t i = 0; i < in.size(); i++) {
-    const char c = in[i];
-    if (c == '\\' && i + 1 < in.size()) {
-      const char k = in[i + 1];
-      if (k == 'P' || k == 'n') { o += '\n'; i++; }
-      else if (k == '~') { o += ' '; i++; }
-      else if (k == '\\' || k == '{' || k == '}') { o += k; i++; }
-      else if (std::strchr("LlOoKk", k)) { i++; }
-      else if (k == 'S') {  // frazioni impilate \S1^2; -> 1/2
-        size_t e = in.find(';', i + 2);
-        if (e == std::string::npos) e = in.size();
-        std::string f = in.substr(i + 2, e - i - 2);
-        for (auto& ch : f) if (ch == '^' || ch == '#') ch = '/';
-        o += f;
-        i = e;
-      } else if (std::strchr("fFHCcAWQTp", k)) {  // codici con parametro fino a ';'
-        const size_t e = in.find(';', i + 2);
-        i = e == std::string::npos ? in.size() : e;
-      } else { o += c; }
-    } else if (c == '{' || c == '}') {
-    } else if (c == '%' && i + 2 < in.size() && in[i + 1] == '%') {
-      const char k = (char)std::tolower((unsigned char)in[i + 2]);
-      if (k == 'd') o += "\xC2\xB0";        // gradi
-      else if (k == 'p') o += "\xC2\xB1";   // piu' o meno
-      else if (k == 'c') o += "\xC3\x98";   // diametro
-      else if (k == '%') o += '%';
-      else if (k == 'u' || k == 'o') {}    // sottolineato/sopralineato: ignorati
-      else { o += in.substr(i, 3); }
-      i += 2;
-    } else {
-      o += c;
-    }
-  }
-  return o;
-}
-
-bool ReadDXF(const std::string& path, ON::LengthUnitSystem docUnits, std::vector<ImportedObject>& out, std::string& err) {
-  std::vector<DxfPair> pairs;
-  if (!ReadPairs(path, pairs, err)) return false;
-  // sezioni
-  std::map<std::string, ON_Color> layerColors;
-  ON::LengthUnitSystem fileUnits = ON::LengthUnitSystem::None;
-  std::vector<Entity> ents;
-  struct Block { ON_3dPoint base; std::vector<Entity> ents; };
-  std::map<std::string, Block> blocks;
-  Block* curBlock = nullptr;
-  std::string section;
-  for (size_t i = 0; i < pairs.size(); i++) {
-    const auto& q = pairs[i];
-    if (q.code == 0 && q.value == "SECTION" && i + 1 < pairs.size()) { section = pairs[i + 1].value; i++; continue; }
-    if (q.code == 0 && q.value == "ENDSEC") { section.clear(); curBlock = nullptr; continue; }
-    if (section == "HEADER" && q.code == 9 && q.value == "$INSUNITS" && i + 1 < pairs.size()) fileUnits = InsUnits(Int(pairs[i + 1].value));
-    if ((section == "TABLES" || section == "ENTITIES" || section == "BLOCKS") && q.code == 0) {
-      Entity e;
-      e.type = q.value;
-      size_t j = i + 1;
-      for (; j < pairs.size() && pairs[j].code != 0; j++) e.p.push_back(pairs[j]);
-      i = j - 1;
-      if (section == "TABLES" && e.type == "LAYER") layerColors[e.S(2)] = AciColor(e.I(62, 7));
-      else if (section == "ENTITIES") ents.push_back(std::move(e));
-      else if (section == "BLOCKS") {
-        if (e.type == "BLOCK") {
-          curBlock = &blocks[e.S(2)];
-          curBlock->ents.clear();
-          curBlock->base = ON_3dPoint(e.D(10), e.D(20), e.D(30));
-        } else if (e.type == "ENDBLK") {
-          curBlock = nullptr;
-        } else if (curBlock) {
-          curBlock->ents.push_back(std::move(e));
-        }
-      }
-    }
-  }
-  const double scale = (fileUnits != ON::LengthUnitSystem::None && docUnits != ON::LengthUnitSystem::None)
-                           ? ON::UnitScale(fileUnits, docUnits) : 1.0;
-  std::map<std::string, MeshBuilder> faces;  // 3DFACE per livello
-  int skipped = 0;
-  // Entita' di un blocco (INSERT) o di una quota (DIMENSION): trasformate ed esplose nel modello.
-  std::function<void(const std::vector<Entity>&, const ON_Xform&, const std::string&, int)> convert;
-  convert = [&](const std::vector<Entity>& list, const ON_Xform& xf, const std::string& parentLayer, int depth) {
-    // livello "0" dentro un blocco = livello dell'inserimento (regola DXF)
-    auto layerOf = [&](const Entity& e) {
-      std::string l = e.S(8);
-      if (l.empty() || (l == "0" && !parentLayer.empty())) l = parentLayer.empty() ? "0" : parentLayer;
-      return l;
-    };
-    auto add = [&](ON_Geometry* g, const Entity& e) {
-      if (!g) return;
-      if (!xf.IsIdentity()) g->Transform(xf);
-      ImportedObject o;
-      o.geom.reset(g);
-      o.layer = layerOf(e);
-      auto lc = layerColors.find(o.layer);
-      o.color = lc != layerColors.end() ? lc->second : ON_Color::Black;
-      out.push_back(std::move(o));
-    };
-    auto P = [](const Entity& e, int c) { return ON_3dPoint(e.D(c), e.D(c + 10), e.D(c + 20)); };
-    for (size_t i = 0; i < list.size(); i++) {
-      const Entity& e = list[i];
-      const ON_Plane ocs = OcsPlane(e.Extrusion());
-      if (e.type == "LINE") add(new ON_LineCurve(P(e, 10), P(e, 11)), e);
-      else if (e.type == "POINT") add(new ON_Point(P(e, 10)), e);
-      else if (e.type == "CIRCLE" || e.type == "ARC") {
-        ON_Plane pl = ocs;
-        pl.origin = OcsToWcs(ocs, P(e, 10));
-        pl.UpdateEquation();
-        ON_Circle circ(pl, e.D(40));
-        if (e.type == "CIRCLE") add(new ON_ArcCurve(circ), e);
-        else {
-          double a0 = e.D(50) * ON_PI / 180, a1 = e.D(51) * ON_PI / 180;
-          while (a1 <= a0) a1 += 2 * ON_PI;
-          add(new ON_ArcCurve(ON_Arc(circ, ON_Interval(a0, a1))), e);
-        }
-      } else if (e.type == "ELLIPSE") {
-        const ON_3dPoint c = P(e, 10);
-        const ON_3dVector major(e.D(11), e.D(21), e.D(31));
-        ON_3dVector n = e.Extrusion();
-        n.Unitize();
-        ON_3dVector minor = ON_CrossProduct(n, major);
-        minor.Unitize();
-        minor *= major.Length() * e.D(40, 1);
-        ON_NurbsCurve nc;
-        ON_Ellipse el(ON_Plane(c, major, minor), major.Length(), minor.Length());
-        el.GetNurbForm(nc);
-        double t0 = e.D(41, 0), t1 = e.D(42, 2 * ON_PI);
-        auto* crv = new ON_NurbsCurve(nc);
-        if (std::fabs(t1 - t0 - 2 * ON_PI) > 1e-9) {
-          while (t1 <= t0) t1 += 2 * ON_PI;
-          // dominio di GetNurbForm: 0..2pi
-          if (t1 > 2 * ON_PI + 1e-12) {
-            ON_Curve* a = crv->DuplicateCurve();
-            a->Trim(ON_Interval(t0, 2 * ON_PI));
-            ON_Curve* b = crv->DuplicateCurve();
-            b->Trim(ON_Interval(0, t1 - 2 * ON_PI));
-            delete crv;
-            std::vector<ON_Curve*> segs{a, b};
-            add(JoinSegments(segs), e);
-            continue;
-          }
-          crv->Trim(ON_Interval(t0, t1));
-        }
-        add(crv, e);
-      } else if (e.type == "LWPOLYLINE") {
-        std::vector<ON_3dPoint> pts;
-        std::vector<double> bulges;
-        const double elev = e.D(38);
-        double x = 0;
-        bool haveX = false;
-        for (const auto& q : e.p) {
-          if (q.code == 10) { x = Num(q.value); haveX = true; }
-          else if (q.code == 20 && haveX) { pts.emplace_back(x, Num(q.value), elev); bulges.push_back(0); haveX = false; }
-          else if (q.code == 42 && !bulges.empty()) bulges.back() = Num(q.value);
-        }
-        const bool closed = e.I(70) & 1;
-        std::vector<ON_Curve*> segs;
-        for (size_t k = 0; k + 1 < pts.size() + (closed ? 1 : 0); k++)
-          segs.push_back(BulgeSegment(pts[k], pts[(k + 1) % pts.size()], bulges[k], ocs));
-        add(JoinSegments(segs), e);
-      } else if (e.type == "POLYLINE") {
-        const int flags = e.I(70);
-        std::vector<Entity> verts;
-        size_t j = i + 1;
-        for (; j < list.size() && list[j].type == "VERTEX"; j++) verts.push_back(list[j]);
-        i = (j < list.size() && list[j].type == "SEQEND") ? j : j - 1;
-        if (flags & 64) {  // polyface mesh
-          MeshBuilder mb;
-          std::vector<int> idx;
-          for (const auto& v : verts)
-            if (v.I(70) & 64) idx.push_back(mb.Vertex((xf * P(v, 10)) * scale));
-          for (const auto& v : verts)
-            if ((v.I(70) & 128) && !(v.I(70) & 64)) {
-              int f[4] = {std::abs(v.I(71)) - 1, std::abs(v.I(72)) - 1, std::abs(v.I(73)) - 1, std::abs(v.I(74)) - 1};
-              auto ok = [&](int k) { return k >= 0 && k < (int)idx.size(); };
-              if (ok(f[0]) && ok(f[1]) && ok(f[2])) mb.Face(idx[f[0]], idx[f[1]], idx[f[2]], ok(f[3]) ? idx[f[3]] : -1);
-            }
-          if (!mb.Empty()) {
-            ImportedObject o;
-            o.geom = mb.Take();
-            o.layer = layerOf(e);
-            o.color = layerColors.count(o.layer) ? layerColors[o.layer] : ON_Color::Black;
-            out.push_back(std::move(o));
-          }
-          continue;
-        }
-        if (flags & 16) { skipped++; continue; }  // mesh poligonale MxN: non gestita
-        const bool is3d = flags & 8;
-        std::vector<ON_3dPoint> pts;
-        std::vector<double> bulges;
-        for (const auto& v : verts) { pts.push_back(P(v, 10)); bulges.push_back(is3d ? 0 : v.D(42)); }
-        if (!is3d) for (auto& p : pts) p.z = e.D(30, p.z);
-        const bool closed = flags & 1;
-        std::vector<ON_Curve*> segs;
-        const ON_Plane frame = is3d ? ON_Plane(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::YAxis) : ocs;
-        for (size_t k = 0; pts.size() >= 2 && k + 1 < pts.size() + (closed ? 1 : 0); k++)
-          segs.push_back(BulgeSegment(pts[k], pts[(k + 1) % pts.size()], bulges[k], frame));
-        add(JoinSegments(segs), e);
-      } else if (e.type == "SPLINE") {
-        const int degree = e.I(71, 3);
-        const auto knots = e.All(40);
-        const auto weights = e.All(41);
-        std::vector<ON_3dPoint> cps, fits;
-        {
-          double x = 0, y = 0;
-          for (const auto& q : e.p) {
-            if (q.code == 10) x = Num(q.value);
-            else if (q.code == 20) y = Num(q.value);
-            else if (q.code == 30) cps.emplace_back(x, y, Num(q.value));
-            else if (q.code == 11) x = Num(q.value);
-            else if (q.code == 21) y = Num(q.value);
-            else if (q.code == 31) fits.emplace_back(x, y, Num(q.value));
-          }
-        }
-        const int n = (int)cps.size();
-        if (n >= degree + 1 && (int)knots.size() == n + degree + 1) {
-          const bool rational = (int)weights.size() == n;
-          auto* nc = new ON_NurbsCurve(3, rational, degree + 1, n);
-          for (int k = 0; k < n; k++) {
-            if (rational) nc->SetCV(k, ON_4dPoint(cps[k].x * weights[k], cps[k].y * weights[k], cps[k].z * weights[k], weights[k]));
-            else nc->SetCV(k, cps[k]);
-          }
-          // DXF: n+degree+1 nodi; openNURBS: senza il primo e l'ultimo
-          for (int k = 1; k + 1 < (int)knots.size(); k++) nc->m_knot[k - 1] = knots[k];
-          if (nc->IsValid()) add(nc, e); else { delete nc; skipped++; }
-        } else if (fits.size() >= 2) {
-          // curva per i punti di passaggio: approssimata con una NURBS uniforme sui punti
-          ON_3dPointArray fp;
-          for (auto& p : fits) fp.Append(p);
-          auto* nc = new ON_NurbsCurve();
-          const int order = std::min(4, (int)fits.size());
-          if (nc->CreateClampedUniformNurbs(3, order, fp.Count(), fp.Array())) add(nc, e);
-          else { delete nc; add(new ON_PolylineCurve(fp), e); }
-        } else skipped++;
-      } else if (e.type == "3DFACE" || e.type == "SOLID") {
-        MeshBuilder& mb = faces[layerOf(e)];
-        ON_3dPoint q[4] = {P(e, 10), P(e, 11), P(e, 12), P(e, 13)};
-        if (e.type == "SOLID") { std::swap(q[2], q[3]); for (auto& p : q) p = OcsToWcs(ocs, p); }
-        int v[4];
-        for (int k = 0; k < 4; k++) v[k] = mb.Vertex((xf * q[k]) * scale);
-        mb.Face(v[0], v[1], v[2], v[3] == v[2] ? -1 : v[3]);
-      } else if (e.type == "TEXT" || e.type == "MTEXT") {
-        // testo come punto di testo (le annotazioni DXF non sono convertite)
-        std::string t;
-        for (const auto& q : e.p) if (q.code == 3) t += q.value;
-        t = DxfPlainText(t + e.S(1));
-        if (t.empty()) continue;
-        auto* dot = new ON_TextDot(OcsToWcs(e.type == "TEXT" ? ocs : OcsPlane(ON_3dVector::ZAxis), P(e, 10)),
-                                   ON_wString(t.c_str()), nullptr);
-        add(dot, e);
-      } else if (e.type == "INSERT" || e.type == "DIMENSION") {
-        // INSERT: blocco esploso; DIMENSION: le linee, frecce e testo del suo blocco anonimo (*D..)
-        auto bl = blocks.find(e.S(2));
-        if (bl == blocks.end() || depth > 16) { skipped++; continue; }
-        const std::string layer = layerOf(e);
-        if (e.type == "DIMENSION") {
-          // la geometria della quota e' gia' nella posizione finale (OCS della quota)
-          convert(bl->second.ents, xf * OcsXform(ocs), layer, depth + 1);
-          continue;
-        }
-        const ON_3dPoint ins = P(e, 10);
-        const double sx = e.D(41, 1), sy = e.D(42, 1), sz = e.D(43, 1), rot = e.D(50) * ON_PI / 180;
-        const int cols = std::max(1, e.I(70, 1)), rows = std::max(1, e.I(71, 1));
-        const double dc = e.D(44), dr = e.D(45);
-        const ON_Xform ocsXf = OcsXform(ocs);
-        ON_Xform R;
-        R.Rotation(rot, ON_3dVector::ZAxis, ON_3dPoint::Origin);
-        const ON_Xform S = ON_Xform::DiagonalTransformation(sx, sy, sz);
-        const ON_Xform B = ON_Xform::TranslationTransformation(ON_3dPoint::Origin - bl->second.base);
-        for (int r = 0; r < rows; r++)
-          for (int c = 0; c < cols; c++) {
-            const ON_3dVector off = R * ON_3dVector(c * dc, r * dr, 0);
-            const ON_Xform T = ON_Xform::TranslationTransformation(ON_3dVector(ins.x, ins.y, ins.z) + off);
-            convert(bl->second.ents, xf * ocsXf * T * R * S * B, layer, depth + 1);
-          }
-      } else if (e.type != "SEQEND" && e.type != "VERTEX" && e.type != "ATTRIB" && e.type != "ATTDEF") {
-        skipped++;
-      }
-    }
-  };
-  convert(ents, ON_Xform::IdentityTransformation, std::string(), 0);
-  // scala delle unita' (le mesh di 3DFACE sono gia' scalate)
-  if (std::fabs(scale - 1) > 1e-12)
-    for (auto& o : out) if (!ON_Mesh::Cast(o.geom.get())) o.geom->Scale(scale);
-  for (auto& [layer, mb] : faces) {
-    if (mb.Empty()) continue;
-    ImportedObject o;
-    o.geom = mb.Take();
-    o.layer = layer;
-    o.color = layerColors.count(layer) ? layerColors[layer] : ON_Color::Black;
-    out.push_back(std::move(o));
-  }
-  if (out.empty()) { err = skipped ? "nessuna entita' DXF supportata nel file" : "il file DXF non contiene entita'"; return false; }
-  if (skipped) err = std::to_string(skipped) + " entita' non supportate (retini, immagini, regioni...) saltate";
-  return true;
-}
-
-bool WriteDXF(const std::string& path, const std::vector<ExportItem>& items, ON::LengthUnitSystem docUnits, double tol,
-              std::string& err) {
-  std::ostringstream ents;
-  ents.precision(12);
-  std::map<std::string, ON_Color> layers{{"0", ON_Color::Black}};
-  auto layerName = [&](const ExportItem& it) {
-    std::string l = it.layer.empty() ? "0" : it.layer;
-    for (auto& c : l) if (c == ' ' || c == '<' || c == '>' || c == '/' || c == '\\' || c == ':' || c == '"' || c == ';' || c == '?' || c == '*' || c == '|' || c == '=' || c == ',') c = '_';
-    if (!layers.count(l)) layers[l] = it.color;
-    return l;
-  };
-  auto pt = [&](int code, const ON_3dPoint& p) {
-    ents << code << "\n" << p.x << "\n" << code + 10 << "\n" << p.y << "\n" << code + 20 << "\n" << p.z << "\n";
-  };
-  auto polyline = [&](const std::string& l, const ON_Polyline& pl, bool closed) {
-    ents << "0\nPOLYLINE\n8\n" << l << "\n66\n1\n10\n0\n20\n0\n30\n0\n70\n" << (8 | (closed ? 1 : 0)) << "\n";
-    for (int k = 0; k < pl.Count() - (closed ? 1 : 0); k++) {
-      ents << "0\nVERTEX\n8\n" << l << "\n";
-      pt(10, pl[k]);
-      ents << "70\n32\n";
-    }
-    ents << "0\nSEQEND\n8\n" << l << "\n";
-  };
-  int n = 0;
-  for (const auto& it : items) {
-    const std::string l = layerName(it);
-    const ON_Geometry* g = it.geom;
-    if (const auto* p = ON_Point::Cast(g)) { ents << "0\nPOINT\n8\n" << l << "\n"; pt(10, p->point); n++; }
-    else if (const auto* c = ON_Curve::Cast(g)) {
-      ON_Arc arc;
-      const bool planarZ = c->IsArc(nullptr, &arc, tol) && std::fabs(std::fabs(arc.plane.zaxis.z) - 1) < 1e-9;
-      if (const auto* lc = ON_LineCurve::Cast(c)) {
-        ents << "0\nLINE\n8\n" << l << "\n";
-        pt(10, lc->m_line.from);
-        pt(11, lc->m_line.to);
-      } else if (planarZ) {
-        // archi e cerchi orizzontali (normale +Z o -Z: OCS con estrusione)
-        const ON_3dVector nz = arc.plane.zaxis.z > 0 ? ON_3dVector::ZAxis : -ON_3dVector::ZAxis;
-        const ON_Plane ocs = OcsPlane(nz);
-        ON_3dPoint cc(arc.Center() - ON_3dPoint::Origin);
-        const ON_3dPoint oc(cc * ocs.xaxis, cc * ocs.yaxis, cc * ocs.zaxis);
-        ents << "0\n" << (arc.IsCircle() ? "CIRCLE" : "ARC") << "\n8\n" << l << "\n";
-        pt(10, oc);
-        ents << "40\n" << arc.Radius() << "\n";
-        if (nz.z < 0) ents << "210\n0\n220\n0\n230\n-1\n";
-        if (!arc.IsCircle()) {
-          auto ang = [&](const ON_3dPoint& p) {
-            const ON_3dVector v = p - arc.Center();
-            double a = std::atan2(v * ocs.yaxis, v * ocs.xaxis) * 180 / ON_PI;
-            return a < 0 ? a + 360 : a;
-          };
-          ON_3dPoint s = arc.StartPoint(), e = arc.EndPoint();
-          // gli archi DXF vanno in senso antiorario attorno all'estrusione
-          if (ON_CrossProduct(arc.plane.xaxis, arc.plane.yaxis) * nz < 0) std::swap(s, e);
-          ents << "50\n" << ang(s) << "\n51\n" << ang(e) << "\n";
-        }
-      } else {
-        ON_Polyline pl;
-        if (c->IsPolyline(&pl) < 2) {
-          pl.Empty();
-          const ON_Interval d = c->Domain();
-          const int segs = std::max(16, 8 * std::max(1, c->SpanCount()) * std::max(1, c->Degree()));
-          for (int k = 0; k <= segs; k++) pl.Append(c->PointAt(d.ParameterAt((double)k / segs)));
-        }
-        polyline(l, pl, c->IsClosed());
-      }
-      n++;
-    } else if (const auto* dot = ON_TextDot::Cast(g)) {
-      ents << "0\nTEXT\n8\n" << l << "\n";
-      pt(10, dot->CenterPoint());
-      ents << "40\n" << 1.0 << "\n1\n" << ToUtf8(dot->PrimaryText()) << "\n";
-      n++;
-    } else if (auto m = ExportMesh(*g, tol)) {
-      for (int k = 0; k < m->m_F.Count(); k++) {
-        const ON_MeshFace& f = m->m_F[k];
-        ents << "0\n3DFACE\n8\n" << l << "\n";
-        for (int j = 0; j < 4; j++) pt(10 + j, ON_3dPoint(m->m_V[f.vi[j]]));
-      }
-      n++;
-    }
-  }
-  if (!n) { err = "nessun oggetto esportabile in DXF"; return false; }
-  std::ofstream f(fs::u8path(path), std::ios::binary);
-  if (!f) { err = "impossibile scrivere " + path; return false; }
-  f << "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n" << InsUnitsCode(docUnits) << "\n0\nENDSEC\n";
-  f << "0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n" << layers.size() << "\n";
-  for (const auto& [name, col] : layers)
-    f << "0\nLAYER\n2\n" << name << "\n70\n0\n62\n" << NearestAci(col) << "\n6\nCONTINUOUS\n";
-  f << "0\nENDTAB\n0\nENDSEC\n";
-  f << "0\nSECTION\n2\nENTITIES\n" << ents.str() << "0\nENDSEC\n0\nEOF\n";
-  if (!f) { err = "errore di scrittura"; return false; }
-  return true;
-}
-
 // --- Comandi ----------------------------------------------------------------------------------
 namespace {
 // Materiale del documento per un materiale importato (riusato se c'e' gia' con lo stesso nome).
@@ -1135,43 +547,301 @@ int LayerFor(Engine& e, const std::string& name, const ON_Color& color) {
   const int i = e.Model().AddLayer(static_cast<const wchar_t*>(w), color == ON_UNSET_COLOR ? ON_Color::Black : color);
   return i >= 0 ? i : e.Model().m_settings.CurrentLayerIndex();
 }
-}  // namespace
 
-bool ImportExchange(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts) {
-  (void)opts;
-  const std::string ext = FileExtension(path);
-  std::vector<ImportedObject> objs;
-  std::string err;
-  const ON::LengthUnitSystem units = e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem();
-  bool ok = false;
-  if (ext == "stl") ok = ReadSTL(path, objs, err);
-  else if (ext == "obj") ok = ReadOBJ(path, objs, err);
-  else if (ext == "dxf") ok = ReadDXF(path, units, objs, err);
-  else if (ext == "step" || ext == "stp" || ext == "iges" || ext == "igs") ok = ReadStepIges(path, units, e.Tolerance(), objs, err);
-  else if (ext == "gltf" || ext == "glb") ok = ReadGLTF(path, units, objs, err);
-  else if (ext == "3mf") ok = Read3MF(path, units, objs, err);
-  else if (ext == "ply") ok = ReadPLY(path, objs, err);
-  else err = "formato non supportato: " + ext;
-  if (!ok) return e.Fail(err);
-  e.ClearSelection();
-  int n = 0;
-  std::map<const ExchangeMaterial*, int> matIndex;
-  for (auto& o : objs) {
+std::string KeyOf(const std::string& s) { return Upper(Trim(s)); }
+
+// Tabelle e oggetti di un file importato aggiunti al documento.
+class ModelBuilder {
+ public:
+  explicit ModelBuilder(Engine& e) : m_e(e), m_m(e.Model()) {}
+
+  void Tables(const ImportedModel& im) {
+    for (const auto& lt : im.linetypes) AddLinetype(lt);
+    for (const auto& l : im.layers) AddLayer(l);
+    for (const auto& hp : im.hatchPatterns) AddHatchPattern(hp);
+    for (const auto& ds : im.dimStyles) {
+      ON_ModelComponentReference ref = m_m.AddModelComponent(*ds, true);
+      if (ref.ModelComponent() && !(ref.ModelComponent()->Id() == ds->Id())) m_dimRemap[ds->Id()] = ref.ModelComponent()->Id();
+    }
+    for (const auto& b : im.blocks) AddBlock(b);
+  }
+
+  // Oggetto del modello (o della definizione di un blocco con idef = true). Nil se non creato.
+  ON_UUID Add(ImportedObject& o, bool idef, std::map<const ExchangeMaterial*, int>& matIndex) {
     ON_3dmObjectAttributes at;
-    at.m_layer_index = LayerFor(e, o.layer, o.color);
+    at.m_layer_index = LayerFor(m_e, o.layer, o.color);
     if (!o.name.empty()) at.SetName(ON_wString(o.name.c_str()), true);
+    using S = ImportedObject::Source;
+    if (o.colorSource == S::Object) { at.SetColorSource(ON::color_from_object); at.m_color = o.objectColor; }
+    else if (o.colorSource == S::Parent) at.SetColorSource(ON::color_from_parent);
+    if (o.linetypeSource == S::Object) {
+      const int lt = LinetypeIndex(o.linetype);
+      at.SetLinetypeSource(ON::linetype_from_object);
+      at.m_linetype_index = lt;
+    } else if (o.linetypeSource == S::Parent) at.SetLinetypeSource(ON::linetype_from_parent);
+    if (o.plotWeightSource == S::Object) { at.SetPlotWeightSource(ON::plot_weight_from_object); at.m_plot_weight_mm = o.plotWeight; }
+    else if (o.plotWeightSource == S::Parent) at.SetPlotWeightSource(ON::plot_weight_from_parent);
+    if (o.hidden) at.SetVisible(false);
+    for (const auto& g : o.groups) at.AddToGroup(GroupIndex(g));
+    for (const auto& [k, v] : o.userText) at.SetUserString(ON_wString(k.c_str()), ON_wString(v.c_str()));
     if (o.material) {
       auto f = matIndex.find(o.material.get());
-      const int mi = f != matIndex.end() ? f->second : (matIndex[o.material.get()] = AddExchangeMaterial(e.Model(), *o.material));
+      const int mi = f != matIndex.end() ? f->second : (matIndex[o.material.get()] = AddExchangeMaterial(m_m, *o.material));
       if (mi >= 0) {
         at.m_material_index = mi;
         at.SetMaterialSource(ON::material_from_object);
       }
     }
-    const ON_UUID id = e.AddObject(o.geom.release(), &at);
-    if (!ON_UuidIsNil(id)) { e.Select(id); n++; }
+    if (idef) at.SetMode(ON::object_mode::idef_object);
+    if (o.pageSpace && !idef) {
+      at.m_space = ON::page_space;
+      at.m_viewport_id = PageId();
+    }
+    ON_Geometry* g = o.geom.release();
+    if (!o.block.empty()) {
+      auto f = m_blocks.find(KeyOf(o.block));
+      if (f == m_blocks.end()) return ON_nil_uuid;
+      auto* ir = new ON_InstanceRef();
+      ir->m_instance_definition_uuid = f->second.id;
+      ir->m_xform = o.xform;
+      if (f->second.box.IsValid()) {
+        ON_BoundingBox bb = f->second.box;
+        bb.Transform(o.xform);
+        ir->m_bbox = bb;
+      }
+      g = ir;
+    }
+    if (!g) return ON_nil_uuid;
+    if (auto* an = ON_Annotation::Cast(g)) {
+      auto f = m_dimRemap.find(an->DimensionStyleId());
+      if (f != m_dimRemap.end()) an->SetDimensionStyleId(f->second);
+      if (auto* d = ON_Dimension::Cast(an)) {
+        const auto* ds = ON_DimStyle::Cast(m_m.DimensionStyleFromId(d->DimensionStyleId()).ModelComponent());
+        const ON_DimStyle& parent = ds ? *ds : ON_DimStyle::Default;
+        if (auto* ang = ON_DimAngular::Cast(d)) ang->UpdateDimensionText(&d->DimensionStyle(parent));
+        else d->UpdateDimensionText(m_m.m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem(), &d->DimensionStyle(parent));
+      }
+    }
+    if (auto* h = ON_Hatch::Cast(g)) h->SetPatternIndex(HatchPatternIndex(o.hatchPattern));
+    return m_e.AddObject(g, &at);
   }
-  e.Out() << "  Importati " << n << " oggetti da " << U8(fs::u8path(path).filename()) << "\n";
+
+  bool HasPage() const { return !ON_UuidIsNil(m_pageId); }
+  void FinishPage(const ON_BoundingBox& bb) {
+    if (!HasPage()) return;
+    // foglio con gli oggetti dello spazio carta (minimo A4 orizzontale), origine in basso a sinistra
+    double w = 297, h = 210;
+    if (bb.IsValid()) { w = std::max(w, std::ceil(bb.m_max.x + 10)); h = std::max(h, std::ceil(bb.m_max.y + 10)); }
+    for (int i = 0; i < m_m.m_settings.m_views.Count(); i++) {
+      ON_3dmView& v = m_m.m_settings.m_views[i];
+      if (!(v.m_vp.ViewportId() == m_pageId)) continue;
+      v.m_page_settings.m_width_mm = w;
+      v.m_page_settings.m_height_mm = h;
+      v.m_vp.SetCameraLocation(ON_3dPoint(w / 2, h / 2, 100));
+      v.m_vp.SetFrustum(-w / 2, w / 2, -h / 2, h / 2, 1, 1000);
+    }
+    if (m_e.layoutsChanged) m_e.layoutsChanged();
+  }
+
+ private:
+  struct BlockInfo { ON_UUID id; ON_BoundingBox box; };
+  Engine& m_e;
+  ONX_Model& m_m;
+  std::map<std::string, int> m_linetypes, m_hatchPatterns, m_groups;
+  std::map<std::string, BlockInfo> m_blocks;
+  std::map<ON_UUID, ON_UUID, UuidLess> m_dimRemap;
+  ON_UUID m_pageId = ON_nil_uuid;
+
+  ON_UUID PageId() {
+    if (!ON_UuidIsNil(m_pageId)) return m_pageId;
+    ON_3dmView v;
+    v.m_view_type = ON::view_type::page_view_type;
+    std::string name = "Spazio carta";
+    v.m_name = ON_wString(name.c_str());
+    v.m_page_settings.m_width_mm = 297;
+    v.m_page_settings.m_height_mm = 210;
+    int maxPage = -1;
+    for (int i = 0; i < m_m.m_settings.m_views.Count(); i++)
+      if (m_m.m_settings.m_views[i].m_view_type == ON::view_type::page_view_type)
+        maxPage = std::max(maxPage, m_m.m_settings.m_views[i].m_page_settings.m_page_number);
+    v.m_page_settings.m_page_number = maxPage + 1;
+    ON_Viewport& vp = v.m_vp;
+    vp.ChangeToParallelProjection(true);
+    vp.SetCameraLocation(ON_3dPoint(297 / 2.0, 105, 100));
+    vp.SetCameraDirection(-ON_3dVector::ZAxis);
+    vp.SetCameraUp(ON_3dVector::YAxis);
+    vp.SetFrustum(-297 / 2.0, 297 / 2.0, -105, 105, 1, 1000);
+    ON_CreateUuid(m_pageId);
+    vp.SetViewportId(m_pageId);
+    v.m_display_mode_id = ON_StandardDisplayModeId::Wireframe;
+    m_m.m_settings.m_views.Append(v);
+    return m_pageId;
+  }
+
+  int FindComponent(ON_ModelComponent::Type type, const std::string& name) const {
+    ONX_ModelComponentIterator it(m_m, type);
+    const ON_wString w(name.c_str());
+    for (const ON_ModelComponent* c = it.FirstComponent(); c; c = it.NextComponent())
+      if (!c->IsDeleted() && ON_wString::EqualOrdinal(c->Name(), w, true)) return c->Index();
+    return ON_UNSET_INT_INDEX;
+  }
+
+  void AddLinetype(const ImportedLinetype& lt) {
+    const std::string k = KeyOf(lt.name);
+    if (m_linetypes.count(k)) return;
+    int idx = FindComponent(ON_ModelComponent::Type::LinePattern, lt.name);
+    if (idx == ON_UNSET_INT_INDEX) {
+      ON_Linetype l;
+      l.SetName(ON_wString(lt.name.c_str()));
+      for (double d : lt.pattern) {
+        ON_LinetypeSegment sg;
+        sg.m_length = std::fabs(d);
+        sg.m_seg_type = d < 0 ? ON_LinetypeSegment::eSegType::stSpace : ON_LinetypeSegment::eSegType::stLine;
+        l.AppendSegment(sg);
+      }
+      // il motivo deve iniziare con un tratto e alternare tratto/spazio
+      ON_ModelComponentReference ref = m_m.AddModelComponent(l, true);
+      idx = ref.ModelComponent() ? ref.ModelComponent()->Index() : -1;
+    }
+    m_linetypes[k] = idx;
+  }
+  int LinetypeIndex(const std::string& name) {
+    const std::string k = KeyOf(name);
+    if (k.empty() || k == "CONTINUOUS") return -1;
+    if (auto f = m_linetypes.find(k); f != m_linetypes.end()) return f->second;
+    const int idx = FindComponent(ON_ModelComponent::Type::LinePattern, name);
+    return m_linetypes[k] = (idx == ON_UNSET_INT_INDEX ? -1 : idx);
+  }
+
+  void AddLayer(const ImportedLayer& il) {
+    const int idx = LayerFor(m_e, il.name, il.color);
+    auto* l = const_cast<ON_Layer*>(ON_Layer::Cast(m_m.LayerFromIndex(idx).ModelComponent()));
+    if (!l) return;
+    l->SetColor(il.color);
+    l->SetVisible(il.visible);
+    l->SetLocked(il.locked);
+    l->SetLinetypeIndex(LinetypeIndex(il.linetype));
+    if (il.plotWeight > 0) l->SetPlotWeight(il.plotWeight);
+  }
+
+  void AddHatchPattern(const ImportedHatchPattern& hp) {
+    const std::string k = KeyOf(hp.name);
+    if (m_hatchPatterns.count(k)) return;
+    int idx = FindComponent(ON_ModelComponent::Type::HatchPattern, hp.name);
+    if (idx == ON_UNSET_INT_INDEX) {
+      ON_HatchPattern p(hp.solid ? ON_HatchPattern::Solid : ON_HatchPattern::Hatch1);
+      p.ClearId();
+      p.ClearIndex();
+      p.SetName(ON_wString(hp.name.c_str()));
+      if (!hp.solid) {
+        p.SetFillType(ON_HatchPattern::HatchFillType::Lines);
+        ON_ClassArray<ON_HatchLine> lines;
+        for (const auto& l : hp.lines) lines.Append(l);
+        p.SetHatchLines(lines);
+      }
+      ON_ModelComponentReference ref = m_m.AddModelComponent(p, true);
+      idx = ref.ModelComponent() ? ref.ModelComponent()->Index() : -1;
+    }
+    m_hatchPatterns[k] = idx;
+  }
+  int HatchPatternIndex(const std::string& name) {
+    if (auto f = m_hatchPatterns.find(KeyOf(name)); f != m_hatchPatterns.end() && f->second >= 0) return f->second;
+    ImportedHatchPattern solid;
+    solid.name = "Solid";
+    solid.solid = true;
+    AddHatchPattern(solid);
+    return m_hatchPatterns[KeyOf("Solid")];
+  }
+
+  int GroupIndex(const std::string& name) {
+    const std::string k = KeyOf(name);
+    if (auto f = m_groups.find(k); f != m_groups.end()) return f->second;
+    ON_Group g;
+    g.SetName(ON_wString(name.c_str()));
+    ON_ModelComponentReference ref = m_m.AddModelComponent(g, true);
+    return m_groups[k] = ref.ModelComponent() ? ref.ModelComponent()->Index() : -1;
+  }
+
+  void AddBlock(const ImportedBlock& b) {
+    std::map<const ExchangeMaterial*, int> mats;
+    ON_SimpleArray<ON_UUID> members;
+    ON_BoundingBox box;
+    for (const auto& src : b.objects) {
+      // copia: gli oggetti del blocco restano nella definizione importata
+      ImportedObject o;
+      o.geom.reset(src.geom ? static_cast<ON_Geometry*>(src.geom->Duplicate()) : nullptr);
+      o.layer = src.layer; o.name = src.name; o.color = src.color; o.material = src.material;
+      o.colorSource = src.colorSource; o.objectColor = src.objectColor;
+      o.linetypeSource = src.linetypeSource; o.linetype = src.linetype;
+      o.plotWeightSource = src.plotWeightSource; o.plotWeight = src.plotWeight;
+      o.hidden = src.hidden; o.hatchPattern = src.hatchPattern; o.block = src.block; o.xform = src.xform;
+      o.userText = src.userText;
+      const ON_UUID id = Add(o, true, mats);
+      if (ON_UuidIsNil(id)) continue;
+      members.Append(id);
+      if (const auto* mg = m_e.Object(id))
+        if (const ON_Geometry* g = mg->Geometry(nullptr)) { ON_BoundingBox t; if (g->GetTightBoundingBox(t)) box.Union(t); }
+    }
+    if (!members.Count()) return;
+    auto* idef = new ON_InstanceDefinition();
+    std::string name = b.name.empty() ? "Blocco" : b.name;
+    for (int k = 2; FindComponent(ON_ModelComponent::Type::InstanceDefinition, name) != ON_UNSET_INT_INDEX; k++)
+      name = b.name + " (" + std::to_string(k) + ")";
+    idef->SetName(ON_wString(name.c_str()));
+    if (!b.description.empty()) idef->SetDescription(ON_wString(b.description.c_str()));
+    idef->SetInstanceGeometryIdList(members);
+    if (box.IsValid()) idef->SetBoundingBox(box);
+    ON_ModelComponentReference ref = m_m.AddManagedModelComponent(idef, true);
+    if (!ref.ModelComponent()) return;
+    m_blocks[KeyOf(b.name)] = {ref.ModelComponent()->Id(), box};
+  }
+};
+}  // namespace
+
+bool ImportExchange(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts) {
+  const bool open = opts.count("open") > 0;
+  const std::string ext = FileExtension(path);
+  ImportedModel im;
+  std::string err;
+  ON::LengthUnitSystem units = e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem();
+  // Apri: le coordinate restano nelle unita' del file, che diventano quelle del documento
+  const ON::LengthUnitSystem readUnits = open ? ON::LengthUnitSystem::None : units;
+  bool ok = false;
+  if (ext == "stl") ok = ReadSTL(path, im.objects, err);
+  else if (ext == "obj") ok = ReadOBJ(path, im.objects, err);
+  else if (ext == "dxf") ok = ReadDXF(path, readUnits, im, err);
+  else if (ext == "step" || ext == "stp" || ext == "iges" || ext == "igs") ok = ReadStepIges(path, readUnits, e.Tolerance(), im, err);
+  else if (ext == "gltf" || ext == "glb") ok = ReadGLTF(path, units, im.objects, err);
+  else if (ext == "3mf") ok = Read3MF(path, units, im.objects, err);
+  else if (ext == "ply") ok = ReadPLY(path, im.objects, err);
+  else err = "formato non supportato: " + ext;
+  if (!ok) return e.Fail(err);
+  if (!im.note.empty()) err = im.note;
+  if (open && im.units != ON::LengthUnitSystem::None && im.units != units) {
+    e.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system = ON_UnitSystem(im.units);
+    e.Model().m_settings.m_PageUnitsAndTolerances.m_unit_system = ON_UnitSystem(ON::LengthUnitSystem::Millimeters);
+    e.Out() << "  Unita' del documento: " << ToUtf8(ON_UnitSystem(im.units).UnitSystemName()) << " (dal file)\n";
+  }
+  e.ClearSelection();
+  ModelBuilder mb(e);
+  mb.Tables(im);
+  int n = 0;
+  std::map<const ExchangeMaterial*, int> matIndex;
+  ON_BoundingBox pageBox;
+  for (auto& o : im.objects) {
+    const bool page = o.pageSpace;
+    const ON_UUID id = mb.Add(o, false, matIndex);
+    if (ON_UuidIsNil(id)) continue;
+    n++;
+    if (page) {
+      if (const auto* mg = e.Object(id))
+        if (const ON_Geometry* g = mg->Geometry(nullptr)) { ON_BoundingBox t; if (g->GetTightBoundingBox(t)) pageBox.Union(t); }
+    } else e.Select(id);
+  }
+  mb.FinishPage(pageBox);
+  e.Out() << "  Importati " << n << " oggetti da " << U8(fs::u8path(path).filename());
+  if (!im.blocks.empty()) e.Out() << " (" << im.blocks.size() << " definizioni di blocco)";
+  e.Out() << "\n";
   if (!err.empty()) e.Out() << "  Nota: " << err << "\n";
   return n > 0 || e.Fail("nessun oggetto importato");
 }
@@ -1199,6 +869,7 @@ bool ExportExchange(Engine& e, const std::vector<ON_UUID>& ids, const std::strin
         it.hasMapping = true;
       }
     }
+    it.attributes = o->Attributes(nullptr);
     items.push_back(it);
   }
   std::string err;
@@ -1209,7 +880,7 @@ bool ExportExchange(Engine& e, const std::vector<ON_UUID>& ids, const std::strin
     const bool binary = !opts.count("ascii") && (it == opts.end() || it->second != "no");
     ok = WriteSTL(path, items, e.Tolerance(), binary, err);
   } else if (ext == "obj") ok = WriteOBJ(path, items, e.Tolerance(), err);
-  else if (ext == "dxf") ok = WriteDXF(path, items, units, e.Tolerance(), err);
+  else if (ext == "dxf") ok = WriteDXF(path, items, units, e.Tolerance(), err, &e.Model());
   else if (ext == "step" || ext == "stp" || ext == "iges" || ext == "igs") ok = WriteStepIges(path, items, units, e.Tolerance(), err);
   else if (ext == "gltf" || ext == "glb") ok = WriteGLTF(path, items, units, e.Tolerance(), ext == "glb", err);
   else if (ext == "3mf") ok = Write3MF(path, items, units, e.Tolerance(), err);
@@ -1264,7 +935,7 @@ void RegisterExchangeCommands(Engine& e) {
 }
 
 #ifndef CAD_WITH_OCCT_DE
-bool ReadStepIges(const std::string&, ON::LengthUnitSystem, double, std::vector<ImportedObject>&, std::string& err) {
+bool ReadStepIges(const std::string&, ON::LengthUnitSystem, double, ImportedModel&, std::string& err) {
   err = "STEP e IGES richiedono il modulo di scambio dati di OpenCASCADE, non presente in questa build";
   return false;
 }

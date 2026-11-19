@@ -471,7 +471,7 @@ bool CmdOpen(Engine& e, TokenStream& ts) {
     e.ClearSelection();
     e.currentPath.clear();
     e.activeLayoutId = ON_nil_uuid;
-    if (!ImportExchange(e, *path, {})) return false;
+    if (!ImportExchange(e, *path, {{"open", "yes"}})) return false;
     e.ClearSelection();
     return true;
   }

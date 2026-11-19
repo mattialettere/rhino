@@ -41,7 +41,7 @@ add_library(cadcore STATIC
   src/commands/CmdAnnotation.cpp src/commands/Annotation.cpp src/commands/Annotation.h
   src/commands/CmdExtra.cpp
   src/commands/CmdMaterial.cpp src/commands/Materials.h
-  src/commands/Exchange.cpp src/commands/Exchange.h src/commands/ExchangeMesh.cpp
+  src/commands/Exchange.cpp src/commands/Exchange.h src/commands/ExchangeMesh.cpp src/commands/ExchangeDxf.cpp src/commands/ExchangeUtil.h
   src/commands/CmdViews.cpp
   src/commands/CmdLayout.cpp
   src/commands/History.cpp
@@ -85,6 +85,23 @@ if(OpenCASCADE_FOUND)
     target_sources(cadcore PRIVATE src/kernel/StepIges.cpp)
     target_link_libraries(cadcore PUBLIC ${_occt_de})
     target_compile_definitions(cadcore PUBLIC CAD_WITH_OCCT_DE)
+    # Nomi, colori e livelli dei file STEP/IGES (XCAF): TKXDESTEP/TKXDEIGES fino alla 7.7,
+    # inclusi in TKDESTEP/TKDEIGES dalla 7.8
+    set(_occt_xcaf "")
+    if(TARGET TKXCAF AND TARGET TKLCAF AND TARGET TKCAF)
+      if(TARGET TKXDESTEP AND TARGET TKXDEIGES)
+        set(_occt_xcaf TKXDESTEP TKXDEIGES TKXCAF TKLCAF TKCAF TKCDF)
+      elseif(TARGET TKDESTEP AND TARGET TKDEIGES)
+        set(_occt_xcaf TKXCAF TKLCAF TKCAF TKCDF)
+      endif()
+    endif()
+    if(_occt_xcaf)
+      message(STATUS "OpenCASCADE XCAF: nomi, colori e livelli di STEP/IGES (${_occt_xcaf})")
+      target_link_libraries(cadcore PUBLIC ${_occt_xcaf})
+      target_compile_definitions(cadcore PUBLIC CAD_WITH_XCAF)
+    else()
+      message(WARNING "OpenCASCADE senza XCAF: STEP/IGES senza nomi e colori")
+    endif()
   else()
     message(WARNING "OpenCASCADE senza DataExchange: STEP e IGES non disponibili")
   endif()
