@@ -20,6 +20,8 @@ namespace cad::aiqt {
 QString ModelsDir();
 // Percorso del file del modello se gia' scaricato e verificato, altrimenti vuoto.
 QString InstalledModelPath(const ai::ModelInfo& m);
+// Usa come modello m un file GGUF gia' sul disco (non lo copia): false se non e' un GGUF.
+bool UseLocalModelFile(const ai::ModelInfo& m, const QString& ggufPath);
 
 // Download di un modello: controllo della licenza sul repository, scelta del file
 // GGUF, scaricamento con avanzamento, verifica SHA-256 e dimensione.

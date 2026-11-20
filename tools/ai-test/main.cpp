@@ -168,6 +168,7 @@ int main(int argc, char** argv) {
   QStringList models;
   QString gguf, jsonl;
   int every = 1;
+  int onlyCase = -1;  // --case k: solo la richiesta k del banco (un processo per richiesta)
   bool bench = false, grammar = true, both = false, compact = false;
   const QStringList a = app.arguments();
   for (int i = 1; i < a.size(); i++) {
@@ -175,6 +176,7 @@ int main(int argc, char** argv) {
     else if (a[i] == "--no-grammar") grammar = false;
     else if (a[i] == "--both") both = true;
     else if (a[i] == "--compact") compact = true;
+    else if (i + 1 < a.size() && a[i] == "--case") onlyCase = a[++i].toInt();
     else if (i + 1 < a.size() && a[i] == "--gguf") gguf = a[++i];
     else if (i + 1 < a.size() && a[i] == "--validate-jsonl") jsonl = a[++i];
     else if (i + 1 < a.size() && a[i] == "--every") every = std::max(1, a[++i].toInt());
@@ -226,6 +228,7 @@ int main(int argc, char** argv) {
   for (const auto& m : models) {
     const int n = bench ? int(std::size(kBench)) : 1;
     for (int k = 0; k < n; k++) {
+      if (onlyCase >= 0 && k != onlyCase) continue;
       if (both) { jobs.push_back({m, bench ? k : -1, true}); jobs.push_back({m, bench ? k : -1, false}); }
       else jobs.push_back({m, bench ? k : -1, grammar});
     }
@@ -243,7 +246,8 @@ int main(int argc, char** argv) {
             .arg(j.model, j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, j.grammar ? "si" : "no"));
     clock.start();
     gen.Run(server.Port(), j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, 3, j.grammar,
-            compact ? QString::fromStdString(cad::ai::CompactSystemPrompt()) : QString());
+            compact ? QString::fromStdString(cad::ai::CompactSystemPrompt())
+                    : QString::fromStdString(cad::ai::SystemPromptFor(cad::ai::FindModel(j.model.toStdString()))));
   };
   auto startServer = [&](const QString& path) { server.Start(path, hw.threads); };
   next = [&] {

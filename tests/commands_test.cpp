@@ -2864,6 +2864,12 @@ int main(int argc, char** argv) {
     for (const auto& m : ai::Catalog()) CHECK(ai::LicenseAllowed(m.license));
     // Qwen2.5-Coder 3B ha la licenza Qwen Research: non deve esserci
     CHECK(ai::FindModel("qwen2.5-coder-7b") && !ai::FindModel("qwen2.5-coder-3b"));
+    {  // modello addestrato: link diretto (o file dal disco), istruzioni brevi, mai consigliato da solo
+      const auto* k = ai::FindModel("kurva3d-qwen3-4b");
+      CHECK(k && k->finetuned && ai::IsDirectUrl(*k) && k->bytes > 0 && !k->preferred);
+      CHECK(!ai::IsDirectUrl(*ai::FindModel("qwen3-4b")));
+      CHECK(ai::SystemPromptFor(k) == ai::CompactSystemPrompt() && ai::SystemPromptFor(ai::FindModel("qwen3-4b")) == ai::SystemPrompt());
+    }
     CHECK(!ai::LicenseAllowed("llama3.1") && !ai::LicenseAllowed("gemma") && !ai::LicenseAllowed("other"));
   }
 

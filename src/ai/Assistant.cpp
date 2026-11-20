@@ -30,6 +30,11 @@ const std::vector<ModelInfo>& Catalog() {
       {"qwen2.5-coder-7b", "Qwen2.5-Coder 7B (codice, 16 GB di memoria)", "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF", {"Q4_K_M", "Q5_K_M"}, 4.7, "apache-2.0", true, 28, false},
       {"qwen2.5-coder-14b", "Qwen2.5-Coder 14B (codice, 32 GB di memoria)", "Qwen/Qwen2.5-Coder-14B-Instruct-GGUF", {"Q4_K_M", "Q5_K_M"}, 9.0, "apache-2.0", true, 48, false},
       {"qwen2.5-coder-32b", "Qwen2.5-Coder 32B (codice, workstation)", "Qwen/Qwen2.5-Coder-32B-Instruct-GGUF", {"Q4_K_M", "Q5_K_M"}, 19.9, "apache-2.0", true, 64, false},
+      // Qwen3 4B addestrato sui comandi di Kurva3D (tools/ai-train, 19/11/2026): per ora uso
+      // personale, file su Google Drive (si puo' anche scegliere il .gguf dal disco); istruzioni brevi
+      {"kurva3d-qwen3-4b", "Kurva3D 4B addestrato (sperimentale)",
+       "https://drive.usercontent.google.com/download?id=12LYyog5LdxLz5KY0feduORTc92vPr6hZ&export=download&confirm=t",
+       {"Q4_K_M"}, 2.5, "apache-2.0", true, 36, false, true, 2497281056LL, ""},
   };
   return c;
 }
