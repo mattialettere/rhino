@@ -12,7 +12,10 @@
 #include <sstream>
 #endif
 #include "ai/Assistant.h"
+#include <algorithm>
+#include <cmath>
 #include <string>
+#include <vector>
 #include <thread>
 
 namespace cad::ai {
@@ -38,15 +41,25 @@ HardwareInfo DetectHardware() {
   IDXGIFactory1* f = nullptr;
   if (SUCCEEDED(CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&f))) && f) {
     IDXGIAdapter1* a = nullptr;
+    std::vector<LUID> seen;  // DXGI puo' elencare la stessa scheda piu' volte
     for (UINT i = 0; f->EnumAdapters1(i, &a) != DXGI_ERROR_NOT_FOUND; i++) {
       DXGI_ADAPTER_DESC1 d{};
-      if (SUCCEEDED(a->GetDesc1(&d)) && !(d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)) {
+      const bool dup = SUCCEEDED(a->GetDesc1(&d)) &&
+                       std::any_of(seen.begin(), seen.end(), [&](const LUID& l) {
+                         return l.LowPart == d.AdapterLuid.LowPart && l.HighPart == d.AdapterLuid.HighPart;
+                       });
+      if (!dup && !(d.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) && d.Description[0]) {
+        seen.push_back(d.AdapterLuid);
         GpuInfo g;
         g.name = Utf8(d.Description);
         g.vramGB = double(d.DedicatedVideoMemory) / (1024.0 * 1024.0 * 1024.0);
         // NVIDIA (0x10DE) e AMD (0x1002) con almeno 1 GB dedicato: scheda discreta
         g.discrete = (d.VendorId == 0x10DE || d.VendorId == 0x1002) && g.vramGB >= 1.0;
-        hw.gpus.push_back(g);
+        // stessa scheda con un altro LUID (piu' uscite o driver): stesso nome e stessa memoria
+        const bool same = std::any_of(hw.gpus.begin(), hw.gpus.end(), [&](const GpuInfo& o) {
+          return o.name == g.name && std::abs(o.vramGB - g.vramGB) < 0.01;
+        });
+        if (!same) hw.gpus.push_back(g);
       }
       a->Release();
     }
