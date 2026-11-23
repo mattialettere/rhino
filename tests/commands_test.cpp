@@ -2422,6 +2422,40 @@ int main(int argc, char** argv) {
       CHECK(texts == 1);
       CHECK(red);
       CHECK(nearBox(c.BBox(), back.BBox(), 0.5));
+      // testo riletto con la stessa altezza visibile e nello stesso punto (un DXF R12 non ha DIMSTYLE:
+      // la scala di quota deve valere 1, non 10)
+      auto shown = [](Ctx& x, const std::string& what, AnnotationLabel& out) {
+        for (const auto& id : x.e.AllObjectIds(true))
+          if (auto* t = ON_Text::Cast(x.e.Object(id)->Geometry(nullptr)); t && ToUtf8(t->PlainText()).find(what) != std::string::npos) {
+            AnnotationDisplay d;
+            if (BuildAnnotationDisplay(x.e.Model(), *t, d) && !d.labels.empty()) { out = d.labels[0]; return true; }
+          }
+        return false;
+      };
+      AnnotationLabel l0, l1;
+      CHECK(shown(c, "Ciao", l0) && shown(back, "Ciao", l1));
+      CHECK(Near(l0.height, l1.height, 1e-6));
+      CHECK(NearPt(l0.origin, l1.origin, 1e-6));
+    }
+    // SaveAs con estensione .dxf: un vero DXF (non un .3dm con il nome sbagliato), il documento resta com'e'
+    {
+      Ctx c;
+      CHECK(c.e.Run("-_Layer New Vuoto\n_Line 0,0,0 10,0,0\n_Text 0,5,0 \"Nota\""));
+      const std::string f = dir + "/salvacome.dxf";
+      CHECK(c.e.Run("_SaveAs \"" + f + "\""));
+      CHECK(c.e.currentPath.empty());
+      std::ifstream in(f);
+      std::string first;
+      std::getline(in, first);
+      CHECK(first == "0");
+      Ctx back;
+      CHECK(back.e.Run("_Open \"" + f + "\""));
+      CHECK(back.e.AllObjectIds(true).size() == 2);
+      bool emptyLayer = false;
+      ONX_ModelComponentIterator li(back.e.Model(), ON_ModelComponent::Type::Layer);
+      for (const ON_ModelComponent* m = li.FirstComponent(); m; m = li.NextComponent())
+        if (ToUtf8(ON_Layer::Cast(m)->Name()) == "Vuoto") emptyLayer = true;
+      CHECK(emptyLayer);  // livello senza oggetti conservato, come Rhino
     }
 #ifdef CAD_WITH_XCAF
     // STEP e IGES: nomi, colori e livelli in andata e ritorno; Apri usa le unita' del file

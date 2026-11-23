@@ -58,16 +58,24 @@ void TextLabel(AnnotationDisplay& out, const ON_Annotation& a, const ON_DimStyle
     ymax = std::max({c[0].y, c[1].y, c[2].y, c[3].y});
   }
   double ax = xmin;
+  double top = ymax * sx;
   if (xmax - xmin > 1e-9) {  // i caratteri sono stati misurati: centriamo nel riquadro
     ax = 0.5 * (xmin + xmax);
     L.halign = 1;
   } else {
+    // caratteri non misurati: il bordo superiore della prima riga dipende dall'allineamento verticale
     ON::TextHorizontalAlignment ha; ON::TextVerticalAlignment va;
     a.GetAlignment(ha, va);
     L.halign = ha == ON::TextHorizontalAlignment::Center ? 1 : ha == ON::TextHorizontalAlignment::Right ? 2 : 0;
+    const double block = (LineCount(L.text) - 1) * 1.6 * h;  // righe sotto la prima
+    if (va == ON::TextVerticalAlignment::Bottom || va == ON::TextVerticalAlignment::BottomOfBoundingBox ||
+        va == ON::TextVerticalAlignment::BottomOfTop)
+      top = h + block;  // l'origine e' sulla linea di base dell'ultima riga
+    else if (va == ON::TextVerticalAlignment::Middle || va == ON::TextVerticalAlignment::MiddleOfTop)
+      top = 0.5 * (h + block);
+    else top = 0;  // in alto
   }
-  // ymax e' il bordo superiore del riquadro; la prima linea di base sta un'altezza sotto
-  const double top = ymax * sx;
+  // top e' il bordo superiore del riquadro; la prima linea di base sta un'altezza sotto
   L.origin = xf * ON_3dPoint(ax, 0, 0) + L.ydir * (top - h);
   out.labels.push_back(L);
 }
