@@ -139,6 +139,17 @@ if(assimp_FOUND)
   target_sources(cadcore PRIVATE src/commands/ExchangeAssimp.cpp)
   target_compile_definitions(cadcore PUBLIC KURVA3D_WITH_ASSIMP)
   if(TARGET assimp::assimp)
+    # Assimp compilato come DLL con la sua zlib interna esporta comunque
+    # zlibstatic tra le dipendenze di link: va tolta, altrimenti i simboli
+    # zlib risultano doppi con la zlib di openNURBS (LNK2005).
+    foreach(_prop INTERFACE_LINK_LIBRARIES IMPORTED_LINK_INTERFACE_LIBRARIES
+                  IMPORTED_LINK_INTERFACE_LIBRARIES_RELEASE IMPORTED_LINK_DEPENDENT_LIBRARIES_RELEASE)
+      get_target_property(_libs assimp::assimp ${_prop})
+      if(_libs)
+        list(FILTER _libs EXCLUDE REGEX "zlib")
+        set_target_properties(assimp::assimp PROPERTIES ${_prop} "${_libs}")
+      endif()
+    endforeach()
     target_link_libraries(cadcore PUBLIC assimp::assimp)
   else()
     target_link_libraries(cadcore PUBLIC assimp)
