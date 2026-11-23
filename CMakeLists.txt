@@ -58,6 +58,7 @@ add_library(cadcore STATIC
   src/commands/CmdExtra4.cpp
   src/commands/CmdExtra5.cpp
   src/commands/CmdExtra6.cpp
+  src/commands/CmdMissing.cpp
   src/commands/Deform.cpp
   src/commands/Deform.h
   src/commands/Grips.h
@@ -70,7 +71,7 @@ target_include_directories(cadcore PUBLIC src)
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
   message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: comandi del motore geometrico attivi")
-  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp src/kernel/CmdAnalysis.cpp src/kernel/CmdModeling.cpp src/kernel/SurfaceAnalysis.cpp src/kernel/SurfaceAnalysis.h)
+  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp src/kernel/CmdAnalysis.cpp src/kernel/CmdModeling.cpp src/kernel/CmdMissingOcct.cpp src/kernel/SurfaceAnalysis.cpp src/kernel/SurfaceAnalysis.h)
   target_include_directories(cadcore PUBLIC ${OpenCASCADE_INCLUDE_DIR})
   target_link_libraries(cadcore PUBLIC TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo
     TKTopAlgo TKPrim TKBO TKShHealing TKBool TKFillet TKOffset TKMesh TKHLR)
@@ -129,6 +130,21 @@ endif()
 
 if(WIN32)
   target_link_libraries(cadcore PUBLIC dxgi)
+endif()
+
+# FBX, Collada, 3DS, DirectX (opzionale): libreria Open Asset Import (Assimp, BSD)
+find_package(assimp CONFIG QUIET)
+if(assimp_FOUND)
+  message(STATUS "Assimp ${assimp_VERSION}: FBX, Collada, 3DS e DirectX attivi")
+  target_sources(cadcore PRIVATE src/commands/ExchangeAssimp.cpp)
+  target_compile_definitions(cadcore PUBLIC KURVA3D_WITH_ASSIMP)
+  if(TARGET assimp::assimp)
+    target_link_libraries(cadcore PUBLIC assimp::assimp)
+  else()
+    target_link_libraries(cadcore PUBLIC assimp)
+  endif()
+else()
+  message(WARNING "Assimp non trovato: FBX, Collada, 3DS e DirectX non disponibili")
 endif()
 
 # Script Python (opzionale): CPython incorporato e modulo rhinoscriptsyntax

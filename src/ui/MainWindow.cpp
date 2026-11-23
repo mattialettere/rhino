@@ -509,11 +509,12 @@ void MainWindow::Log(const QString& s) {
 
 namespace {
 const char* kOpenFilter =
-    "Tutti i formati (*.3dm *.stp *.step *.igs *.iges *.stl *.obj *.dxf *.gltf *.glb *.3mf *.ply);;File 3DM (*.3dm);;"
-    "STEP (*.stp *.step);;IGES (*.igs *.iges);;STL (*.stl);;OBJ (*.obj);;DXF (*.dxf);;glTF (*.gltf *.glb);;3MF (*.3mf);;PLY (*.ply)";
+    "Tutti i formati (*.3dm *.stp *.step *.igs *.iges *.stl *.obj *.dxf *.gltf *.glb *.3mf *.ply *.fbx *.dae *.3ds *.x);;File 3DM (*.3dm);;"
+    "STEP (*.stp *.step);;IGES (*.igs *.iges);;STL (*.stl);;OBJ (*.obj);;DXF (*.dxf);;glTF (*.gltf *.glb);;3MF (*.3mf);;PLY (*.ply);;"
+    "FBX (*.fbx);;Collada (*.dae);;3D Studio (*.3ds);;DirectX (*.x)";
 const char* kExportFilter =
     "File 3DM, versione 8 (*.3dm);;STEP (*.stp);;IGES (*.igs);;STL binario (*.stl);;OBJ con materiali (*.obj);;DXF R12 (*.dxf);;"
-    "glTF binario (*.glb);;glTF (*.gltf);;3MF (*.3mf);;PLY binario (*.ply)";
+    "glTF binario (*.glb);;glTF (*.gltf);;3MF (*.3mf);;PLY binario (*.ply);;FBX (*.fbx);;Collada (*.dae);;3D Studio (*.3ds);;DirectX (*.x)";
 }  // namespace
 
 void MainWindow::BuildMenus() {
@@ -659,7 +660,8 @@ void MainWindow::BuildMenus() {
                      {"Poligono", "_Polygon"}, {"Cerchio", "_Circle"}, {"Arco", "_Arc"}, {"Ellisse", "_Ellipse"},
                      {"Curva per punti di controllo", "_Curve"}, {"Curva interpolata", "_InterpCrv"}, {"Curva a maniglie", "_HandleCurve"}, {"Schizzo (Sketch)", "_Sketch"},
                      {"Offset curva", "_Offset"}, {"Raccordo curve", "_Fillet"}, {"Smusso curve", "_Chamfer"},
-                     {"Intersezione", "_Intersect"}, {"Copia bordi", "_DupBorder"},
+                     {"Intersezione", "_Intersect"}, {"Intersezione tra due gruppi", "_IntersectTwoSets"}, {"Copia bordi", "_DupBorder"},
+                     {"Inserisci spigolo (InsertKink)", "_InsertKink"}, {"Modifica morbida curva (SoftEditCrv)", "_SoftEditCrv"},
                      {"Dividi in punti", "_Divide"}, {"Ricostruisci", "_Rebuild"}, {"Cambia grado", "_ChangeDegree"},
                      {"Elica", "_Helix"}, {"Spirale", "_Spiral"}, {"Linee singole", "_Lines"},
                      {"Rettangolo arrotondato", "_RoundedRectangle"}, {"Parabola", "_Parabola"}, {"Iperbole", "_Hyperbola"},
@@ -671,28 +673,28 @@ void MainWindow::BuildMenus() {
                          {"Da 2, 3 o 4 curve di bordo", "_EdgeSrf"}, {"Patch", "_Patch"},
                          {"Piano da 3 punti", "_Plane3Pt"}, {"Piano verticale", "_PlaneVertical"},
                          {"Estrudi fino a un punto", "_ExtrudeCrvToPoint"}, {"Estrudi lungo una curva", "_ExtrudeCrvAlongCrv"},
-                         {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}, {"Raccordo tra superfici", "_FilletSrf"}, {"Smusso tra superfici", "_ChamferSrf"}, {"Raccordo con tangenza (BlendSrf)", "_BlendSrf"}, {"Sviluppa (UnrollSrf)", "_UnrollSrf"}, {"Appiattisci (Smash)", "_Smash"}, {"Converti in NURBS", "_ToNURBS"}, {"Adatta bordo (MatchSrf)", "_MatchSrf"}, {"Loft sviluppabile (DevLoft)", "_DevLoft"}, {"Da immagine (Heightfield)", "_Heightfield"}, {"Punti di modifica (EditPtOn)", "_EditPtOn"}});
+                         {"Rimuovi tutti i tagli", "_UntrimAll"}, {"Riduci superficie tagliata", "_ShrinkTrimmedSrf"}, {"Raccordo tra superfici", "_FilletSrf"}, {"Raccordo a raggio variabile", "_VariableFilletSrf"}, {"Modifica morbida superficie (SoftEditSrf)", "_SoftEditSrf"}, {"Smusso tra superfici", "_ChamferSrf"}, {"Raccordo con tangenza (BlendSrf)", "_BlendSrf"}, {"Sviluppa (UnrollSrf)", "_UnrollSrf"}, {"Appiattisci (Smash)", "_Smash"}, {"Converti in NURBS", "_ToNURBS"}, {"Adatta bordo (MatchSrf)", "_MatchSrf"}, {"Loft sviluppabile (DevLoft)", "_DevLoft"}, {"Da immagine (Heightfield)", "_Heightfield"}, {"Punti di modifica (EditPtOn)", "_EditPtOn"}});
   addCmds("S&olidi", {{"Parallelepipedo", "_Box"}, {"Sfera", "_Sphere"}, {"Sfera da 3 punti", "_Sphere3Pt"}, {"Box da 3 punti", "_Box3Pt"}, {"Cilindro", "_Cylinder"}, {"Cono", "_Cone"},
                       {"Toro", "_Torus"}, {"Tubo", "_Pipe"}, {"Piramide", "_Pyramid"}, {"Cuneo", "_Wedge"}, {"Lastra (Slab)", "_Slab"}, {"Sposta faccia", "_MoveFace"},
                       {"Tronco di cono", "_TruncatedCone"}, {"Ellissoide", "_Ellipsoid"}, {"Unione booleana", "_BooleanUnion"},
                       {"Differenza booleana", "_BooleanDifference"}, {"Intersezione booleana", "_BooleanIntersection"},
                       {"Divisione booleana", "_BooleanSplit"}, {"Raccorda spigoli", "_FilletEdge"}, {"Dividi faccia (SplitFace)", "_SplitFace"},
-                      {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}});
+                      {"Smussa spigoli", "_ChamferEdge"}, {"Chiudi fori piani", "_Cap"}, {"Guscio", "_Shell"}, {"Crea solido (CreateSolid)", "_CreateSolid"}, {"Dividi spigolo", "_SplitEdge"}, {"Unisci spigoli", "_JoinEdge"}, {"Separa spigolo", "_UnjoinEdge"}, {"Ricostruisci spigoli", "_RebuildEdges"}});
   addCmds("Su&bD", {{"Parallelepipedo SubD", "_SubDBox"}, {"Sfera SubD", "_SubDSphere"}, {"Cilindro SubD", "_SubDCylinder"}, {"Cono SubD", "_SubDCone"}, {"Converti in SubD", "_ToSubD"},
                     {"Toro SubD", "_SubDTorus"}, {"Piano SubD", "_SubDPlane"}, {"SubD da mesh", "_SubDFromMesh"},
-                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}, {"Rifletti (Reflect)", "_Reflect"}, {"Sweep SubD", "_SubDSweep"}, {"Estrudi faccia SubD", "_SubDExtrude"}, {"Ponte (Bridge)", "_Bridge"}, {"Inserisci anello di spigoli", "_InsertEdge"}, {"Cuci (Stitch)", "_Stitch"}, {"Aggiungi faccia (Append)", "_Append"}, {"Quad remesh", "_QuadRemesh"}, {"Smussa spigoli SubD (Bevel)", "_Bevel"}, {"Tubi SubD (MultiPipe)", "_MultiPipe"}});
+                    {"Piega spigoli", "_Crease"}, {"Togli piega", "_Uncrease"}, {"Liscio / piatto", "_SubDDisplayToggle"}, {"Loft SubD", "_SubDLoft"}, {"Chiudi fori SubD (Fill)", "_Fill"}, {"Rifletti (Reflect)", "_Reflect"}, {"Sweep SubD", "_SubDSweep"}, {"Estrudi faccia SubD", "_SubDExtrude"}, {"Ponte (Bridge)", "_Bridge"}, {"Inserisci anello di spigoli", "_InsertEdge"}, {"Cuci (Stitch)", "_Stitch"}, {"Aggiungi faccia (Append)", "_Append"}, {"Quad remesh", "_QuadRemesh"}, {"Smussa spigoli SubD (Bevel)", "_Bevel"}, {"Tubi SubD (MultiPipe)", "_MultiPipe"}, {"Faccia interna (Inset)", "_Inset"}, {"Fai scorrere spigolo (Slide)", "_Slide"}});
   addCmds("&Mesh", {{"Mesh da NURBS", "_Mesh"}, {"Piano mesh", "_MeshPlane"}, {"Box mesh", "_MeshBox"},
                     {"Sfera mesh", "_MeshSphere"}, {"Cilindro mesh", "_MeshCylinder"}, {"Cono mesh", "_MeshCone"},
                     {"Toro mesh", "_MeshTorus"}, {"Mesh da polilinea", "_MeshPolyline"},
                     {"Salda", "_Weld"}, {"Unifica normali", "_UnifyMeshNormals"}, {"Chiudi fori", "_FillMeshHoles"}, {"Riduci", "_Reduce"}, {"Estrai parte", "_ExtractMeshPart"}, {"Separa vertici (Unweld)", "_Unweld"}, {"Separa spigoli", "_UnweldEdge"}, {"Unione mesh", "_MeshBooleanUnion"}, {"Differenza mesh", "_MeshBooleanDifference"}, {"Intersezione mesh", "_MeshBooleanIntersection"}, {"Mesh in NURBS", "_MeshToNURB"}, {"Mesh da punti e curve (MeshPatch)", "_MeshPatch"},
-                    {"Avvolgi (ShrinkWrap)", "_ShrinkWrap"}, {"Offset mesh", "_OffsetMesh"}, {"Ripara mesh", "_MeshRepair"}, {"Controlla mesh", "_CheckMesh"}, {"Togli facce degeneri", "_CullDegenerateMeshFaces"}, {"Ricalcola normali", "_RebuildMeshNormals"}, {"Estrai mesh di rendering", "_ExtractRenderMesh"}});
+                    {"Avvolgi (ShrinkWrap)", "_ShrinkWrap"}, {"Offset mesh", "_OffsetMesh"}, {"Ripara mesh", "_MeshRepair"}, {"Dividi mesh (MeshSplit)", "_MeshSplit"}, {"Taglia mesh (MeshTrim)", "_MeshTrim"}, {"Mesh da linee", "_MeshFromLines"}, {"Controlla mesh", "_CheckMesh"}, {"Togli facce degeneri", "_CullDegenerateMeshFaces"}, {"Ricalcola normali", "_RebuildMeshNormals"}, {"Estrai mesh di rendering", "_ExtractRenderMesh"}});
   addCmds("&Quota", {{"Quota lineare", "_Dim"}, {"Quota allineata", "_DimAligned"}, {"Quota ruotata", "_DimRotated"},
                       {"Quota del raggio", "_DimRadius"}, {"Quota del diametro", "_DimDiameter"},
                       {"Quota angolare", "_DimAngle"}, {"Direttrice", "_Leader"}, {"Testo", "_Text"},
                       {"Segno del centro", "_Centermark"}, {"Quota coordinata", "_DimOrdinate"}, {"Lunghezza d'arco (DimArc)", "_DimArc"}, {"Lunghezza curva (DimCurveLength)", "_DimCurveLength"}, {"Stile di quota (DimStyle)", "_DimStyle"}, {"Testo in curve (TextObject)", "_TextObject"}});
   addCmds("&Trasforma", {{"Sposta", "_Move"}, {"Copia", "_Copy"}, {"Ruota", "_Rotate"}, {"Scala", "_Scale"},
                          {"Scala 2D", "_Scale2D"}, {"Specchia", "_Mirror"}, {"Serie", "_Array"},
-                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Avvolgi su superficie (Splop)", "_Splop"}, {"Gabbia di controllo (CageEdit)", "_CageEdit"}, {"Scorri lungo curva (Flow)", "_Flow"}, {"Scorri su superficie", "_FlowAlongSrf"}, {"Orienta su superficie", "_OrientOnSrf"},
+                         {"Serie lineare", "_ArrayLinear"}, {"Serie polare", "_ArrayPolar"}, {"Inclina", "_Shear"}, {"Torci", "_Twist"}, {"Rastrema", "_Taper"}, {"Piega", "_Bend"}, {"Serie lungo curva", "_ArrayCrv"}, {"Serie su superficie", "_ArraySrf"}, {"Avvolgi su superficie (Splop)", "_Splop"}, {"Gabbia di controllo (CageEdit)", "_CageEdit"}, {"Gabbia (Cage)", "_Cage"}, {"Spostamento morbido (SoftMove)", "_SoftMove"}, {"Allunga (Stretch)", "_Stretch"}, {"Vortice (Maelstrom)", "_Maelstrom"}, {"Sposta in UVN", "_MoveUVN"}, {"Scorri lungo curva (Flow)", "_Flow"}, {"Scorri su superficie", "_FlowAlongSrf"}, {"Orienta su superficie", "_OrientOnSrf"},
                          {"Allinea", "_Align"}, {"Imposta punti (SetPt)", "_SetPt"}});
   addCmds("&Analizza", {{"Cos'è (What)", "_What"}, {"Direzione (Dir)", "_Dir"}, {"Segna curvatura", "_MarkCurvature"}, {"Lunghezza", "_Length"}, {"Distanza", "_Distance"},
                          {"Angolo", "_Angle"}, {"Raggio", "_Radius"}, {"Area", "_Area"}, {"Volume", "_Volume"},

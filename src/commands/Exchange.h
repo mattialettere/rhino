@@ -138,6 +138,14 @@ bool ReadPLY(const std::string& path, std::vector<ImportedObject>& out, std::str
 bool WritePLY(const std::string& path, const std::vector<ExportItem>& items, double tolerance, bool binary,
               std::string& err);
 
+// FBX, Collada (.dae), 3DS, DirectX (.x) e altri con la libreria Assimp (se presente:
+// KURVA3D_WITH_ASSIMP). fileUnits = unita' dichiarate dal file (None se sconosciute).
+bool IsAssimpFormat(const std::string& ext, bool forExport);
+bool ReadAssimp(const std::string& path, ON::LengthUnitSystem docUnits, std::vector<ImportedObject>& out,
+                ON::LengthUnitSystem& fileUnits, std::string& err);
+bool WriteAssimp(const std::string& path, const std::vector<ExportItem>& items, ON::LengthUnitSystem docUnits,
+                 double tolerance, std::string& err);
+
 // Usati dai comandi Import/Export/Open per i formati di scambio.
 // opts["open"] = "yes": apertura come documento (unita' del documento = unita' del file).
 bool ImportExchange(Engine& e, const std::string& path, const std::map<std::string, std::string>& opts);

@@ -8,6 +8,15 @@ namespace cad {
 void RegisterCommandOptions(Engine& e) {
   const std::vector<std::pair<const char*, std::vector<std::string>>> table = {
       {"ExtrudeCrv", {"Solid=No|Yes"}},
+      {"SoftEditCrv", {"Length=#10", "FixEnds=No|Yes"}},
+      {"SoftEditSrf", {"UDistance=#0.25", "VDistance=#0.25", "FixEdges=No|Yes"}},
+      {"SoftMove", {"Radius=#10"}},
+      {"MoveUVN", {"U=#0", "V=#0", "N=#1"}},
+      {"Cage", {"PointCount=4,4,4", "Degree=3|1|2"}},
+      {"CreateSolid", {"Cells=No|Yes", "DeleteInput=Yes|No"}},
+      {"VariableFilletSrf", {"Radius=#1", "EndRadius=#2"}},
+      {"Inset", {"Distance=#1"}},
+      {"Slide", {"Amount=#0.25"}},
       {"Offset", {"Distance=#1"}},
       {"Rebuild", {"PointCount=#10", "Degree=3|1|2|5"}},
       {"Divide", {"Length=#10"}},

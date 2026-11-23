@@ -29,7 +29,7 @@
       <key>CFBundleTypeName</key><string>Disegno CAD</string>
       <key>CFBundleTypeExtensions</key><array>
         <string>dxf</string><string>stp</string><string>step</string><string>igs</string><string>iges</string>
-        <string>stl</string><string>obj</string><string>gltf</string><string>glb</string><string>3mf</string><string>ply</string>
+        <string>stl</string><string>obj</string><string>gltf</string><string>glb</string><string>3mf</string><string>ply</string><string>fbx</string><string>dae</string><string>3ds</string>
       </array>
       <key>CFBundleTypeRole</key><string>Editor</string>
       <key>LSHandlerRank</key><string>Alternate</string>

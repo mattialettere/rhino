@@ -226,7 +226,8 @@ double ShapeSpan(const TopoDS_Face& a, const TopoDS_Face& b) {
 }
 
 // FilletSrf / ChamferSrf: superficie di raccordo (palla che rotola) o di smusso tra due superfici.
-bool SrfCorner(Engine& e, TokenStream& ts, bool fillet) {
+// variable=true (VariableFilletSrf): raggio che varia linearmente da Radius= a EndRadius=.
+bool SrfCorner(Engine& e, TokenStream& ts, bool fillet, bool variable = false) {
   auto opts = e.ReadOptions(ts);
   const char* key = fillet ? "radius" : "distance";
   double r = OptNum(opts, key, 1.0);
@@ -299,9 +300,34 @@ bool SrfCorner(Engine& e, TokenStream& ts, bool fillet) {
   if (ts_.size() < 2) return e.Fail("il raccordo non sta sulle superfici");
   std::vector<ON_NurbsCurve> secs;
   std::vector<ON_3dPoint> centers;
-  for (double t : ts_) {
+  const double rEnd = variable ? OptNum(opts, "endradius", r) : r;
+  for (size_t ti = 0; ti < ts_.size(); ti++) {
+    const double t = ts_[ti];
     ON_3dPoint c, q1, q2;
     if (!contacts(t, c, q1, q2)) continue;
+    if (fillet && variable && std::fabs(rEnd - r) > tol) {
+      // centro della palla di raggio rt: si parte da quello di raggio r e si corregge in modo che
+      // disti rt da entrambe le superfici (2 equazioni nelle direzioni delle due normali)
+      const double rt = r + (rEnd - r) * double(ti) / double(ts_.size() - 1);
+      for (int it = 0; it < 40; it++) {
+        double ua, va, ub, vb;
+        if (!A.Project(c, ua, va, &q1) || !B.Project(c, ub, vb, &q2)) break;
+        ON_3dVector n1 = c - q1, n2 = c - q2;
+        const double d1 = n1.Length(), d2 = n2.Length();
+        if (d1 < 1e-12 || d2 < 1e-12) break;
+        n1 = n1 / d1;
+        n2 = n2 / d2;
+        const double k = n1 * n2, det = 1 - k * k;
+        const double f1 = rt - d1, f2 = rt - d2;
+        if (std::fabs(f1) + std::fabs(f2) < tol * 1e-3) break;
+        double a, b;
+        if (det < 1e-6) { a = 0.5 * (f1 + f2); b = 0; }
+        else { a = (f1 - k * f2) / det; b = (f2 - k * f1) / det; }
+        c = c + n1 * a + n2 * b;
+      }
+      double ua, va, ub, vb;
+      if (!A.Project(c, ua, va, &q1) || !B.Project(c, ub, vb, &q2)) continue;
+    }
     if (fillet) secs.push_back(ArcSection(c, q1, q2));
     else {
       ON_NurbsCurve l(3, false, 2, 2);
@@ -323,6 +349,7 @@ bool SrfCorner(Engine& e, TokenStream& ts, bool fillet) {
 }
 bool CmdFilletSrf(Engine& e, TokenStream& ts) { return SrfCorner(e, ts, true); }
 bool CmdChamferSrf(Engine& e, TokenStream& ts) { return SrfCorner(e, ts, false); }
+bool CmdVariableFilletSrf(Engine& e, TokenStream& ts) { return SrfCorner(e, ts, true, true); }
 
 // Spigolo del modello (di una superficie) piu' vicino al punto, con la sua faccia.
 bool PickEdge(Engine& e, const ON_3dPoint& p, TopoDS_Edge& edge, TopoDS_Face& face) {
@@ -794,6 +821,7 @@ void RegisterKernel5Commands(Engine& e) {
     e.Register(i);
   };
   reg("FilletSrf", "Superfici", "Superficie di raccordo di raggio Radius= tra due superfici", CmdFilletSrf);
+  reg("VariableFilletSrf", "Superfici", "Raccordo tra due superfici con raggio variabile da Radius= a EndRadius=", CmdVariableFilletSrf);
   reg("ChamferSrf", "Superfici", "Superficie di smusso a distanza Distance= tra due superfici", CmdChamferSrf);
   reg("BlendSrf", "Superfici", "Superficie di raccordo con tangenza tra due spigoli (Bulge=)", CmdBlendSrf);
   reg("OffsetCrvOnSrf", "Curve", "Curva sulla superficie a distanza costante (Distance=)", CmdOffsetCrvOnSrf);
