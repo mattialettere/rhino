@@ -14,6 +14,9 @@
 #include <QScreen>
 #include <QSurfaceFormat>
 #include <QTimer>
+#include <QPointingDevice>
+#include <QTouchEvent>
+#include "ui/Viewport.h"
 #include <functional>
 #include <QTextStream>
 
@@ -44,6 +47,7 @@ int main(int argc, char** argv) {
   cad::ui::ApplyTheme(cad::ui::SavedThemeMode());
   cad::InitLibrary();
   cad::SetPythonProgramDir(QCoreApplication::applicationDirPath().toStdString());
+  QString touchDemo;
   QString open, script, shot, panel, nodesFile, nodesShot, collabHost, collabJoin, collabChat, collabScript, collabTask;
   int wait = 800;
   bool keepPending = false;
@@ -55,6 +59,8 @@ int main(int argc, char** argv) {
     else if (args[i] == "--panel" && i + 1 < args.size()) panel = args[++i];  // es. textureDock
     else if (args[i] == "--wait" && i + 1 < args.size()) wait = args[++i].toInt();  // ms prima della cattura
     else if (args[i] == "--keep-pending") keepPending = true;  // l'ultimo comando dello script resta in attesa
+    // prova del tocco nella vista Top: dito giu' in x,y, spostato in x2,y2 e (con ",up") sollevato
+    else if (args[i] == "--touch-demo" && i + 1 < args.size()) touchDemo = args[++i];
     else if (args[i] == "--no-whats-new") whatsNew = false;
     else if (args[i] == "--whats-new") forceWhatsNew = true;  // per le prove: la mostra sempre
     else if (args[i] == "--nodes" && i + 1 < args.size()) nodesFile = args[++i];        // grafo da aprire nell'editor a nodi
@@ -99,6 +105,27 @@ int main(int argc, char** argv) {
         }
       }
       w.ZoomExtentsAll();
+    }
+    if (!touchDemo.isEmpty()) {
+      QTimer::singleShot(wait / 2, &w, [&w, touchDemo] {
+        const QStringList v = touchDemo.split(',');
+        auto views = w.findChildren<cad::ui::Viewport*>();
+        if (v.size() < 4 || views.isEmpty()) return;
+        cad::ui::Viewport* vp = views.first();
+        for (auto* x : views)
+          if (x->Cam().kind == cad::ui::Camera::Kind::Top) vp = x;
+        static QPointingDevice dev("Kurva3D touch demo", 4242, QInputDevice::DeviceType::TouchScreen,
+                                   QPointingDevice::PointerType::Finger, QInputDevice::Capability::Position, 10, 0);
+        auto send = [vp](QEvent::Type t, QEventPoint::State st, QPointF at) {
+          QEventPoint pt(1, st, at, vp->mapToGlobal(at));
+          QTouchEvent ev(t, &dev, Qt::NoModifier, {pt});
+          QCoreApplication::sendEvent(vp, &ev);
+        };
+        const QPointF a(v[0].toDouble(), v[1].toDouble()), b(v[2].toDouble(), v[3].toDouble());
+        send(QEvent::TouchBegin, QEventPoint::State::Pressed, a);
+        send(QEvent::TouchUpdate, QEventPoint::State::Updated, b);
+        if (v.size() > 4 && v[4] == "up") send(QEvent::TouchEnd, QEventPoint::State::Released, b);
+      });
     }
     for (auto* d : w.findChildren<QDockWidget*>())
       if (!panel.isEmpty() && d->objectName() == panel) { d->show(); d->raise(); }
