@@ -486,6 +486,13 @@ bool CmdOpen(Engine& e, TokenStream& ts) {
 
 bool SaveTo(Engine& e, const std::string& path) {
   if (e.beforeSave) e.beforeSave();
+  if (IsExchangeFormat(FileExtension(path))) {
+    // "file.dxf", "file.stp"...: non un .3dm con l'estensione sbagliata ma un'esportazione di tutti
+    // gli oggetti in quel formato; il documento resta quello di prima (come Esporta)
+    if (!ExportExchange(e, e.AllObjectIds(true), path, {})) return false;
+    e.Out() << "  Il documento non e' stato salvato in formato Rhino 8: per farlo usa un nome .3dm\n";
+    return true;
+  }
   std::string log;
   if (!e.Doc().Save(path, kRhino8ArchiveVersion, &log)) return e.Fail("impossibile salvare " + path);
   e.currentPath = path;

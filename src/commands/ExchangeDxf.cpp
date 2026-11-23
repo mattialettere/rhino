@@ -649,6 +649,8 @@ class DxfReader {
     ds->ClearIndex();
     ds->SetId(ON_CreateId());
     ds->SetName(ON_wString(name.c_str()));
+    // DIMSCALE di AutoCAD vale 1 se il file non lo dice (DefaultMillimeterSmall ha 10: testi 10 volte piu' grandi)
+    ds->SetDimScale(1.0);
     ds->SetArrowSize(2.5);
     ds->SetTextHeight(2.5);
     ds->SetExtOffset(0.625);
@@ -1823,11 +1825,20 @@ class DxfWriter {
     }
   }
 
+  static bool IsTriangle(const std::vector<ON_3dPoint>& tris, const std::vector<ON_3dPoint>& w) {
+    for (size_t k = 0; k + 2 < tris.size(); k += 3)
+      if (tris[k].DistanceTo(w[0]) < 1e-12 && tris[k + 1].DistanceTo(w[1]) < 1e-12 && tris[k + 2].DistanceTo(w[2]) < 1e-12)
+        return true;
+    return false;
+  }
+
   // Annotazioni (quote, testi, direttrici): la loro geometria di visualizzazione.
   void Annotation(std::ostringstream& s, const Style& st, const ON_Annotation& a) {
     AnnotationDisplay d;
     if (!m_model || !BuildAnnotationDisplay(*m_model, a, d)) return;
     for (const auto& w : d.wires) {
+      // contorno di una freccia piena: basta il SOLID (come il blocco _CLOSEDFILLED di AutoCAD)
+      if (w.size() == 4 && w.front().DistanceTo(w.back()) < 1e-12 && IsTriangle(d.triangles, w)) continue;
       ON_Polyline pl;
       for (const auto& p : w) pl.Append(p);
       if (pl.Count() >= 2) Polyline(s, st, pl, false);
@@ -1957,6 +1968,17 @@ bool WriteDXF(const std::string& path, const std::vector<ExportItem>& items, ON:
     if (w.Geometry(w.m_s, st, it.geom, 0)) w.m_count++;
   }
   if (!w.m_count) { err = "nessun oggetto esportabile in DXF"; return false; }
+  // anche i livelli senza oggetti esportati (come Rhino: la tabella dei livelli resta completa)
+  if (model) {
+    ONX_ModelComponentIterator li(*model, ON_ModelComponent::Type::Layer);
+    for (const ON_ModelComponent* c = li.FirstComponent(); c; c = li.NextComponent()) {
+      const auto* l = ON_Layer::Cast(c);
+      if (!l || l->IsDeleted() || l->Name().IsEmpty()) continue;
+      const std::string n = DxfName(ToUtf8(l->Name()));
+      if (!w.m_layers.count(n)) w.m_layers[n] = l->Color();
+      if (!layerObjs.count(n)) layerObjs[n] = l;
+    }
+  }
   // tipi di linea dei livelli
   std::map<std::string, std::string> layerLinetype;
   for (const auto& [name, l] : layerObjs)
