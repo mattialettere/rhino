@@ -228,7 +228,7 @@ if(Qt6_FOUND)
   endif()
   add_executable(kurva3d WIN32 MACOSX_BUNDLE
     src/ui/AiPanel.cpp src/ui/AiPanel.h src/ui/TexturePanel.cpp src/ui/TexturePanel.h
-    src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h src/ui/AnalysisPanel.cpp src/ui/LinetypesDialog.cpp
+    src/ui/main.cpp src/ui/MainWindow.cpp src/ui/MainWindow.h src/ui/AnalysisPanel.cpp src/ui/LinetypesDialog.cpp src/ui/OptionsDialog.cpp
     src/ui/Viewport.cpp src/ui/Viewport.h src/ui/LayoutView.cpp src/ui/LayoutView.h src/ui/RenderWindow.cpp src/ui/RenderWindow.h
     src/ui/ScriptEditor.cpp src/ui/ScriptEditor.h src/ui/NodeEditor.cpp src/ui/NodeEditor.h
     src/ui/CollabPanel.cpp src/ui/CollabPanel.h

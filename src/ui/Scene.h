@@ -40,6 +40,8 @@ struct DisplayObject {
   std::vector<ON_2fPoint> uv;
   ON_Color diffuse = ON_Color(255, 255, 255);
   ON_Color color = ON_Color::Black;
+  ON_Color plotColor = ON_Color::Black;  // colore di stampa (PrintDisplay)
+  double plotWeight = 0;                 // spessore di stampa in mm (0 = predefinito)
   // colore del materiale di rendering (modalita' Renderizzato)
   ON_Color material = ON_Color(230, 230, 230);
   bool hasMaterial = false;

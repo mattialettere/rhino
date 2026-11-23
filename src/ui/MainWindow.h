@@ -1,4 +1,7 @@
 #pragma once
+#include <QAbstractButton>
+#include <QCheckBox>
+#include <QListWidget>
 #include "commands/Engine.h"
 #include "print/Page.h"
 #include "ui/Scene.h"
@@ -102,6 +105,19 @@ private:
   QDialog* m_analysisDlg = nullptr;
   std::function<void()> m_analysisRefresh;
   void ShowAbout();
+  // Opzioni, cronologia dei comandi, alias e pannelli con nome (OptionsDialog.cpp)
+  void ShowOptions(int page = 0);
+  void ShowCommandHistory();
+  void LoadAliases();
+  void SaveAliases();
+  void BuildNamedPanels(QDockWidget* tabWith);
+  void RefreshNamedPanels();
+  bool ShowNamedPanel(const std::string& norm);
+  void SyncStatusToggles();   // pulsanti della barra di stato e della barra Osnap dopo le Opzioni
+  struct NamedPanel { QDockWidget* dock; QListWidget* list; int kind; };
+  std::vector<NamedPanel> m_namedPanels;
+  std::vector<std::pair<QCheckBox*, unsigned>> m_osnapBoxes;
+  std::vector<std::pair<QAbstractButton*, bool*>> m_statusToggles;
   void ShowTextFile(const QString& file, const QString& title);
   bool PassesFilter(const ON_UUID& id) const;
   unsigned m_selFilter = 0xFFFF;  // tipi selezionabili (SelectionFilter)

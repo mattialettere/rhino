@@ -113,6 +113,11 @@ public:
   }
   // Nomi italiani (normalizzati) -> nome normalizzato del comando inglese
   const std::map<std::string, std::string>& Aliases() const { return m_aliases; }
+  // Alias dell'utente (comando Alias, finestra Opzioni): nome -> macro, come in Rhino 8.
+  // Un alias scritto come primo elemento di una riga viene sostituito dalla sua macro.
+  std::map<std::string, std::string> userAliases;   // chiave normalizzata
+  std::function<void()> aliasesChanged;              // l'interfaccia li salva tra le sessioni
+  std::string ExpandUserAlias(const std::string& script) const;
   Document3dm& Document() { return m_doc; }
   void Register(CommandInfo info);
 
@@ -291,6 +296,9 @@ void RegisterLayoutCommands(Engine& e);
 void RegisterRenderCommands(Engine& e);
 void RegisterPythonCommands(Engine& e);
 void RegisterHistoryCommands(Engine& e);
+// Nomi salvati nel documento per i pannelli: 0 viste con nome, 1 CPlane con nome,
+// 2 istantanee, 3 selezioni con nome, 4 stati dei livelli.
+std::vector<std::string> NamedItems(Engine& e, int kind);
 void RegisterNodeCommands(Engine& e);
 void RegisterCollabCommands(Engine& e);
 // PDF della tavola attiva o della vista (opzioni come Print)

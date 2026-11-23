@@ -1,3 +1,4 @@
+#include <set>
 #include "ui/Viewport.h"
 #include "render/Render.h"
 #include <atomic>
@@ -978,7 +979,15 @@ void Viewport::paintGL() {
         const QColor oc = obj.selected ? SC.colors.selected : obj.locked ? QColor(128, 128, 128) : SC.ObjectColor(obj.color);
         gl->glColor3ub(oc.red(), oc.green(), oc.blue());
       }
-      gl->glLineWidth(obj.selected ? 2.0f : 1.0f);
+      if (Shared().printDisplay && !obj.selected) {
+        // PrintDisplay: colore e spessore di stampa (1 mm = circa 3.78 pixel a 96 dpi)
+        const QColor pc = Shared().ObjectColor(obj.plotColor);
+        gl->glColor3ub(pc.red(), pc.green(), pc.blue());
+        const double w = obj.plotWeight > 0 ? obj.plotWeight * 3.78 : (obj.plotWeight < 0 ? 0.0 : 0.25 * 3.78);
+        gl->glLineWidth((float)std::clamp(w, 1.0, 20.0));
+        if (obj.plotWeight < 0) continue;  // "Nessuna stampa": non disegnato
+      } else
+        gl->glLineWidth(obj.selected ? 2.0f : 1.0f);
       if (obj.unclipped) for (int k = 0; k < clips; k++) gl->glDisable(GL_CLIP_PLANE0 + k);
       if (mode == DisplayMode::Wireframe || mode == DisplayMode::XRay || mode == DisplayMode::Ghosted) {
         // contorno apparente: spigoli dove una faccia guarda la camera e l'altra no
@@ -1172,6 +1181,24 @@ void Viewport::paintGL() {
     p.drawRect(QRect(m_pressPos, m_hover).normalized());
   }
   DrawDynamicInput(p);
+  if (Shared().smartTrack && m_cursorInside) {
+    // SmartTrack: punti acquisiti (piccole croci) e linee guida tratteggiate
+    p.setPen(QPen(QColor(255, 255, 255), 1, Qt::DashLine));
+    for (const auto& ln : m_trackLines) {
+      double ax, ay, bx, by;
+      if (m_cam.Project(ln.first, w, h, ax, ay) && m_cam.Project(ln.second, w, h, bx, by)) {
+        const double dx = bx - ax, dy = by - ay, l = std::hypot(dx, dy);
+        if (l < 1e-9) continue;
+        const double k = 4000.0 / l;
+        p.drawLine(QPointF(ax - dx * k, ay - dy * k), QPointF(ax + dx * k, ay + dy * k));
+      }
+    }
+    p.setPen(QPen(QColor(255, 255, 255), 1));
+    for (const auto& tp : m_trackPts) {
+      double sx, sy;
+      if (m_cam.Project(tp, w, h, sx, sy)) { p.drawLine(QPointF(sx - 4, sy), QPointF(sx + 4, sy)); p.drawLine(QPointF(sx, sy - 4), QPointF(sx, sy + 4)); }
+    }
+  }
   if (m_hoverSnapped && m_cursorInside) {
     double sx, sy;
     if (m_cam.Project(m_hoverWorld, w, h, sx, sy)) {
@@ -1530,7 +1557,7 @@ bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) con
   // Segmenti dei wire vicini al cursore (per Int, Perp, Near)
   struct Seg { ON_3dPoint a, b; double ax, ay, bx, by; size_t obj, wire; };
   std::vector<Seg> nearSegs;
-  if (m & (Int | Perp | Near)) {
+  if (m & (Int | Perp | Near | Tan)) {
     for (size_t oi = 0; oi < m_scene.Objects().size(); oi++) {
       const auto& obj = m_scene.Objects()[oi];
       for (size_t wi = 0; wi < obj.wires.size(); wi++) {
@@ -1573,6 +1600,34 @@ bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) con
       consider(sg.a + t * v, "Perpendicolare");
     }
   }
+  if ((m & Tan) && S.hasLastPoint) {
+    // Tangente: punti della curva dove la retta dall'ultimo punto e' tangente.
+    // Cambio di segno di ((P - L) x T) . N lungo i wire vicini al cursore.
+    const ON_3dVector N = m_cam.CPlane().zaxis;
+    std::set<std::pair<size_t, size_t>> done;
+    for (const Seg& sg : nearSegs) {
+      if (!done.insert({sg.obj, sg.wire}).second) continue;
+      const auto& w = m_scene.Objects()[sg.obj].wires[sg.wire];
+      const size_t n = w.size();
+      if (n < 3) continue;
+      const bool closed = w.front().DistanceTo(w.back()) < 1e-9;
+      auto f = [&](size_t i) {
+        const ON_3dPoint& a = (i == 0) ? (closed ? w[n - 2] : w[0]) : w[i - 1];
+        const ON_3dPoint& b = (i + 1 >= n) ? (closed ? w[1] : w[n - 1]) : w[i + 1];
+        return ON_CrossProduct(w[i] - S.lastPoint, b - a) * N;
+      };
+      double prev = f(0);
+      for (size_t i = 1; i < n; i++) {
+        const double cur = f(i);
+        if ((prev < 0) != (cur < 0) && std::fabs(prev - cur) > 1e-14) {
+          const double t = prev / (prev - cur);
+          const ON_3dPoint q = w[i - 1] + t * (w[i] - w[i - 1]);
+          if (q.DistanceTo(S.lastPoint) > 1e-9) consider(q, "Tangente");
+        }
+        prev = cur;
+      }
+    }
+  }
   if (!found && (m & Near)) {
     for (const Seg& sg : nearSegs) {
       const double dx = sg.bx - sg.ax, dy = sg.by - sg.ay, l2 = dx * dx + dy * dy;
@@ -1591,11 +1646,24 @@ ON_3dPoint Viewport::PointUnderMouse(const QPoint& pos, bool* snapped, bool allo
     ON_3dPoint sp;
     QString name;
     if (FindOsnap(pos, sp, name)) {
+      if (S.osnapProject) {
+        // Proietta: il punto osnap cade sul CPlane della vista
+        const ON_Plane cp = m_cam.CPlane();
+        sp = sp - ((sp - cp.origin) * cp.zaxis) * cp.zaxis;
+      }
+      if (S.smartTrack && S.waitingForPoint) {
+        // acquisisce il punto (al massimo 6, il piu' vecchio esce)
+        bool known = false;
+        for (const auto& t : m_trackPts) if (t.DistanceTo(sp) < 1e-9) known = true;
+        if (!known) { m_trackPts.push_back(sp); if (m_trackPts.size() > 6) m_trackPts.erase(m_trackPts.begin()); }
+      }
+      m_trackLines.clear();
       if (snapped) *snapped = true;
       if (label) *label = name;
       return sp;
     }
   }
+  if (!S.smartTrack || !S.waitingForPoint) { m_trackPts.clear(); m_trackLines.clear(); }
   ON_3dPoint o; ON_3dVector d;
   m_cam.Ray(pos.x(), pos.y(), width(), height(), o, d);
   const ON_Plane cp = m_cam.CPlane();
@@ -1603,6 +1671,43 @@ ON_3dPoint Viewport::PointUnderMouse(const QPoint& pos, bool* snapped, bool allo
   ON_3dPoint p = cp.origin;
   if (std::fabs(den) > 1e-12) p = o + d * (((cp.origin - o) * cp.zaxis) / den);
   double u = (p - cp.origin) * cp.xaxis, v = (p - cp.origin) * cp.yaxis;
+  if (S.smartTrack && S.osnap && allowSnap && !m_trackPts.empty()) {
+    // SmartTrack: linee guida parallele agli assi del CPlane passanti per i punti acquisiti;
+    // aggancio entro 8 pixel a una linea o all'incrocio di due linee.
+    m_trackLines.clear();
+    const int W = width(), H = height();
+    auto screenDist = [&](double uu, double vv) {
+      double sx, sy;
+      if (!m_cam.Project(cp.PointAt(uu, vv), W, H, sx, sy)) return 1e9;
+      return std::hypot(sx - pos.x(), sy - pos.y());
+    };
+    double bestU = u, bestV = v, best = 8.0;
+    int lineU = -1, lineV = -1;  // indice del punto la cui linea fissa u (verticale) o v (orizzontale)
+    for (size_t i = 0; i < m_trackPts.size(); i++) {
+      const double tu = (m_trackPts[i] - cp.origin) * cp.xaxis, tv = (m_trackPts[i] - cp.origin) * cp.yaxis;
+      double d = screenDist(tu, v);
+      if (d < best) { best = d; bestU = tu; bestV = v; lineU = (int)i; lineV = -1; }
+      d = screenDist(u, tv);
+      if (d < best) { best = d; bestU = u; bestV = tv; lineV = (int)i; lineU = -1; }
+    }
+    // incrocio: una linea per u da un punto e una per v da un altro (raggio piu' ampio)
+    for (size_t i = 0; i < m_trackPts.size(); i++)
+      for (size_t j = 0; j < m_trackPts.size(); j++) {
+        if (i == j) continue;
+        const double tu = (m_trackPts[i] - cp.origin) * cp.xaxis, tv = (m_trackPts[j] - cp.origin) * cp.yaxis;
+        const double d = screenDist(tu, tv);
+        if (d < 10.0 && d < best + 6.0) { best = d - 6.0; bestU = tu; bestV = tv; lineU = (int)i; lineV = (int)j; }
+      }
+    if (lineU >= 0 || lineV >= 0) {
+      u = bestU; v = bestV;
+      const ON_3dPoint q = cp.PointAt(u, v);
+      if (lineU >= 0) m_trackLines.push_back({m_trackPts[lineU], m_trackPts[lineU] + cp.yaxis});
+      if (lineV >= 0) m_trackLines.push_back({m_trackPts[lineV], m_trackPts[lineV] + cp.xaxis});
+      if (snapped) *snapped = true;
+      if (label) *label = (lineU >= 0 && lineV >= 0) ? "Incrocio SmartTrack" : "SmartTrack";
+      return q;
+    }
+  }
   if (S.ortho && S.hasLastPoint) {
     const double lu = (S.lastPoint - cp.origin) * cp.xaxis, lv = (S.lastPoint - cp.origin) * cp.yaxis;
     if (std::fabs(u - lu) > std::fabs(v - lv)) v = lv; else u = lu;

@@ -3777,6 +3777,25 @@ int main(int argc, char** argv) {
       if (const auto* L = ON_Layer::Cast(mc); L && std::wstring(static_cast<const wchar_t*>(L->Name())) == L"Muri") l = L;
     CHECK(l && l->IsVisible());
   });
+  Case("Alias", "_Alias qb \"_Box 0,0,0 2,2 2\"\nqb", [](Ctx& c) {
+    CHECK(c.e.userAliases.count("qb") == 1);
+    CHECK(c.Objects().size() == 1);
+    const ON_BoundingBox bb = c.BBox();
+    CHECK(Near(bb.m_max.x, 2) && Near(bb.m_max.z, 2));
+  });
+  Case("Alias_command_name_rejected", "_Alias Line _Circle", [](Ctx&) {}, false);
+  Case("Alias_delete", "_Alias qq _Point\n_Alias Delete qq", [](Ctx& c) { CHECK(c.e.userAliases.empty()); });
+  Case("DocumentProperties", "_DocumentProperties AbsoluteTolerance=0.01 AngleTolerance=2", [](Ctx& c) {
+    const auto& ut = c.e.Model().m_settings.m_ModelUnitsAndTolerances;
+    CHECK(Near(ut.m_absolute_tolerance, 0.01));
+    CHECK(Near(ut.m_angle_tolerance * 180.0 / ON_PI, 2));
+  });
+  Case("NamedItems", "_Box 0,0,0 1,1 1\n_SelAll _NamedSelections Save A\n_Snapshots Save S1\n_LayerStateManager Save L1", [](Ctx& c) {
+    CHECK(cad::NamedItems(c.e, 3) == std::vector<std::string>{"A"});
+    CHECK(cad::NamedItems(c.e, 2) == std::vector<std::string>{"S1"});
+    CHECK(cad::NamedItems(c.e, 4) == std::vector<std::string>{"L1"});
+    CHECK(cad::NamedItems(c.e, 0).empty());
+  });
 #ifdef CAD_WITH_OCCT
   Case("UnjoinEdge", "_Box 0,0,0 10,10 10\n_SelLast _Explode\n_SelAll _Join\n_UnjoinEdge 5,0,0", [](Ctx& c) {
     const auto* b = ON_Brep::Cast(c.Last());

@@ -476,6 +476,8 @@ MainWindow::MainWindow(QWidget* parent)
     scriptDock->raise();
     return true;
   };
+  BuildNamedPanels(propsDock);
+  LoadAliases();
   propsDock->raise();
   for (auto* v : m_views)
     connect(v, &Viewport::TextureDropped, this, [this](QString file, std::vector<ON_UUID> ids) {
@@ -824,6 +826,24 @@ void MainWindow::BuildMenus() {
   help->addAction("Licenza d'uso", this, [this] { ShowTextFile("EULA.txt", "Licenza d'uso di Kurva3D"); });
   help->addAction("Componenti di terze parti", this, [this] { ShowTextFile("THIRD_PARTY_NOTICES.txt", "Componenti di terze parti"); });
   help->addSeparator();
+  {
+    auto* tools = menuBar()->addMenu("Str&umenti");
+    tools->addAction("Opzioni...", this, [this] { ShowOptions(0); });
+    tools->addAction("Alias dei comandi...", this, [this] { ShowOptions(3); });
+    tools->addAction("Cronologia dei comandi", QKeySequence(Qt::Key_F2), this, [this] { ShowCommandHistory(); });
+    tools->addSeparator();
+    auto* panels = tools->addMenu("Pannelli");
+    const std::pair<const char*, const char*> pl[] = {{"Viste con nome", "namedviews"}, {"CPlane con nome", "namedcplanes"},
+                                                      {"Istantanee", "snapshots"}, {"Selezioni con nome", "namedselections"},
+                                                      {"Stati dei livelli", "layerstatemanager"}};
+    for (auto& [label, key] : pl) {
+      const std::string k = key;
+      panels->addAction(label, this, [this, k] { ShowNamedPanel(k); });
+    }
+    tools->addSeparator();
+    tools->addAction("PrintDisplay (colori e spessori di stampa)", this, [this] { Submit("_PrintDisplay"); });
+    tools->addAction("SmartTrack", this, [this] { Submit("_SmartTrack"); });
+  }
   help->addAction("Informazioni su Kurva3D", this, [this] { ShowAbout(); });
 }
 
@@ -1039,7 +1059,8 @@ void MainWindow::BuildStatusBar() {
   const Item items[] = {{"Fine", Viewport::End, true},       {"Vicino", Viewport::Near, false},
                         {"Punto", Viewport::Point, true},    {"Medio", Viewport::Mid, true},
                         {"Centro", Viewport::Cen, true},     {"Intersezione", Viewport::Int, true},
-                        {"Perpendicolare", Viewport::Perp, false}, {"Quadrante", Viewport::Quad, false},
+                        {"Perpendicolare", Viewport::Perp, false}, {"Tangente", Viewport::Tan, false},
+                        {"Quadrante", Viewport::Quad, false},
                         {"Nodo", Viewport::Knot, false},     {"Vertice", Viewport::Vertex, false}};
   for (const Item& it : items) {
     auto* cb = new QCheckBox(it.label);
@@ -1051,6 +1072,25 @@ void MainWindow::BuildStatusBar() {
       if (on) St.osnapMask |= bit; else St.osnapMask &= ~bit;
     });
     osnapBar->addWidget(cb);
+    m_osnapBoxes.push_back({cb, bit});
+  }
+  osnapBar->addSeparator();
+  {  // Proietta e SmartTrack (come la barra Osnap di Rhino 8), salvati tra le sessioni
+    QSettings st;
+    S.osnapProject = st.value("osnap/proietta", false).toBool();
+    S.smartTrack = st.value("osnap/smartTrack", false).toBool();
+    auto* proj = new QCheckBox("Proietta");
+    proj->setToolTip("I punti osnap cadono sul piano di costruzione");
+    proj->setChecked(S.osnapProject);
+    connect(proj, &QCheckBox::toggled, this, [](bool on) { Viewport::Shared().osnapProject = on; QSettings().setValue("osnap/proietta", on); });
+    osnapBar->addWidget(proj);
+    m_statusToggles.push_back({proj, &S.osnapProject});
+    auto* smart = new QCheckBox("SmartTrack");
+    smart->setToolTip("Linee guida orizzontali e verticali dai punti osnap toccati con il cursore");
+    smart->setChecked(S.smartTrack);
+    connect(smart, &QCheckBox::toggled, this, [](bool on) { Viewport::Shared().smartTrack = on; QSettings().setValue("osnap/smartTrack", on); });
+    osnapBar->addWidget(smart);
+    m_statusToggles.push_back({smart, &S.smartTrack});
   }
   auto* disable = new QCheckBox("Disabilita");
   connect(disable, &QCheckBox::toggled, this, [](bool on) { Viewport::Shared().osnap = !on; });
@@ -1069,6 +1109,7 @@ void MainWindow::BuildStatusBar() {
     b->setChecked(flag);
     connect(b, &QToolButton::toggled, this, [&flag](bool on) { flag = on; });
     statusBar()->addPermanentWidget(b);
+    m_statusToggles.push_back({b, &flag});
   };
   toggle("Snap griglia", S.gridSnap);
   toggle("Orto", S.ortho);
@@ -1376,6 +1417,30 @@ void MainWindow::Submit(const QString& text) {
     for (auto* vw : m_views) vw->update();
     return;
   }
+  if (m_pending.empty()) {
+    const bool dash = !t.empty() && t[0] == '-' ;
+    const bool bare = t.find(' ') == std::string::npos;
+    if (norm == "commandhistory" || norm == "cronologiacomandi") { ShowCommandHistory(); return; }
+    if (norm == "options" || norm == "opzioni" || (!dash && bare && norm == "documentproperties")) { ShowOptions(0); return; }
+    if (!dash && bare && norm == "alias") { ShowOptions(3); return; }
+    if (bare && ShowNamedPanel(norm)) return;
+    const std::string first = NormalizeName(t.substr(0, t.find(' ')));
+    if (first == "printdisplay" || first == "smarttrack") {
+      // PrintDisplay State=On|Off|Toggle (Thickness ignorato), SmartTrack On|Off|Toggle
+      auto& Sh = Viewport::Shared();
+      bool& flag = first == "printdisplay" ? Sh.printDisplay : Sh.smartTrack;
+      std::string v = bare ? std::string("toggle") : NormalizeName(t.substr(t.find(' ') + 1));
+      if (v.rfind("state=", 0) == 0) v = v.substr(6);
+      if (v == "on" || v == "yes" || v == "si") flag = true;
+      else if (v == "off" || v == "no") flag = false;
+      else flag = !flag;
+      if (first == "smarttrack") QSettings().setValue("osnap/smartTrack", flag);
+      Log(QString(first == "printdisplay" ? "PrintDisplay: " : "SmartTrack: ") + (flag ? "attivo" : "spento"));
+      SyncStatusToggles();
+      for (auto* vw : m_views) vw->update();
+      return;
+    }
+  }
   if (norm == "selectionfilter") { ShowSelectionFilter(); return; }
   if (m_pending.empty() && (norm == "linetypes" || norm == "tipidilinea")) { ShowLinetypes(); return; }
   if (norm == "blockmanager") { ShowBlockManager(); return; }
@@ -1550,6 +1615,7 @@ void MainWindow::AfterCommand() {
   if (!ON_UuidIsNil(m_engine.activeLayoutId)) m_layoutView->Refresh();
   UpdatePrompt();
   RefreshPanels();
+  RefreshNamedPanels();
   QString title = m_engine.currentPath.empty() ? "Senza titolo" : QString::fromStdString(m_engine.currentPath);
   setWindowTitle(title + " - Kurva3D");
   if (m_units) m_units->setText(QString::fromStdString(UnitNameIt(m_engine.Model().m_settings.m_ModelUnitsAndTolerances.m_unit_system.UnitSystem())));
@@ -2049,6 +2115,18 @@ void MainWindow::AutoDimensions() {
   });
   m_out.str("");
   Log(ok ? QString("Quote automatiche: %1").arg(cmds.size()) : QString("Quote automatiche non riuscite"));
+}
+
+void MainWindow::SyncStatusToggles() {
+  const auto& S = Viewport::Shared();
+  for (auto& [cb, bit] : m_osnapBoxes) {
+    const QSignalBlocker b(cb);
+    cb->setChecked(S.osnapMask & bit);
+  }
+  for (auto& [btn, flag] : m_statusToggles) {
+    const QSignalBlocker b(btn);
+    btn->setChecked(*flag);
+  }
 }
 
 }  // namespace cad::ui

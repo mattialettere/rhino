@@ -66,6 +66,9 @@ public:
     bool pickOnObjects = false;   // il comando vuole un clic SU un oggetto (Trim, Fillet, Shell...)
     ON_3dPoint lastPoint = ON_3dPoint::Origin;
     bool hasLastPoint = false;
+    bool osnapProject = false;    // "Proietta": i punti osnap cadono sul CPlane (come Rhino 8)
+    bool smartTrack = false;      // SmartTrack: linee guida dai punti osnap toccati
+    bool printDisplay = false;    // PrintDisplay: colore e spessore di stampa nelle viste
     bool gumball = true;          // Gumball sugli oggetti selezionati (barra di stato)
     int gumballAlign = 0;         // assi del Gumball: 0 mondo, 1 CPlane della vista, 2 oggetto
     // Analisi attive (Zebra, DraftAngleAnalysis, CurvatureGraph, ShowEdges) per oggetto
@@ -233,6 +236,9 @@ private:
   bool m_windowSelecting = false;
   ON_3dPoint m_hoverWorld;
   bool m_hoverSnapped = false;
+  // SmartTrack: punti acquisiti e linee guida attive (in coordinate mondo)
+  mutable std::vector<ON_3dPoint> m_trackPts;
+  mutable std::vector<std::pair<ON_3dPoint, ON_3dPoint>> m_trackLines;
   QString m_hoverSnapLabel;
 };
 
