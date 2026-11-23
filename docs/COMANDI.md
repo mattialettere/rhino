@@ -17,27 +17,27 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Punti | 9 / 9 |
 | Curve: linee e polilinee | 11 / 11 |
 | Curve: forme | 19 / 19 |
-| Curve: forme libere | 18 / 18 |
-| Curve da oggetti | 14 / 14 |
-| Superfici | 29 / 29 |
-| Solidi | 24 / 24 |
-| SubD | 23 / 23 |
-| Mesh | 19 / 19 |
-| Trasformazioni | 30 / 30 |
-| Modifica | 34 / 34 |
-| Selezione | 19 / 19 |
+| Curve: forme libere | 20 / 20 |
+| Curve da oggetti | 15 / 15 |
+| Superfici | 32 / 32 |
+| Solidi | 31 / 31 |
+| SubD | 25 / 25 |
+| Mesh | 29 / 29 |
+| Trasformazioni | 35 / 35 |
+| Modifica | 35 / 35 |
+| Selezione | 20 / 20 |
 | Blocchi | 6 / 6 |
-| Livelli e proprieta' | 12 / 12 |
-| Annotazioni | 14 / 14 |
-| Analisi | 15 / 15 |
+| Livelli e proprieta' | 20 / 20 |
+| Annotazioni | 17 / 17 |
+| Analisi | 20 / 20 |
 | File | 9 / 9 |
 | Rendering (texture) | 5 / 5 |
 | Rendering (luci e immagini) | 9 / 9 |
 | Viste e sezioni | 7 / 7 |
 | Tavole e stampa | 5 / 5 |
 | Script | 3 / 3 |
-| Storia | 5 / 5 |
-| **Totale** | **339 / 339** |
+| Storia | 7 / 7 |
+| **Totale** | **389 / 389** |
 
 ## Punti
 
@@ -115,6 +115,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Fair | ✔ |
 | Smooth | ✔ |
 | Simplify | ✔ |
+| InsertKink | ✔ (dopo il confronto con Rhino 8) |
+| SoftEditCrv | ✔ (Length=, FixEnds; attenuazione lungo la curva) |
 
 ## Curve da oggetti
 
@@ -134,6 +136,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | ExtractWireframe | ✔ |
 | ProjectToCPlane | ✔ |
 | Make2D | ✔ |
+| IntersectTwoSets | ✔ (secondo gruppo scelto con un clic per oggetto, D-076) |
 
 ## Superfici
 
@@ -169,6 +172,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Heightfield | ✔ |
 | DevLoft | ✔ |
 | MergeSrf | ✔ (0.13) |
+| SoftEditSrf | ✔ (UDistance=, VDistance= in frazione del dominio, FixEdges) |
+| VariableFilletSrf | ✔ (raggio lineare da Radius= a EndRadius=, D-076) |
 
 ## Solidi
 
@@ -200,6 +205,11 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | MoveFace | ✔ |
 | ExtractSrf | ✔ |
 | Slab | ✔ |
+| CreateSolid | ✔ (OpenCASCADE: cucitura o celle chiuse; Cells=Yes) |
+| SplitEdge | ✔ |
+| JoinEdge | ✔ (cucitura con tolleranza pari alla distanza, D-076) |
+| UnjoinEdge | ✔ |
+| RebuildEdges | ✔ |
 
 ## SubD
 
@@ -228,6 +238,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Reflect | ✔ |
 | MultiPipe | ✔ |
 | SubDDisplayToggle | ✔ |
+| Inset | ✔ (una faccia alla volta, D-076) |
+| Slide | ✔ (spigolo singolo, Amount=) |
 
 ## Mesh
 
@@ -259,6 +271,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | UnifyMeshNormals | ✔ |
 | MeshToNURB | ✔ |
 | ExtractMeshPart | ✔ |
+| MeshSplit | ✔ (fino a 20000 facce, D-076) |
+| MeshTrim | ✔ |
+| MeshFromLines | ✔ |
 
 ## Trasformazioni
 
@@ -294,6 +309,11 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Smash | ✔ |
 | UnrollSrf | ✔ |
 | Squish | ✔ |
+| SoftMove | ✔ (Radius=) |
+| Stretch | ✔ |
+| Maelstrom | ✔ |
+| MoveUVN | ✔ (punto di controllo scelto con un clic, U=, V=, N=) |
+| Cage | ✔ |
 
 ## Modifica
 
@@ -358,6 +378,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SelVisible | ✔ |
 | Invert | ✔ |
 | SelectionFilter | ✔ |
+| NamedSelections | ✔ (da riga di comando: Save, Restore, Delete, List) |
 
 ## Blocchi
 
@@ -393,6 +414,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SetObjectPrintColor | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
 | SetDocumentUserText | ✔ |
 | GetDocumentUserText | ✔ |
+| LayerStateManager | ✔ (da riga di comando, salvato nel testo del documento, D-076) |
 
 ## Annotazioni
 

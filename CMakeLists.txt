@@ -58,6 +58,7 @@ add_library(cadcore STATIC
   src/commands/CmdExtra4.cpp
   src/commands/CmdExtra5.cpp
   src/commands/CmdExtra6.cpp
+  src/commands/CmdMissing.cpp
   src/commands/Deform.cpp
   src/commands/Deform.h
   src/commands/Grips.h
@@ -70,7 +71,7 @@ target_include_directories(cadcore PUBLIC src)
 find_package(OpenCASCADE QUIET)
 if(OpenCASCADE_FOUND)
   message(STATUS "OpenCASCADE ${OpenCASCADE_VERSION}: comandi del motore geometrico attivi")
-  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp src/kernel/CmdAnalysis.cpp src/kernel/CmdModeling.cpp src/kernel/SurfaceAnalysis.cpp src/kernel/SurfaceAnalysis.h)
+  target_sources(cadcore PRIVATE src/kernel/OcctConvert.cpp src/kernel/OcctConvert.h src/kernel/CmdKernel.cpp src/kernel/CmdCurveEdit.cpp src/kernel/CmdSurfaceMore.cpp src/kernel/CmdSurface3.cpp src/kernel/CmdKernel4.cpp src/kernel/CmdKernel5.cpp src/kernel/CmdKernel6.cpp src/kernel/CmdAnalysis.cpp src/kernel/CmdModeling.cpp src/kernel/CmdMissingOcct.cpp src/kernel/SurfaceAnalysis.cpp src/kernel/SurfaceAnalysis.h)
   target_include_directories(cadcore PUBLIC ${OpenCASCADE_INCLUDE_DIR})
   target_link_libraries(cadcore PUBLIC TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo
     TKTopAlgo TKPrim TKBO TKShHealing TKBool TKFillet TKOffset TKMesh TKHLR)

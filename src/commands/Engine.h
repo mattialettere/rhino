@@ -310,6 +310,8 @@ void RegisterKernel6Commands(Engine& e);
 void RegisterAnalysisCommands(Engine& e);
 void RegisterModelingCommands(Engine& e);
 void RegisterWorksessionCommands(Engine& e);
+void RegisterMissingCommands(Engine& e);
+void RegisterMissingOcctCommands(Engine& e);
 const std::vector<std::pair<const char*, const char*>>& ItalianCommandNames();
 void RegisterCommandOptions(Engine& e);
 #endif

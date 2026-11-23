@@ -345,6 +345,118 @@ bool CmdSubDExtrude(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// Inset: faccia interna parallela ai lati della faccia scelta, a distanza Distance=, e un anello
+// di quadrilateri tra la faccia originale e quella interna (come Inset dei SubD di Rhino 8).
+bool CmdInset(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto pick = e.ReadPick(ts, "faccia del SubD");
+  if (!pick) return false;
+  opts.merge(e.ReadOptions(ts));
+  ON_UUID id;
+  if (!SubDNear(e, *pick, id)) return e.Fail("nessun SubD");
+  Poly p = FromSubD(*ON_SubD::Cast(Geo(e, id)));
+  const int f = NearestFace(p, *pick);
+  if (f < 0) return e.Fail("nessuna faccia");
+  const std::vector<int> face = p.F[f];
+  const size_t n = face.size();
+  double minEdge = 1e300;
+  for (size_t k = 0; k < n; k++) minEdge = std::min(minEdge, p.V[face[k]].DistanceTo(p.V[face[(k + 1) % n]]));
+  const double d = OptNum(opts, "distance", minEdge * 0.2);
+  if (d <= 0 || d >= minEdge * 0.5) return e.Fail("distanza non valida (deve essere minore di meta' del lato piu' corto)");
+  const ON_3dVector N = FaceNormal(p, face);
+  std::vector<int> inner;
+  for (size_t k = 0; k < n; k++) {
+    const ON_3dPoint& a = p.V[face[(k + n - 1) % n]];
+    const ON_3dPoint& v = p.V[face[k]];
+    const ON_3dPoint& b = p.V[face[(k + 1) % n]];
+    ON_3dVector e1 = v - a, e2 = b - v;
+    e1.Unitize();
+    e2.Unitize();
+    // normali interne dei due lati nel piano della faccia
+    ON_3dVector i1 = ON_CrossProduct(N, e1), i2 = ON_CrossProduct(N, e2);
+    i1.Unitize();
+    i2.Unitize();
+    ON_3dVector m = i1 + i2;
+    if (!m.Unitize()) m = i1;
+    const double c = std::max(0.2, m * i1);
+    inner.push_back((int)p.V.size());
+    p.V.push_back(v + m * (d / c));
+  }
+  p.F[f] = inner;
+  for (size_t k = 0; k < n; k++) {
+    const size_t k1 = (k + 1) % n;
+    p.F.push_back({face[k], face[k1], inner[k1], inner[k]});
+  }
+  ON_SubD* s = ToSubD(p);
+  if (!s) return e.Fail("Inset non riuscito");
+  e.ReplaceObject(id, s);
+  e.Out() << "  Faccia interna a distanza " << d << "\n";
+  return true;
+}
+
+// Slide: fa scorrere lo spigolo scelto sulla faccia adiacente (Amount= tra -1 e 1: frazione
+// dei lati della faccia; il segno sceglie la faccia da una parte o dall'altra dello spigolo).
+bool CmdSlide(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto pick = e.ReadPick(ts, "spigolo del SubD da far scorrere");
+  if (!pick) return false;
+  opts.merge(e.ReadOptions(ts));
+  double amount = OptNum(opts, "amount", 0.25);
+  if (!opts.count("amount")) {
+    auto a = e.ReadNumber(ts, "quantita' (-1..1, frazione dei lati)");
+    if (!a) return false;
+    amount = *a;
+  }
+  amount = std::clamp(amount, -0.95, 0.95);
+  ON_UUID id;
+  if (!SubDNear(e, *pick, id)) return e.Fail("nessun SubD");
+  Poly p = FromSubD(*ON_SubD::Cast(Geo(e, id)));
+  int ea = -1, eb = -1;
+  double bd = 1e300;
+  for (const auto& f : p.F)
+    for (size_t k = 0; k < f.size(); k++) {
+      const int a = f[k], b = f[(k + 1) % f.size()];
+      const double dd = SegDist(*pick, p.V[a], p.V[b]);
+      if (dd < bd) { bd = dd; ea = a; eb = b; }
+    }
+  if (ea < 0) return e.Fail("nessuno spigolo");
+  // facce che contengono lo spigolo: con il verso a->b (prima) e b->a (seconda)
+  int fwd = -1, bwd = -1;
+  for (int fi = 0; fi < (int)p.F.size(); fi++) {
+    const auto& f = p.F[fi];
+    for (size_t k = 0; k < f.size(); k++) {
+      const int a = f[k], b = f[(k + 1) % f.size()];
+      if (a == ea && b == eb) fwd = fi;
+      if (a == eb && b == ea) bwd = fi;
+    }
+  }
+  const int fi = amount >= 0 ? (fwd >= 0 ? fwd : bwd) : (bwd >= 0 ? bwd : fwd);
+  if (fi < 0) return e.Fail("lo spigolo non ha facce");
+  const auto& f = p.F[fi];
+  const size_t n = f.size();
+  // vicino di "v" nella faccia che non e' l'altro estremo dello spigolo
+  auto other = [&](int v, int skip) {
+    for (size_t k = 0; k < n; k++)
+      if (f[k] == v) {
+        const int prev = f[(k + n - 1) % n], next = f[(k + 1) % n];
+        return prev == skip ? next : prev;
+      }
+    return -1;
+  };
+  const int oa = other(ea, eb), ob = other(eb, ea);
+  if (oa < 0 || ob < 0) return e.Fail("faccia non valida");
+  const double t = std::fabs(amount);
+  const ON_3dPoint na = p.V[ea] + t * (p.V[oa] - p.V[ea]);
+  const ON_3dPoint nb = p.V[eb] + t * (p.V[ob] - p.V[eb]);
+  p.V[ea] = na;
+  p.V[eb] = nb;
+  ON_SubD* s = ToSubD(p);
+  if (!s) return e.Fail("Slide non riuscito");
+  e.ReplaceObject(id, s);
+  e.Out() << "  Spigolo fatto scorrere del " << int(t * 100 + 0.5) << "%\n";
+  return true;
+}
+
 // Anello di bordo piu' vicino al punto.
 int NearestLoop(const Poly& p, const std::vector<std::vector<int>>& loops, const ON_3dPoint& q, int exclude = -1) {
   int best = -1;
@@ -1074,6 +1186,8 @@ void RegisterExtra6Commands(Engine& e) {
   reg("TextObject", "Annotazioni", "Testo trasformato in curve", CmdTextObject);
   reg("Bevel", "SubD", "Smussa gli spigoli del SubD (Distance=)", CmdBevel);
   reg("MultiPipe", "SubD", "Tubi SubD lungo le curve (Radius=, Sides=, Cap=None/Flat)", CmdMultiPipe);
+  reg("Inset", "SubD", "Faccia interna con un anello di facce (Distance=)", CmdInset);
+  reg("Slide", "SubD", "Fa scorrere uno spigolo del SubD sulla faccia vicina (Amount=)", CmdSlide);
   reg("CageEdit", "Trasforma", "Gabbia di controllo per deformare gli oggetti (PointCount=X,Y,Z, Degree=)", CmdCageEdit);
 }
 

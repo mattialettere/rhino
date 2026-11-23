@@ -3711,6 +3711,119 @@ int main(int argc, char** argv) {
     }
   }
 
+  // --- Comandi aggiunti dopo il confronto con Rhino 8 (docs/CONFRONTO_RHINO8.md) ---
+  Case("InsertKink", "_Curve 0,0 10,10 20,0 30,10 40,0 _Enter\n_InsertKink 20,0 _Enter", [](Ctx& c) {
+    const auto* nc = ON_NurbsCurve::Cast(c.Last());
+    CHECK(nc != nullptr);
+    if (nc) {
+      // un nodo di molteplicita' 3 (= grado) all'interno
+      int maxMult = 0;
+      for (int i = nc->Order() - 1; i < nc->CVCount(); i++) maxMult = std::max(maxMult, nc->KnotMultiplicity(i));
+      CHECK(maxMult >= 3);
+    }
+  });
+  Case("SoftEditCrv", "_Curve 0,0 10,10 20,0 30,10 40,0 _Enter\n_SoftEditCrv Length=15 20,3 20,10", [](Ctx& c) {
+    const auto* cv = ON_Curve::Cast(c.Last());
+    CHECK(cv != nullptr);
+    if (cv) {
+      // un punto della curva arriva sul punto nuovo, gli estremi lontani non si muovono
+      double best = 1e300;
+      for (int i = 0; i <= 2000; i++) best = std::min(best, cv->PointAt(cv->Domain().ParameterAt(i / 2000.0)).DistanceTo(ON_3dPoint(20, 10, 0)));
+      CHECK(best < 0.05);
+      CHECK(NearPt(cv->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-6) && NearPt(cv->PointAtEnd(), ON_3dPoint(40, 0, 0), 1e-6));
+    }
+  });
+  Case("SoftEditSrf", "_Plane 0,0 40,40\n_SoftEditSrf UDistance=0.3 VDistance=0.3 20,20 20,20,10", [](Ctx& c) {
+    const ON_BoundingBox b = c.BBox();
+    CHECK(Near(b.m_max.z, 10, 0.05) && Near(b.m_min.z, 0, 1e-6));
+    CHECK(Near(b.m_min.x, 0, 1e-6) && Near(b.m_max.x, 40, 1e-6));
+  });
+  Case("SoftMove", "_Box 0,0,0 20,20 20\n_SelLast _SoftMove 20,20,20 25,25,25 Radius=10", [](Ctx& c) {
+    const ON_BoundingBox b = c.BBox();
+    CHECK(Near(b.m_max.z, 25, 1e-6) && Near(b.m_min.z, 0, 1e-6) && Near(b.m_min.x, 0, 1e-6));
+  });
+  Case("Stretch", "_Box 0,0,0 10,10 10\n_SelLast _Stretch 0,0,0 10,0,0 20,0,0", [](Ctx& c) {
+    const ON_BoundingBox b = c.BBox();
+    CHECK(NearPt(b.m_min, ON_3dPoint(0, 0, 0), 1e-9) && NearPt(b.m_max, ON_3dPoint(20, 10, 10), 1e-9));
+  });
+  Case("Maelstrom", "_Line 0,0 10,0\n_SelLast _Maelstrom 0,0,0 2 20 90", [](Ctx& c) {
+    const auto* cv = ON_Curve::Cast(c.Last());
+    CHECK(cv && NearPt(cv->PointAtStart(), ON_3dPoint(0, 0, 0), 1e-9));
+    if (cv) CHECK(cv->PointAtEnd().y > 1);  // l'estremo ruota
+  });
+  Case("MoveUVN", "_Plane 0,0 30,30\n_MoveUVN N=5 0,0,0", [](Ctx& c) {
+    const ON_BoundingBox b = c.BBox();
+    CHECK(Near(std::max(std::fabs(b.m_max.z), std::fabs(b.m_min.z)), 5, 1e-6));
+  });
+  Case("Cage", "_Cage 0,0,0 10,10,10 PointCount=3,3,3", [](Ctx& c) {
+    const auto* mc = ON_MorphControl::Cast(c.Last());
+    CHECK(mc && mc->m_nurbs_cage.CVCount(0) == 3 && mc->m_captive_id.Count() == 0);
+  });
+  Case("MeshFromLines", "_Line 0,0 10,0\n_Line 10,0 10,10\n_Line 10,10 0,10\n_Line 0,10 0,0\n_Line 10,0 20,0\n_Line 20,0 10,10\n_SelCrv _MeshFromLines", [](Ctx& c) {
+    const auto* m = ON_Mesh::Cast(c.Last());
+    CHECK(m && m->FaceCount() == 2 && m->QuadCount() == 1);
+  });
+  Case("Inset_Slide", "_SubDBox 0,0,0 10,10 10\n_Inset Distance=1 5,5,10\n_Slide Amount=0.3 0,5,0", [](Ctx& c) {
+    const auto* s = ON_SubD::Cast(c.Last());
+    CHECK(s && s->FaceCount() == 10);  // 6 + 4 facce dell'anello
+  });
+  Case("NamedSelections", "_Box 0,0,0 1,1 1\n_Sphere 5,0,0 1\n_SelAll _NamedSelections Save Tutti\n_SelNone _NamedSelections Restore Tutti", [](Ctx& c) {
+    CHECK(c.e.Selection().size() == 2);
+  });
+  Case("LayerStateManager", "-_Layer _New Muri\n_LayerStateManager Save Prima\n-_Layer _Off Muri\n_LayerStateManager Restore Prima", [](Ctx& c) {
+    const ON_Layer* l = nullptr;
+    ONX_ModelComponentIterator it(c.e.Model(), ON_ModelComponent::Type::Layer);
+    for (const ON_ModelComponent* mc = it.FirstComponent(); mc; mc = it.NextComponent())
+      if (const auto* L = ON_Layer::Cast(mc); L && std::wstring(static_cast<const wchar_t*>(L->Name())) == L"Muri") l = L;
+    CHECK(l && l->IsVisible());
+  });
+#ifdef CAD_WITH_OCCT
+  Case("UnjoinEdge", "_Box 0,0,0 10,10 10\n_SelLast _Explode\n_SelAll _Join\n_UnjoinEdge 5,0,0", [](Ctx& c) {
+    const auto* b = ON_Brep::Cast(c.Last());
+    int naked = 0;
+    if (b) for (int i = 0; i < b->m_E.Count(); i++) if (b->m_E[i].m_ti.Count() == 1) naked++;
+    CHECK(naked == 2);
+  });
+  Case("SplitEdge", "_Box 0,0,0 10,10 10\n_SelLast _Explode\n_SelAll _Join\n_SplitEdge 5,0,0", [](Ctx& c) {
+    const auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->m_E.Count() == 13 && b->m_V.Count() == 9);
+  });
+  Case("JoinEdge_RebuildEdges", "_Box 0,0,0 10,10 10\n_SelLast _Explode\n_SelAll _Join\n_UnjoinEdge 5,0,0\n_JoinEdge 5,0,0 5,0,0.001\n_SelAll _RebuildEdges", [](Ctx& c) {
+    const auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->IsSolid());
+  });
+  Case("CreateSolid", "_Plane 0,0,0 10,10\n_SelLast _Copy 0,0,0 0,0,10\n_PlaneVertical -1,0,-1 11,0,-1 12\n_PlaneVertical -1,10,-1 11,10,-1 12\n_PlaneVertical 0,-1,-1 0,11,-1 12\n_PlaneVertical 10,-1,-1 10,11,-1 12\n_SelAll _CreateSolid", [](Ctx& c) {
+    CHECK(c.Objects().size() == 1);
+    const auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->IsSolid());
+    // le parti sporgenti dei piani sono tolte: volume del cubo 10x10x10
+    CHECK(c.e.Run("_SelAll _Volume") && c.log.str().find("Volume = 1000 ") != std::string::npos);
+  });
+  {
+    Ctx c;
+    CHECK(c.e.Run("_Line 0,-5 0,5\n_Line 5,-5 5,5\n_Line -10,0 10,0\n_Line -10,2 10,2"));
+    auto ids = c.e.AllObjectIds();
+    c.e.ClearSelection();
+    c.e.Select(ids[0]);
+    c.e.Select(ids[1]);
+    CHECK(c.e.Run("_IntersectTwoSets -10,0,0 -10,2,0 _Enter"));
+    CHECK(c.e.AllObjectIds().size() == 8);  // 2x2 punti, non le intersezioni dentro ogni gruppo
+  }
+  Case("MeshSplit", "_MeshPlane 0,0 10,10\n_Line 5,-1,-1 5,11,-1\n_SelLast _ExtrudeCrv 2\n_SelNone _SelMesh _MeshSplit 5,5,0 _Enter", [](Ctx& c) {
+    int meshes = 0;
+    for (auto* g : c.Objects()) if (ON_Mesh::Cast(g)) meshes++;
+    CHECK(meshes == 2);
+  });
+  Case("MeshTrim", "_MeshPlane 0,0 10,10\n_Line 5,-1,-1 5,11,-1\n_SelLast _ExtrudeCrv 2\n_SelNone _SelSrf _MeshTrim 8,5,0", [](Ctx& c) {
+    for (auto* g : c.Objects())
+      if (const auto* m = ON_Mesh::Cast(g)) { const ON_BoundingBox b = m->BoundingBox(); CHECK(Near(b.m_max.x, 5, 1e-6) && Near(b.m_min.x, 0, 1e-6)); }
+  });
+  Case("VariableFilletSrf", "_Plane 0,0,0 20,20\n_PlaneVertical 0,10,-5 20,10,-5 15\n_VariableFilletSrf Radius=1 EndRadius=3 10,5,0 10,10,5", [](Ctx& c) {
+    const auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b && b->m_F.Count() == 1);
+  });
+#endif
+
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);
 
