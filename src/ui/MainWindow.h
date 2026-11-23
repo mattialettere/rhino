@@ -108,6 +108,7 @@ private:
   // Opzioni, cronologia dei comandi, alias e pannelli con nome (OptionsDialog.cpp)
   void ShowOptions(int page = 0);
   void ShowCommandHistory();
+  void ShowPbrEditor();
   void LoadAliases();
   void SaveAliases();
   void BuildNamedPanels(QDockWidget* tabWith);

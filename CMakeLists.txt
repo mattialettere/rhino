@@ -58,7 +58,7 @@ add_library(cadcore STATIC
   src/commands/CmdExtra4.cpp
   src/commands/CmdExtra5.cpp
   src/commands/CmdExtra6.cpp
-  src/commands/CmdMissing.cpp
+  src/commands/MeshModifiers.cpp src/commands/CmdMissing.cpp
   src/commands/Deform.cpp
   src/commands/Deform.h
   src/commands/Grips.h

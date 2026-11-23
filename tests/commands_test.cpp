@@ -3837,6 +3837,72 @@ int main(int argc, char** argv) {
     for (auto* g : c.Objects())
       if (const auto* m = ON_Mesh::Cast(g)) { const ON_BoundingBox b = m->BoundingBox(); CHECK(Near(b.m_max.x, 5, 1e-6) && Near(b.m_min.x, 0, 1e-6)); }
   });
+  {
+    const std::string white = g_outDir + "/white.pgm";
+    std::ofstream(white) << "P2\n2 2\n255\n255 255\n255 255\n";
+    Case("Displacement", "_Plane 0,0,0 10,10\n_SelLast _Displacement File=\"" + white + "\" Amount=2 Subdivisions=1\n_SelNone _SelAll _ExtractRenderMesh", [](Ctx& c) {
+      const auto* m = ON_Mesh::Cast(c.Last());
+      CHECK(m != nullptr);
+      if (m) { ON_BoundingBox b = m->BoundingBox(); CHECK(Near(b.m_min.z, 2, 1e-3) && Near(b.m_max.z, 2, 1e-3)); }
+    });
+    Case("Decal", "_Plane 0,0,0 10,10\n_SelLast _Decal \"" + white + "\" 2,2,0 4,5,0", [](Ctx& c) {
+      const auto ids = c.e.AllObjectIds(true);
+      CHECK(ids.size() == 1);
+      ON_Mesh src;
+      src.m_V.Append(ON_3fPoint(0, 0, 0)); src.m_V.Append(ON_3fPoint(10, 0, 0)); src.m_V.Append(ON_3fPoint(10, 10, 0)); src.m_V.Append(ON_3fPoint(0, 10, 0));
+      src.m_V.Append(ON_3fPoint(3, 3, 0));
+      src.SetTriangle(0, 0, 1, 4); src.SetTriangle(1, 1, 2, 4); src.SetTriangle(2, 2, 3, 4); src.SetTriangle(3, 3, 0, 4);
+      ON_Mesh out; std::string file;
+      CHECK(cad::DecalMesh(c.e, ids[0], src, out, file));
+      CHECK(out.m_F.Count() == 4 && out.m_T.Count() == out.m_V.Count());
+      // il vertice (3,3) cade nella decalcomania (2..4 x 2..5): u = 0.5, v = 1/3
+      bool found = false;
+      for (int i = 0; i < out.m_V.Count(); i++)
+        if (std::fabs(out.m_V[i].x - 3) < 1e-6 && std::fabs(out.m_V[i].y - 3) < 1e-6)
+          found = std::fabs(out.m_T[i].x - 0.5) < 1e-6 && std::fabs(out.m_T[i].y - 1.0 / 3.0) < 1e-6;
+      CHECK(found);
+    });
+  }
+  Case("EdgeSoftening", "_Box 0,0,0 10,10 10\n_SelLast _EdgeSoftening Radius=1 Chamfer=Yes\n_SelNone _SelAll _ExtractRenderMesh", [](Ctx& c) {
+    const auto* m = ON_Mesh::Cast(c.Last());
+    CHECK(m != nullptr);
+    if (m) { ON_BoundingBox b = m->BoundingBox(); CHECK(b.m_max.x < 10 - 0.05 && b.m_min.x > 0.05); }
+  });
+  Case("Shutlining", "_Line 0,5,0 10,5,0\n_Plane 0,0,0 10,10\n_SelLast _Shutlining 5,5,0 _Enter Radius=1\n_SelNone _SelAll _ExtractRenderMesh", [](Ctx& c) {
+    const auto* m = ON_Mesh::Cast(c.Last());
+    CHECK(m != nullptr);
+    if (m) { ON_BoundingBox b = m->BoundingBox(); CHECK(b.m_min.z < -0.9 && b.m_min.z > -1.0001 && Near(b.m_max.z, 0, 1e-6)); }
+  });
+  Case("ClippingDrawings", "_Box -5,-5,-5 5,5 10\n_ClippingPlane -8,-8,0 8,8,0\n_SelLast _ClippingDrawings", [](Ctx& c) {
+    int crv = 0, hat = 0;
+    for (auto* g : c.Objects()) {
+      if (const auto* cv = ON_Curve::Cast(g)) {
+        crv++;
+        CHECK(cv->IsClosed());
+        ON_BoundingBox b = cv->BoundingBox();
+        CHECK(b.m_min.x > 5 && Near(b.Diagonal().Length(), std::sqrt(200.0), 1e-3) && Near(b.m_max.z, 0, 1e-6));
+      }
+      if (ON_Hatch::Cast(g)) hat++;
+    }
+    CHECK(crv == 1 && hat == 1);
+  });
+  Case("SectionStyle_none", "_Box -5,-5,-5 5,5 10\n_SelLast _SectionStyle Fill=None\n_ClippingPlane -8,-8,0 8,8,0\n_SelLast _ClippingDrawings Target=InPlace", [](Ctx& c) {
+    int crv = 0, hat = 0;
+    for (auto* g : c.Objects()) {
+      if (const auto* cv = ON_Curve::Cast(g)) { crv++; ON_BoundingBox b = cv->BoundingBox(); CHECK(Near(b.m_min.x, -5, 1e-4) && Near(b.m_max.z, 0, 1e-6)); }
+      if (ON_Hatch::Cast(g)) hat++;
+    }
+    CHECK(crv == 1 && hat == 0);
+  });
+  Case("SetMaterial_PBR", "_Box 0,0,0 1,1 1\n_SelLast _SetMaterial PBR=Yes BaseColor=200,10,10 Metallic=1 Roughness=0.2", [](Ctx& c) {
+    const auto* a = c.e.Object(c.e.AllObjectIds(true).back())->Attributes(nullptr);
+    const auto* m = ON_Material::Cast(c.e.Model().ComponentFromIndex(ON_ModelComponent::Type::RenderMaterial, a->m_material_index).ModelComponent());
+    CHECK(m && m->IsPhysicallyBased());
+    if (m && m->IsPhysicallyBased()) {
+      CHECK(Near(m->PhysicallyBased()->Metallic(), 1) && Near(m->PhysicallyBased()->Roughness(), 0.2));
+      CHECK(std::fabs(m->PhysicallyBased()->BaseColor().Red() - 200 / 255.0) < 1e-3);
+    }
+  });
   Case("VariableFilletSrf", "_Plane 0,0,0 20,20\n_PlaneVertical 0,10,-5 20,10,-5 15\n_VariableFilletSrf Radius=1 EndRadius=3 10,5,0 10,10,5", [](Ctx& c) {
     const auto* b = ON_Brep::Cast(c.Last());
     CHECK(b && b->m_F.Count() == 1);

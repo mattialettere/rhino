@@ -319,6 +319,13 @@ void RegisterAnalysisCommands(Engine& e);
 void RegisterModelingCommands(Engine& e);
 void RegisterWorksessionCommands(Engine& e);
 void RegisterMissingCommands(Engine& e);
+void RegisterMeshModifierCommands(Engine& e);
+// Modificatori della mesh di rendering (Displacement, EdgeSoftening, Shutlining) e decalcomanie
+// (MeshModifiers.cpp). signature cambia quando cambiano i parametri.
+bool HasMeshModifiers(Engine& e, const ON_UUID& id, std::string* signature = nullptr);
+void ApplyMeshModifiers(Engine& e, const ON_UUID& id, ON_Mesh& m);
+// Parte della mesh coperta dalla decalcomania dell'oggetto, con le coordinate dell'immagine.
+bool DecalMesh(Engine& e, const ON_UUID& id, const ON_Mesh& src, ON_Mesh& out, std::string& file);
 void RegisterMissingOcctCommands(Engine& e);
 const std::vector<std::pair<const char*, const char*>>& ItalianCommandNames();
 void RegisterCommandOptions(Engine& e);

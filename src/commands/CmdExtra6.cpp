@@ -1166,6 +1166,9 @@ int UpdateCageCaptives(Engine& e, const ON_UUID& cageId) {
 namespace {
 }  // namespace
 
+// lettore di immagini in grigio per gli altri moduli (modificatori di mesh)
+bool LoadGrayImageFile(const std::string& path, int& w, int& h, std::vector<double>& g) { return LoadGray(path, w, h, g); }
+
 void RegisterExtra6Commands(Engine& e) {
   auto reg = [&](const char* n, const char* cat, const char* d, CommandFn f) {
     CommandInfo i{n, cat, d, f};

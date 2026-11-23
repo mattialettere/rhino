@@ -125,6 +125,7 @@ Engine::Engine(Document3dm& doc, std::ostream& out) : m_doc(doc), m_out(out) {
   RegisterCollabCommands(*this);
   RegisterWorksessionCommands(*this);
   RegisterMissingCommands(*this);
+  RegisterMeshModifierCommands(*this);
 #ifdef CAD_WITH_OCCT
   RegisterMissingOcctCommands(*this);
   RegisterKernelCommands(*this);

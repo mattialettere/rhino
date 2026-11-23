@@ -902,9 +902,12 @@ bool CmdExtractRenderMesh(Engine& e, TokenStream&) {
   int n = 0, cached = 0;
   for (const auto& id : sel) {
     const ON_Geometry* g = Geo(e, id);
-    if (!g || ON_Mesh::Cast(g)) continue;
+    if (!g) continue;
     ON_Mesh* m = nullptr;
-    if (const auto* b = ON_Brep::Cast(g)) {
+    if (const auto* mm = ON_Mesh::Cast(g)) {
+      if (!HasMeshModifiers(e, id)) continue;  // una mesh senza modificatori e' gia' la sua mesh di rendering
+      m = new ON_Mesh(*mm);
+    } else if (const auto* b = ON_Brep::Cast(g)) {
       bool all = b->m_F.Count() > 0;
       for (int i = 0; i < b->m_F.Count() && all; i++) all = b->m_F[i].Mesh(ON::render_mesh) != nullptr;
       if (all) {
@@ -928,6 +931,7 @@ bool CmdExtractRenderMesh(Engine& e, TokenStream&) {
     }
     if (!m) continue;
     if (!m->HasVertexNormals()) m->ComputeVertexNormals();
+    ApplyMeshModifiers(e, id, *m);  // Displacement, EdgeSoftening, Shutlining
     const ON_3dmObjectAttributes at = Attrs(e, id);
     e.AddObject(m, &at);
     n++;

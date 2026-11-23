@@ -9,6 +9,8 @@
 #include "ui/Viewport.h"
 
 #include <QCheckBox>
+#include <QColorDialog>
+#include <QSlider>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -326,6 +328,72 @@ bool MainWindow::ShowNamedPanel(const std::string& norm) {
           return true;
         }
   return false;
+}
+
+// --- Editor dei materiali PBR -----------------------------------------------------------
+// Come l'editor "Physically Based" di Rhino 8: colore base, metallo, rugosita', speculare,
+// clearcoat, sheen, opacita' e IOR, emissione. Applica con SetMaterial PBR=Yes (annullabile).
+void MainWindow::ShowPbrEditor() {
+  if (m_engine.Selection().empty()) { Log("Editor materiali PBR: seleziona prima gli oggetti"); return; }
+  QDialog dlg(this);
+  dlg.setWindowTitle("Materiale PBR");
+  auto* form = new QFormLayout(&dlg);
+  QColor base(204, 204, 204), emis(0, 0, 0);
+  auto swatch = [](QPushButton* b, const QColor& c) {
+    b->setStyleSheet(QString("background:%1; min-width:60px;").arg(c.name()));
+  };
+  auto* baseBtn = new QPushButton;
+  swatch(baseBtn, base);
+  connect(baseBtn, &QPushButton::clicked, &dlg, [&] {
+    const QColor c = QColorDialog::getColor(base, &dlg, "Colore base");
+    if (c.isValid()) { base = c; swatch(baseBtn, base); }
+  });
+  auto* emisBtn = new QPushButton;
+  swatch(emisBtn, emis);
+  connect(emisBtn, &QPushButton::clicked, &dlg, [&] {
+    const QColor c = QColorDialog::getColor(emis, &dlg, "Emissione");
+    if (c.isValid()) { emis = c; swatch(emisBtn, emis); }
+  });
+  auto slider = [&](const char* label, int def) {
+    auto* row = new QWidget;
+    auto* h = new QHBoxLayout(row);
+    h->setContentsMargins(0, 0, 0, 0);
+    auto* sl = new QSlider(Qt::Horizontal);
+    sl->setRange(0, 100);
+    sl->setValue(def);
+    auto* val = new QLabel(QString::number(def / 100.0, 'f', 2));
+    val->setMinimumWidth(36);
+    connect(sl, &QSlider::valueChanged, val, [val](int v) { val->setText(QString::number(v / 100.0, 'f', 2)); });
+    h->addWidget(sl);
+    h->addWidget(val);
+    form->addRow(label, row);
+    return sl;
+  };
+  auto* name = new QLineEdit;
+  form->addRow("Nome:", name);
+  form->addRow("Colore base:", baseBtn);
+  auto* metallic = slider("Metallo:", 0);
+  auto* rough = slider("Rugosità:", 50);
+  auto* spec = slider("Speculare:", 50);
+  auto* clear = slider("Clearcoat:", 0);
+  auto* sheen = slider("Sheen:", 0);
+  auto* opac = slider("Opacità:", 100);
+  auto* ior = new QDoubleSpinBox;
+  ior->setRange(1.0, 4.0); ior->setDecimals(3); ior->setValue(1.5);
+  form->addRow("IOR:", ior);
+  form->addRow("Emissione:", emisBtn);
+  auto* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+  connect(bb, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+  form->addRow(bb);
+  if (dlg.exec() != QDialog::Accepted) return;
+  auto rgb = [](const QColor& c) { return QString("%1,%2,%3").arg(c.red()).arg(c.green()).arg(c.blue()); };
+  QString cmd = QString("_SetMaterial PBR=Yes BaseColor=%1 Metallic=%2 Roughness=%3 Specular=%4 Clearcoat=%5 Sheen=%6 Opacity=%7 IOR=%8")
+                    .arg(rgb(base)).arg(metallic->value() / 100.0).arg(rough->value() / 100.0).arg(spec->value() / 100.0)
+                    .arg(clear->value() / 100.0).arg(sheen->value() / 100.0).arg(opac->value() / 100.0).arg(ior->value());
+  if (emis != QColor(0, 0, 0)) cmd += " Emission=" + rgb(emis);
+  if (!name->text().trimmed().isEmpty()) cmd += " Name=" + Quote(name->text().trimmed());
+  PropertyCommand(cmd);
 }
 
 }  // namespace cad::ui
