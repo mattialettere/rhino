@@ -2437,6 +2437,45 @@ int main(int argc, char** argv) {
       CHECK(Near(l0.height, l1.height, 1e-6));
       CHECK(NearPt(l0.origin, l1.origin, 1e-6));
     }
+    // quote salvate in DXF come DIMENSION e rilette come quote vere: tipo, misura, testo visibile
+    {
+      Ctx c;
+      CHECK(c.e.Run("_Dim 0,0,0 30,0,0 15,-8,0\n_DimAligned 0,10 30,50 20,20\n_DimAngle 50,0 60,0 50,10 56,6\n"
+                    "_Circle 80,0 8\n_SelLast\n_DimRadius 92,10\n_Circle 110,0 5\n_SelLast\n_DimDiameter 120,4\n"
+                    "_Dim 0,-30,0 12.5,-30,0 6,-36,0\n_SelLast\n_TextProperties Text=\"circa 12\""));
+      auto dims = [](Ctx& x) {
+        std::vector<std::string> v;
+        for (const auto& id : x.e.AllObjectIds(true))
+          if (auto* d = ON_Dimension::Cast(x.e.Object(id)->Geometry(nullptr))) {
+            AnnotationDisplay ad;
+            BuildAnnotationDisplay(x.e.Model(), *d, ad);
+            // tipo, misura, punti di definizione e testo visibile
+            ON_3dPoint q[7];
+            int nq = 0;
+            if (auto* l = ON_DimLinear::Cast(d)) { l->Get3dPoints(&q[0], &q[1], &q[2], &q[3], &q[4], &q[5]); nq = 5; }
+            else if (auto* r = ON_DimRadial::Cast(d)) { r->Get3dPoints(&q[0], &q[1], &q[2], &q[3]); nq = 4; }
+            else if (auto* g = ON_DimAngular::Cast(d)) { g->Get3dPoints(&q[0], &q[1], &q[2], &q[3], &q[4], &q[5], &q[6]); nq = 6; }
+            char b[64];
+            std::snprintf(b, sizeof b, "%d %.4f ", (int)d->Type(), d->Measurement());
+            std::string t = b;
+            for (int k = 0; k < nq; k++) { std::snprintf(b, sizeof b, "(%.4f,%.4f)", q[k].x + 0.0, q[k].y + 0.0); t += b; }
+            v.push_back(t + " " + (ad.labels.empty() ? std::string() : ad.labels[0].text));
+          }
+        std::sort(v.begin(), v.end());
+        return v;
+      };
+      const auto before = dims(c);
+      CHECK(before.size() == 6);
+      const std::string f = dir + "/quote.dxf";
+      CHECK(c.e.Run("_SelAll\n_Export \"" + f + "\""));
+      Ctx back;
+      CHECK(back.e.Run("_Open \"" + f + "\""));
+      const auto after = dims(back);
+      CHECK(after == before);
+      if (after != before)
+        for (size_t k = 0; k < std::max(before.size(), after.size()); k++)
+          std::printf("  quota %zu: [%s] -> [%s]\n", k, k < before.size() ? before[k].c_str() : "", k < after.size() ? after[k].c_str() : "");
+    }
     // SaveAs con estensione .dxf: un vero DXF (non un .3dm con il nome sbagliato), il documento resta com'e'
     {
       Ctx c;
