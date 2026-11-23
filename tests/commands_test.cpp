@@ -3824,6 +3824,21 @@ int main(int argc, char** argv) {
   });
 #endif
 
+#ifdef KURVA3D_WITH_ASSIMP
+  // FBX, Collada, 3DS, DirectX: andata e ritorno (unita' e asse verticale)
+  for (const char* ext : {"fbx", "dae", "3ds", "x"}) {
+    std::printf("Assimp_%s\n", ext);
+    Ctx c;
+    const std::string f = g_outDir + "/assimp_prova." + ext;
+    CHECK(c.e.Run("_Box 0,0,0 10,20 30\n_Sphere 50,0,0 5\n_SelAll _Export \"" + f + "\"\n_SelAll _Delete\n_Import \"" + f + "\""));
+    int meshes = 0;
+    for (auto* g : c.Objects()) if (ON_Mesh::Cast(g)) meshes++;
+    CHECK(meshes == 2);
+    const ON_BoundingBox b = c.BBox();
+    CHECK(NearPt(b.m_min, ON_3dPoint(0, -5, -5), 1e-3) && NearPt(b.m_max, ON_3dPoint(55, 20, 30), 1e-3));
+  }
+#endif
+
   Case("Error_unknown_command", "_NonEsiste", [](Ctx&) {}, false);
   Case("Error_no_selection", "_Move 0,0 1,0", [](Ctx&) {}, false);
 

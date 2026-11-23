@@ -70,6 +70,12 @@ Kurva3D non e' affiliato, approvato o sponsorizzato da McNeel. Il formato
    script di compilazione, https://github.com/astral-sh/python-build-standalone)
    in Kurva3D.app/Contents/Frameworks e Contents/Resources/python.
 
+8. Open Asset Import Library - Assimp (DLL, collegata dinamicamente; FBX,
+   Collada, 3DS, DirectX)
+   Copyright (c) 2006-2022, ASSIMP Development Team. All rights reserved.
+   Licenza: BSD a 3 clausole - licenses/Assimp-BSD-3.txt
+   Sorgente: https://github.com/assimp/assimp
+
 Sostituzione delle librerie LGPL: Open CASCADE e Qt sono DLL separate nella
 cartella del programma. Si possono sostituire con versioni compatibili,
 anche ricompilate dall'utente, senza modificare kurva3d.exe. Il codice

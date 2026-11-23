@@ -66,10 +66,20 @@ std::string FileExtension(const std::string& path) {
 
 bool IsExchangeFormat(const std::string& ext) {
   return ext == "stl" || ext == "obj" || ext == "dxf" || ext == "step" || ext == "stp" || ext == "iges" || ext == "igs" ||
-         ext == "gltf" || ext == "glb" || ext == "3mf" || ext == "ply";
+         ext == "gltf" || ext == "glb" || ext == "3mf" || ext == "ply"
+#ifdef KURVA3D_WITH_ASSIMP
+         || IsAssimpFormat(ext, false)
+#endif
+      ;
 }
 
-std::string ExchangeFormatsDescription() { return "3dm, STEP (.stp/.step), IGES (.igs/.iges), STL, OBJ, DXF, glTF (.gltf/.glb), 3MF, PLY"; }
+std::string ExchangeFormatsDescription() {
+  return "3dm, STEP (.stp/.step), IGES (.igs/.iges), STL, OBJ, DXF, glTF (.gltf/.glb), 3MF, PLY"
+#ifdef KURVA3D_WITH_ASSIMP
+         ", FBX, Collada (.dae), 3DS, DirectX (.x)"
+#endif
+      ;
+}
 
 std::unique_ptr<ON_Mesh> ExportMesh(const ON_Geometry& g, double tolerance) {
   if (const auto* m = ON_Mesh::Cast(&g)) return std::make_unique<ON_Mesh>(*m);
@@ -835,6 +845,18 @@ bool ImportExchange(Engine& e, const std::string& path, const std::map<std::stri
   else if (ext == "gltf" || ext == "glb") ok = ReadGLTF(path, units, im.objects, err);
   else if (ext == "3mf") ok = Read3MF(path, units, im.objects, err);
   else if (ext == "ply") ok = ReadPLY(path, im.objects, err);
+#ifdef KURVA3D_WITH_ASSIMP
+  else if (IsAssimpFormat(ext, false)) {
+    ON::LengthUnitSystem fu = ON::LengthUnitSystem::None;
+    // Apri: coordinate nelle unita' del file (se le dichiara), che diventano quelle del documento
+    ok = ReadAssimp(path, units, im.objects, fu, err);
+    if (ok && open && fu != ON::LengthUnitSystem::None && fu != units) {
+      im.objects.clear();
+      ok = ReadAssimp(path, fu, im.objects, fu, err);
+      im.units = fu;
+    }
+  }
+#endif
   else err = "formato non supportato: " + ext;
   if (!ok) return e.Fail(err);
   if (!im.note.empty()) err = im.note;
@@ -909,7 +931,11 @@ bool ExportExchange(Engine& e, const std::vector<ON_UUID>& ids, const std::strin
     auto it = opts.find("binary");
     const bool binary = !opts.count("ascii") && (it == opts.end() || it->second != "no");
     ok = WritePLY(path, items, e.Tolerance(), binary, err);
-  } else err = "formato non supportato: " + ext;
+  }
+#ifdef KURVA3D_WITH_ASSIMP
+  else if (IsAssimpFormat(ext, true)) ok = WriteAssimp(path, items, units, e.Tolerance(), err);
+#endif
+  else err = "formato non supportato: " + ext;
   if (!ok) return e.Fail(err);
   e.Out() << "  Esportati " << items.size() << " oggetti in " << U8(fs::u8path(path).filename()) << "\n";
   if (!err.empty()) e.Out() << "  Nota: " << err << "\n";

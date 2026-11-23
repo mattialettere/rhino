@@ -509,11 +509,12 @@ void MainWindow::Log(const QString& s) {
 
 namespace {
 const char* kOpenFilter =
-    "Tutti i formati (*.3dm *.stp *.step *.igs *.iges *.stl *.obj *.dxf *.gltf *.glb *.3mf *.ply);;File 3DM (*.3dm);;"
-    "STEP (*.stp *.step);;IGES (*.igs *.iges);;STL (*.stl);;OBJ (*.obj);;DXF (*.dxf);;glTF (*.gltf *.glb);;3MF (*.3mf);;PLY (*.ply)";
+    "Tutti i formati (*.3dm *.stp *.step *.igs *.iges *.stl *.obj *.dxf *.gltf *.glb *.3mf *.ply *.fbx *.dae *.3ds *.x);;File 3DM (*.3dm);;"
+    "STEP (*.stp *.step);;IGES (*.igs *.iges);;STL (*.stl);;OBJ (*.obj);;DXF (*.dxf);;glTF (*.gltf *.glb);;3MF (*.3mf);;PLY (*.ply);;"
+    "FBX (*.fbx);;Collada (*.dae);;3D Studio (*.3ds);;DirectX (*.x)";
 const char* kExportFilter =
     "File 3DM, versione 8 (*.3dm);;STEP (*.stp);;IGES (*.igs);;STL binario (*.stl);;OBJ con materiali (*.obj);;DXF R12 (*.dxf);;"
-    "glTF binario (*.glb);;glTF (*.gltf);;3MF (*.3mf);;PLY binario (*.ply)";
+    "glTF binario (*.glb);;glTF (*.gltf);;3MF (*.3mf);;PLY binario (*.ply);;FBX (*.fbx);;Collada (*.dae);;3D Studio (*.3ds);;DirectX (*.x)";
 }  // namespace
 
 void MainWindow::BuildMenus() {
