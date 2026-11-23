@@ -271,6 +271,7 @@ bool Engine::RunCommand(const std::string& name, TokenStream& ts) {
   // Comandi annidati (es. rs.Command da uno script): un solo passo di annullamento,
   // quello del comando esterno; gli oggetti creati si sommano a quelli dell'esterno.
   const bool nested = m_commandDepth > 0;
+  if (!nested && cmd.modifiesModel) analysisMarks.Clear();
   std::vector<unsigned char> before;
   if (cmd.modifiesModel) before = m_doc.ToBuffer();
   std::vector<ON_UUID> outerCreated;

@@ -1560,6 +1560,9 @@ int main(int argc, char** argv) {
     Case("EdgeContinuity_box", "_Box 0,0,0 10,10 10\n_SelAll _EdgeContinuity", [&](Ctx& c) {
       CHECK(has(c, "Spigoli analizzati: 12 (G0 12, G1 0, G2 0)"));
       CHECK(has(c, "angolo 90 gradi"));
+      // grafico: 20 denti + 19 tratti per spigolo, tutti arancioni (G0)
+      CHECK(c.e.analysisMarks.lines.size() == 12 * 39);
+      CHECK(c.e.analysisMarks.lineColors[0] == ON_Color(255, 140, 0));
     });
     Case("EdgeContinuity_separate",
          "_Line 0,0,0 10,0,0\n_Arc 10,10,0 10,0,0 20,10,0\n_Line 20,10,0 20,20,0\n_SelCrv _ExtrudeCrv 5\n_SelLast _EdgeContinuity",
@@ -1587,6 +1590,15 @@ int main(int argc, char** argv) {
            CHECK(has(c, "Buoni (<= 0.1 mm): 1   Intermedi: 0   Cattivi (> 0.8 mm): 1") ||
                  has(c, "Buoni (<= 0.1 mm): 2   Intermedi: 0   Cattivi (> 0.8 mm): 1"));
            CHECK(has(c, "massima = 1 mm"));
+           CHECK(c.e.analysisMarks.points.size() == 3);
+           // il punto a 1 mm (0,11,0) e' rosso e la sua linea arriva sulla sfera
+           bool red = false;
+           for (size_t i = 0; i < c.e.analysisMarks.lines.size(); i++)
+             if (c.e.analysisMarks.lines[i].from.DistanceTo(ON_3dPoint(0, 11, 0)) < 1e-9)
+               red = c.e.analysisMarks.lineColors[i] == ON_Color(220, 30, 30) && Near(c.e.analysisMarks.lines[i].to.y, 10, 1e-4);
+           CHECK(red);
+           CHECK(c.e.Run("_Line 0,0,0 1,1,1"));
+           CHECK(c.e.analysisMarks.Empty());  // un comando che modifica il modello li toglie
          });
     Case("PointDeviation_mesh_curva", "_MeshBox 0,0,0 10,10 10\n_Line 0,20,0 10,20,0\n_Point 5,5,12\n_Point 5,21,0\n_Point 5,5,5\n_SelAll _PointDeviation",
          [&](Ctx& c) {
@@ -3903,6 +3915,59 @@ int main(int argc, char** argv) {
       CHECK(std::fabs(m->PhysicallyBased()->BaseColor().Red() - 200 / 255.0) < 1e-3);
     }
   });
+  Case("ToNURBS_SubD", "_SubDBox 0,0,0 10,10 10", [](Ctx& c) {
+    const auto* sd = ON_SubD::Cast(c.Last());
+    CHECK(sd != nullptr);
+    if (!sd) return;
+    const auto lim = cad::BuildSubDLimit(*sd, 3);
+    const ON_BoundingBox lb = lim.mesh->BoundingBox();
+    CHECK(c.e.Run("_SelLast _ToNURBS"));
+    const auto* b = ON_Brep::Cast(c.Last());
+    CHECK(b != nullptr);
+    if (!b) return;
+    CHECK(b->m_F.Count() == 24);
+    CHECK(b->IsSolid());
+    CHECK(b->IsValid());
+    const ON_BoundingBox bb = c.BBox();
+    CHECK(Near(bb.m_max.x, lb.m_max.x, 1e-2) && Near(bb.m_min.z, lb.m_min.z, 1e-2) && Near(bb.Center().y, 5, 1e-3));
+  });
+  {
+    auto connected = [](Ctx& c, int expect) {
+      auto objs = c.Objects();
+      CHECK((int)objs.size() == expect);
+      // ogni estremo del raccordo/smusso coincide con un estremo di un'altra curva
+      std::vector<const ON_Curve*> cs;
+      for (auto* g : objs) if (const auto* cv = ON_Curve::Cast(g)) cs.push_back(cv);
+      int shared = 0;
+      for (size_t i = 0; i < cs.size(); i++)
+        for (size_t j = i + 1; j < cs.size(); j++)
+          for (const ON_3dPoint& a : {cs[i]->PointAtStart(), cs[i]->PointAtEnd()})
+            for (const ON_3dPoint& b : {cs[j]->PointAtStart(), cs[j]->PointAtEnd()})
+              if (a.DistanceTo(b) < 1e-3) shared++;
+      CHECK(shared >= 2);
+    };
+    Case("Fillet_linea_cerchio", "_Circle 0,0,0 10\n_Line 0,0,0 20,0,0\n_Fillet Radius=2 15,0,0 0,10,0", [connected](Ctx& c) {
+      connected(c, 3);
+      const auto objs = c.Objects();
+      bool arc2 = false;
+      for (auto* g : objs) {
+        const auto* cv = ON_Curve::Cast(g);
+        ON_Arc a;
+        if (cv && cv->IsArc(nullptr, &a, 1e-4) && std::fabs(a.Radius() - 2) < 1e-3) arc2 = true;
+      }
+      CHECK(arc2);
+    });
+    Case("Chamfer_arco_linea", "_Circle 0,0,0 10\n_Line 0,0,0 20,0,0\n_Chamfer Distances=2,3 15,0,0 0,10,0", [connected](Ctx& c) {
+      connected(c, 3);
+      bool seg = false;
+      for (auto* g : c.Objects())
+        if (const auto* l = ON_LineCurve::Cast(g)) {
+          const double d0 = l->m_line.from.DistanceTo(ON_3dPoint(10, 0, 0)), d1 = l->m_line.to.DistanceTo(ON_3dPoint(10, 0, 0));
+          if ((std::fabs(d0 - 3) < 1e-4 && std::fabs(d1 - 2) < 1e-4) || (std::fabs(d0 - 2) < 1e-4 && std::fabs(d1 - 3) < 1e-4)) seg = true;
+        }
+      CHECK(seg);
+    });
+  }
   Case("VariableFilletSrf", "_Plane 0,0,0 20,20\n_PlaneVertical 0,10,-5 20,10,-5 15\n_VariableFilletSrf Radius=1 EndRadius=3 10,5,0 10,10,5", [](Ctx& c) {
     const auto* b = ON_Brep::Cast(c.Last());
     CHECK(b && b->m_F.Count() == 1);

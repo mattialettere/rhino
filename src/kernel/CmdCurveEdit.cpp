@@ -6,6 +6,8 @@
 #include "kernel/OcctConvert.h"
 
 #include <BRepAlgoAPI_Common.hxx>
+#include <ChFi2d_FilletAPI.hxx>
+#include <gp_Ax3.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
@@ -216,12 +218,14 @@ bool CmdTrim(Engine& e, TokenStream& ts) {
   auto cutters = e.RequireSelection("Trim", "seleziona gli oggetti di taglio, poi Invio");
   if (cutters.empty()) return false;
   int n = 0;
+  // Invio senza clic: fine del comando (la finestra riapre Trim dopo ogni clic, come Rhino
+  // che continua a chiedere le parti da tagliare)
+  if (e.interactive && !ts.AtEnd() && IsEnter(ts.Peek())) { ts.Next(); return true; }
   do {
-    auto p = e.ReadPick(ts, "clicca la parte di curva da eliminare");
+    auto p = e.ReadPick(ts, "clicca la parte di curva da eliminare (Invio = fine)");
     if (!p) return false;
     if (!TrimAt(e, e.Selection(), *p)) return false;
     n++;
-    // Nella finestra ogni clic conclude il comando (Invio lo ripete); negli script si continua.
     if (e.interactive && ts.AtEnd()) break;
   } while (e.MoreInput(ts));
   e.SkipEnter(ts);
@@ -277,8 +281,9 @@ bool CmdExtend(Engine& e, TokenStream& ts) {
   auto bounds = e.RequireSelection("Extend", "seleziona gli oggetti limite, poi Invio");
   if (bounds.empty()) return false;
   int n = 0;
+  if (e.interactive && !ts.AtEnd() && IsEnter(ts.Peek())) { ts.Next(); return true; }
   do {
-    auto p = e.ReadPick(ts, "clicca la curva vicino all'estremo da estendere");
+    auto p = e.ReadPick(ts, "clicca la curva vicino all'estremo da estendere (Invio = fine)");
     if (!p) return false;
     if (!ExtendAt(e, e.Selection(), *p)) return false;
     n++;
@@ -288,8 +293,14 @@ bool CmdExtend(Engine& e, TokenStream& ts) {
   return n > 0;
 }
 
-// --- Fillet e Chamfer di curve (per ora: segmenti di linea) -----------------
+// --- Fillet e Chamfer di curve ---------------------------------------------
+// Tra due linee: calcolo esatto (anche se non si toccano: vengono allungate).
+// Tra curve qualsiasi complanari che si intersecano (archi, NURBS): raccordo con
+// ChFi2d_FilletAPI di OpenCASCADE, smusso con le distanze dal punto d'intersezione;
+// le curve si accorciano tenendo la parte cliccata, come Rhino.
 struct Corner {
+  bool general = false;
+  ON_3dPoint pick[2];
   ON_UUID id[2];
   ON_Line line[2];
   ON_3dPoint P;        // intersezione delle rette
@@ -315,9 +326,9 @@ bool ReadCorner(Engine& e, TokenStream& ts, Corner& k) {
   if (ON_UuidIsNil(h2.id)) return e.Fail("nessuna seconda curva vicino al punto");
   const ON_3dPoint picks[2] = {*p1, *p2};
   k.id[0] = h1.id; k.id[1] = h2.id;
+  k.pick[0] = *p1; k.pick[1] = *p2;
   for (int i = 0; i < 2; i++)
-    if (!LineOf(ON_Curve::Cast(Geo(e, k.id[i])), k.line[i]))
-      return e.Fail("per ora Fillet e Chamfer funzionano solo tra segmenti di linea");
+    if (!LineOf(ON_Curve::Cast(Geo(e, k.id[i])), k.line[i])) { k.general = true; return true; }
   double a, b;
   if (!ON_Intersect(k.line[0], k.line[1], &a, &b)) return e.Fail("le linee sono parallele");
   const ON_3dPoint A = k.line[0].PointAt(a), B = k.line[1].PointAt(b);
@@ -355,6 +366,134 @@ bool ApplyCorner(Engine& e, const Corner& k, const ON_3dPoint T[2], ON_Curve* mi
 double g_filletRadius = 1.0;
 double g_chamferDist[2] = {1.0, 1.0};
 
+// Piano comune delle due curve (normale dalle tangenti vicino ai clic, poi controllo).
+bool CommonPlane(const ON_Curve& a, const ON_Curve& b, const ON_3dPoint picks[2], double tol, ON_Plane& pl) {
+  std::vector<ON_3dPoint> pts;
+  for (const ON_Curve* c : {&a, &b}) {
+    const ON_Interval d = c->Domain();
+    for (int i = 0; i <= 32; i++) pts.push_back(c->PointAt(d.ParameterAt(i / 32.0)));
+  }
+  ON_3dVector n = ON_3dVector::ZeroVector;
+  // normale: il prodotto vettoriale piu' grande tra corde dei campioni
+  const ON_3dPoint o = pts[0];
+  double best = 0;
+  for (size_t i = 1; i < pts.size(); i++)
+    for (size_t j = i + 1; j < pts.size(); j += 3) {
+      const ON_3dVector c = ON_CrossProduct(pts[i] - o, pts[j] - o);
+      if (c.Length() > best) { best = c.Length(); n = c; }
+    }
+  (void)picks;
+  if (!n.Unitize()) return false;
+  pl = ON_Plane(o, n);
+  for (const auto& p : pts) if (std::fabs(pl.DistanceTo(p)) > tol * 10) return false;
+  return true;
+}
+
+// Parte della curva tra il parametro t e l'estremo dalla parte del clic.
+ON_Curve* KeepPickSide(const ON_Curve& c, double t, const ON_3dPoint& pick) {
+  double tp, d;
+  if (!ClosestParam(c, pick, &tp, &d)) return nullptr;
+  const ON_Interval dom = c.Domain();
+  return tp >= t ? SubCurve(c, t, dom[1]) : SubCurve(c, dom[0], t);
+}
+
+bool GeneralCorner(Engine& e, const Corner& k, bool fillet, double r, double d0, double d1) {
+  const ON_Curve* c[2] = {ON_Curve::Cast(Geo(e, k.id[0])), ON_Curve::Cast(Geo(e, k.id[1]))};
+  if (!c[0] || !c[1]) return e.Fail("servono due curve");
+  const double tol = e.Tolerance();
+  ON_Plane pl;
+  if (!CommonPlane(*c[0], *c[1], k.pick, tol, pl)) return e.Fail("le curve non sono complanari");
+  // intersezione piu' vicina ai clic
+  const std::vector<double> xs = IntersectionParams(*c[0], {c[1]}, tol * 10);
+  if (xs.empty()) return e.Fail("le curve non si intersecano (con curve non lineari servono curve che si toccano)");
+  const ON_3dPoint mid = 0.5 * (k.pick[0] + k.pick[1]);
+  double tx0 = xs[0];
+  for (double t : xs) if (c[0]->PointAt(t).DistanceTo(mid) < c[0]->PointAt(tx0).DistanceTo(mid)) tx0 = t;
+  const ON_3dPoint X = c[0]->PointAt(tx0);
+  double tx1, dd;
+  if (!ClosestParam(*c[1], X, &tx1, &dd)) return e.Fail("intersezione non trovata");
+  const double tx[2] = {tx0, tx1};
+  ON_Curve* middle = nullptr;
+  double tcut[2] = {tx0, tx1};
+  if (fillet && r > 0) {
+    try {
+      ON_NurbsCurve n0, n1;
+      c[0]->GetNurbForm(n0);
+      c[1]->GetNurbForm(n1);
+      TopoDS_Edge E0 = BRepBuilderAPI_MakeEdge(occt::ToOcct(n0)), E1 = BRepBuilderAPI_MakeEdge(occt::ToOcct(n1));
+      const gp_Pln gpl(gp_Ax3(gp_Pnt(pl.origin.x, pl.origin.y, pl.origin.z), gp_Dir(pl.zaxis.x, pl.zaxis.y, pl.zaxis.z),
+                              gp_Dir(pl.xaxis.x, pl.xaxis.y, pl.xaxis.z)));
+      ChFi2d_FilletAPI api(E0, E1, gpl);
+      if (!api.Perform(r)) return e.Fail("raccordo impossibile con questo raggio");
+      // il raccordo nell'angolo dei clic: punto vicino all'intersezione, dalla parte dei clic
+      double tp0, tp1;
+      ClosestParam(*c[0], k.pick[0], &tp0, &dd);
+      ClosestParam(*c[1], k.pick[1], &tp1, &dd);
+      const ON_3dVector u0 = c[0]->PointAt(tp0) - X, u1 = c[1]->PointAt(tp1) - X;
+      ON_3dVector bis = (u0.Length() > 0 ? u0 / u0.Length() : u0) + (u1.Length() > 0 ? u1 / u1.Length() : u1);
+      bis.Unitize();
+      const ON_3dPoint near = X + bis * r;
+      TopoDS_Edge m0, m1;
+      const TopoDS_Edge arcE = api.Result(gp_Pnt(near.x, near.y, near.z), m0, m1);
+      if (arcE.IsNull()) return e.Fail("raccordo impossibile con questo raggio");
+      std::vector<ON_Curve*> arcs = occt::ShapeToCurves(arcE, tol);
+      if (arcs.empty()) return e.Fail("raccordo non convertito");
+      middle = arcs[0];
+      for (size_t i = 1; i < arcs.size(); i++) delete arcs[i];
+      const ON_3dPoint A = middle->PointAtStart(), B = middle->PointAtEnd();
+      double ta, da, tb, db;
+      ClosestParam(*c[0], A, &ta, &da);
+      ClosestParam(*c[0], B, &tb, &db);
+      tcut[0] = da <= db ? ta : tb;
+      const ON_3dPoint on1 = da <= db ? B : A;
+      ClosestParam(*c[1], on1, &tcut[1], &dd);
+    } catch (const Standard_Failure&) {
+      return e.Fail("raccordo non riuscito");
+    }
+  } else if (!fillet) {
+    // smusso: punti alle distanze date dall'intersezione, verso i clic
+    const double dist[2] = {d0, d1};
+    ON_3dPoint T[2];
+    for (int i = 0; i < 2; i++) {
+      double tp;
+      ClosestParam(*c[i], k.pick[i], &tp, &dd);
+      if (dist[i] <= 0) { tcut[i] = tx[i]; T[i] = X; continue; }
+      const int steps = 400;
+      double prev = tx[i];
+      bool found = false;
+      for (int s = 1; s <= steps; s++) {
+        const double t = tx[i] + (tp - tx[i]) * s / steps;
+        if (c[i]->PointAt(t).DistanceTo(X) >= dist[i]) {
+          double lo = prev, hi = t;
+          for (int it = 0; it < 60; it++) {
+            const double m = 0.5 * (lo + hi);
+            (c[i]->PointAt(m).DistanceTo(X) < dist[i] ? lo : hi) = m;
+          }
+          tcut[i] = 0.5 * (lo + hi);
+          found = true;
+          break;
+        }
+        prev = t;
+      }
+      if (!found) return e.Fail("le curve sono troppo corte per queste distanze");
+      T[i] = c[i]->PointAt(tcut[i]);
+    }
+    if (T[0].DistanceTo(T[1]) > tol) middle = new ON_LineCurve(T[0], T[1]);
+  }
+  ON_Curve* kept[2] = {KeepPickSide(*c[0], tcut[0], k.pick[0]), KeepPickSide(*c[1], tcut[1], k.pick[1])};
+  if (!kept[0] || !kept[1]) {
+    delete kept[0]; delete kept[1]; delete middle;
+    return e.Fail("le curve sono troppo corte per questo raggio o distanza");
+  }
+  for (int i = 0; i < 2; i++) {
+    ON_3dmObjectAttributes a = Attrs(e, k.id[i]);
+    e.DeleteObject(k.id[i]);
+    e.AddObject(kept[i], &a);
+    if (i == 0 && middle) e.AddObject(middle, &a);
+  }
+  return true;
+}
+
 bool CmdFillet(Engine& e, TokenStream& ts) {
   auto opts = e.ReadOptions(ts);
   if (opts.count("radius")) g_filletRadius = std::atof(opts["radius"].c_str());
@@ -362,6 +501,11 @@ bool CmdFillet(Engine& e, TokenStream& ts) {
   if (r < 0) return e.Fail("raggio non valido");
   Corner k;
   if (!ReadCorner(e, ts, k)) return false;
+  if (k.general) {
+    if (!GeneralCorner(e, k, true, r, 0, 0)) return false;
+    e.Out() << "  Raccordo raggio " << r << "\n";
+    return true;
+  }
   const double cosT = std::clamp(k.d[0] * k.d[1], -1.0, 1.0);
   const double theta = std::acos(cosT);
   if (theta < 1e-6 || theta > ON_PI - 1e-6) return e.Fail("le linee sono allineate");
@@ -392,6 +536,11 @@ bool CmdChamfer(Engine& e, TokenStream& ts) {
   }
   Corner k;
   if (!ReadCorner(e, ts, k)) return false;
+  if (k.general) {
+    if (!GeneralCorner(e, k, false, 0, g_chamferDist[0], g_chamferDist[1])) return false;
+    e.Out() << "  Smusso " << g_chamferDist[0] << ", " << g_chamferDist[1] << "\n";
+    return true;
+  }
   ON_3dPoint T[2] = {k.P + k.d[0] * g_chamferDist[0], k.P + k.d[1] * g_chamferDist[1]};
   ON_Curve* mid = T[0].DistanceTo(T[1]) > e.Tolerance() ? new ON_LineCurve(T[0], T[1]) : nullptr;
   if (!ApplyCorner(e, k, T, mid)) return false;
@@ -784,8 +933,8 @@ void RegisterCurveEditCommands(Engine& e) {
   auto reg = [&](const char* n, const char* cat, const char* d, CommandFn f) { e.Register(CommandInfo{n, cat, d, f}); };
   reg("Trim", "Modifica", "Taglia le curve con gli oggetti selezionati: clic sulla parte da eliminare", CmdTrim);
   reg("Extend", "Modifica", "Estende le curve fino agli oggetti limite selezionati", CmdExtend);
-  reg("Fillet", "Curve", "Raccordo ad arco tra due linee (Radius=)", CmdFillet);
-  reg("Chamfer", "Curve", "Smusso tra due linee (Distances=a,b)", CmdChamfer);
+  reg("Fillet", "Curve", "Raccordo ad arco tra due curve complanari (Radius=)", CmdFillet);
+  reg("Chamfer", "Curve", "Smusso tra due curve complanari (Distances=a,b)", CmdChamfer);
   reg("Cap", "Solidi", "Chiude i fori piani di superfici e polisuperfici", CmdCap);
   reg("Shell", "Solidi", "Svuota un solido togliendo le facce cliccate (Thickness=)", CmdShell);
   reg("ExtractSrf", "Superfici", "Separa le facce cliccate da una polisuperficie", CmdExtractSrf);

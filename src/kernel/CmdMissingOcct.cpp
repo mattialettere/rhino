@@ -15,11 +15,17 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
+#include <GeomAPI_PointsToBSplineSurface.hxx>
+#include <TColgp_Array2OfPnt.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <ShapeFix_Solid.hxx>
+#include "core/SubDLimit.h"
 #include <TColgp_Array1OfPnt.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -39,6 +45,55 @@ namespace cad {
 
 // Curve 3D degli spigoli ricalcolate dalla superficie e dalla curva di taglio del primo trim
 // (dopo che la superficie e' cambiata, i tagli in parametri restano validi).
+// SubD -> NURBS (ToNURBS): una superficie bicubica per ogni quad della prima suddivisione,
+// approssimata dai punti della superficie limite (griglia 9x9) entro la tolleranza, poi
+// le superfici si cuciono in una polisuperficie (chiusa -> solido). In Rhino 8 le superfici
+// sono esatte (B-spline del limite); qui la deviazione dal limite resta entro la tolleranza.
+ON_Brep* SubDToNurbsBrep(const ON_SubD& sd, double tol) {
+  const auto grids = BuildSubDPatchGrids(sd, 3);
+  if (grids.empty()) return nullptr;
+  BRepBuilderAPI_Sewing sew(std::max(tol * 10, 1e-4));
+  int faces = 0;
+  for (const auto& g : grids) {
+    const int N = g.n;
+    TColgp_Array2OfPnt pts(1, N + 1, 1, N + 1);
+    bool ok = true;
+    for (int j = 0; j <= N && ok; j++)
+      for (int i = 0; i <= N; i++) {
+        const ON_3dPoint& p = g.grid[size_t(j) * (N + 1) + i];
+        if (!p.IsValid()) { ok = false; break; }
+        pts.SetValue(i + 1, j + 1, gp_Pnt(p.x, p.y, p.z));
+      }
+    if (!ok) continue;
+    try {
+      GeomAPI_PointsToBSplineSurface fit(pts, 3, 3, GeomAbs_C2, tol * 0.5);
+      if (!fit.IsDone()) continue;
+      BRepBuilderAPI_MakeFace mf(fit.Surface(), tol);
+      if (!mf.IsDone()) continue;
+      sew.Add(mf.Face());
+      faces++;
+    } catch (const Standard_Failure&) {
+    }
+  }
+  if (!faces) return nullptr;
+  try {
+    sew.Perform();
+    TopoDS_Shape sh = sew.SewedShape();
+    if (sh.ShapeType() == TopAbs_SHELL && BRep_Tool::IsClosed(sh)) {
+      BRepBuilderAPI_MakeSolid ms(TopoDS::Shell(sh));
+      if (ms.IsDone()) {
+        ShapeFix_Solid fix;
+        fix.Init(ms.Solid());
+        fix.Perform();
+        sh = fix.Solid();
+      }
+    }
+    return occt::ShapeToBrep(sh, tol);
+  } catch (const Standard_Failure&) {
+    return nullptr;
+  }
+}
+
 void RebuildBrepEdges(ON_Brep& b) {
   for (int ei = 0; ei < b.m_E.Count(); ei++) {
     ON_BrepEdge& E = b.m_E[ei];

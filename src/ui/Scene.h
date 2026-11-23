@@ -81,6 +81,8 @@ public:
     return o ? o->Geometry(nullptr) : nullptr;
   }
 
+  const Engine::AnalysisMarks& AnalysisMarks() const { return m_engine.analysisMarks; }
+
 private:
   void AddGeometry(const ON_Geometry* g, DisplayObject& d, const std::string& sig,
                    std::map<std::string, std::shared_ptr<ON_Mesh>>& newCache, int depth);

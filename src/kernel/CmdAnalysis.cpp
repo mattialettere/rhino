@@ -202,6 +202,12 @@ bool CmdEdgeContinuity(Engine& e, TokenStream& ts) {
   TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, map);
   int edges = 0, g0 = 0, g1 = 0, g2 = 0;
   double maxD = 0, maxA = 0, maxK = 0;
+  // grafico: Display=Distance|Tangency|Curvature, Scale= (predefinito: il valore massimo
+  // disegnato lungo il 15% della diagonale degli oggetti)
+  const std::string display = opts.count("display") ? opts["display"] : "tangency";
+  struct GraphSample { ON_3dPoint p; ON_3dVector n; double v; };
+  std::vector<std::pair<std::vector<GraphSample>, int>> graph;  // campioni, classe (0 aperto, 1 G0, 2 G1, 3 G2)
+  e.analysisMarks.Clear();
   for (int i = 1; i <= map.Extent(); i++) {
     const TopoDS_Edge& E = TopoDS::Edge(map.FindKey(i));
     if (BRep_Tool::Degenerated(E)) continue;
@@ -214,6 +220,7 @@ bool CmdEdgeContinuity(Engine& e, TokenStream& ts) {
     BRepAdaptor_Curve ac(E);
     double d = 0, a = 0, k = 0;
     int valid = 0;
+    std::vector<GraphSample> gs;
     for (int j = 0; j < samples; j++) {
       // estremi esclusi di poco: nei vertici la valutazione e' spesso degenere
       const double s = (j + 0.5) / samples;
@@ -229,7 +236,16 @@ bool CmdEdgeContinuity(Engine& e, TokenStream& ts) {
       a = std::max(a, std::acos(std::clamp(c, -1.0, 1.0)) * 180.0 / ON_PI);
       const double k2 = s1.n.Dot(s2.n) < 0 ? -s2.k : s2.k;
       const double km = std::max(std::fabs(s1.k), std::fabs(k2));
-      if (km > 1e-9) k = std::max(k, 100.0 * std::fabs(s1.k - k2) / km);
+      const double kk = km > 1e-9 ? 100.0 * std::fabs(s1.k - k2) / km : 0.0;
+      if (km > 1e-9) k = std::max(k, kk);
+      {
+        const double ang = std::acos(std::clamp(c, -1.0, 1.0)) * 180.0 / ON_PI;
+        gp_Vec nn = s1.n.Normalized() + (s1.n.Dot(s2.n) < 0 ? -s2.n.Normalized() : s2.n.Normalized());
+        if (nn.Magnitude() < 1e-12) nn = s1.n;
+        nn.Normalize();
+        const double v = display == "distance" ? s1.p.Distance(s2.p) : display == "curvature" ? kk : ang;
+        gs.push_back({ON_3dPoint(q.X(), q.Y(), q.Z()), ON_3dVector(nn.X(), nn.Y(), nn.Z()), v});
+      }
     }
     if (!valid) continue;
     edges++;
@@ -246,10 +262,29 @@ bool CmdEdgeContinuity(Engine& e, TokenStream& ts) {
     maxD = std::max(maxD, d);
     maxA = std::max(maxA, a);
     maxK = std::max(maxK, k);
+    graph.push_back({std::move(gs), d > tol ? 0 : a > angTol ? 1 : k > kTol ? 2 : 3});
     e.Out() << "  Spigolo " << edges << ": distanza " << Num(d) << " mm, angolo " << Num(a) << " gradi, curvatura "
             << Num(k, 4) << " %  -> " << cls << "\n";
   }
   if (!edges) return e.Fail("EdgeContinuity: nessuno spigolo comune tra le superfici selezionate");
+  {  // grafico a pettine lungo gli spigoli, colori come le classi (rosso aperto, arancio G0, giallo G1, verde G2)
+    double vmax = 0;
+    ON_BoundingBox box;
+    for (auto& [gs, cls] : graph) for (auto& smp : gs) { vmax = std::max(vmax, smp.v); box.Set(smp.p, true); }
+    const double diag = box.IsValid() ? std::max(box.Diagonal().Length(), 1.0) : 10.0;
+    const double scale = opts.count("scale") ? OptNum(opts, "scale", 1.0) : (vmax > 1e-12 ? 0.15 * diag / vmax : 0.0);
+    const ON_Color cols[4] = {ON_Color(220, 30, 30), ON_Color(255, 140, 0), ON_Color(230, 210, 0), ON_Color(40, 180, 60)};
+    for (auto& [gs, cls] : graph) {
+      ON_3dPoint prevTip = ON_3dPoint::UnsetPoint;
+      for (auto& smp : gs) {
+        const ON_3dPoint tip = smp.p + smp.n * (smp.v * scale);
+        e.analysisMarks.lines.push_back(ON_Line(smp.p, tip));
+        e.analysisMarks.lineColors.push_back(cols[cls]);
+        if (prevTip.IsValid()) { e.analysisMarks.lines.push_back(ON_Line(prevTip, tip)); e.analysisMarks.lineColors.push_back(cols[cls]); }
+        prevTip = tip;
+      }
+    }
+  }
   e.Out() << "  Spigoli analizzati: " << edges << " (G0 " << g0 << ", G1 " << g1 << ", G2 " << g2 << ")\n";
   e.Out() << "  Massimi: distanza " << Num(maxD) << " mm, angolo " << Num(maxA) << " gradi, curvatura " << Num(maxK, 4)
           << " %\n";
@@ -314,21 +349,39 @@ bool CmdPointDeviation(Engine& e, TokenStream& ts) {
   if (shapes.empty() && meshes.empty()) return e.Fail("PointDeviation: nessuna curva, superficie o mesh selezionata");
   std::vector<double> dev;
   int ignored = 0;
+  e.analysisMarks.Clear();
   for (const ON_3dPoint& p : pts) {
     double d = ON_DBL_MAX;
-    for (const auto* m : meshes) d = std::min(d, MeshDistance(*m, p));
+    ON_3dPoint closest = p;
+    for (const auto* m : meshes) {
+      for (int i = 0; i < m->m_F.Count(); i++) {
+        const ON_MeshFace& f = m->m_F[i];
+        const ON_3dPoint A = m->Vertex(f.vi[0]), B = m->Vertex(f.vi[1]), C = m->Vertex(f.vi[2]);
+        for (const ON_3dPoint& q : {ClosestOnTriangle(p, A, B, C), f.IsQuad() ? ClosestOnTriangle(p, A, C, m->Vertex(f.vi[3])) : ClosestOnTriangle(p, A, B, C)})
+          if (p.DistanceTo(q) < d) { d = p.DistanceTo(q); closest = q; }
+      }
+    }
     if (!shapes.empty()) {
       TopoDS_Vertex v = BRepBuilderAPI_MakeVertex(G(p));
       for (const auto& s : shapes) {
         try {
           BRepExtrema_DistShapeShape ex(v, s);
-          if (ex.IsDone() && ex.NbSolution() > 0) d = std::min(d, ex.Value());
+          if (ex.IsDone() && ex.NbSolution() > 0 && ex.Value() < d) {
+            d = ex.Value();
+            const gp_Pnt q = ex.PointOnShape2(1);
+            closest = ON_3dPoint(q.X(), q.Y(), q.Z());
+          }
         } catch (...) {}
       }
     }
     if (d == ON_DBL_MAX) continue;
     if (d > ignore) { ignored++; continue; }
     dev.push_back(d);
+    // punto colorato (verde buono, giallo intermedio, rosso cattivo) e linea al punto piu' vicino
+    const ON_Color col = d <= good ? ON_Color(40, 180, 60) : d > bad ? ON_Color(220, 30, 30) : ON_Color(230, 210, 0);
+    e.analysisMarks.points.push_back(p);
+    e.analysisMarks.pointColors.push_back(col);
+    if (d > 1e-12) { e.analysisMarks.lines.push_back(ON_Line(p, closest)); e.analysisMarks.lineColors.push_back(col); }
   }
   if (dev.empty()) return e.Fail("PointDeviation: tutti i punti sono oltre IgnorePoint");
   int nGood = 0, nBad = 0;

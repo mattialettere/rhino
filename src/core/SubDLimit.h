@@ -17,6 +17,11 @@ struct SubDLimitDisplay {
 
 // levels = numero di suddivisioni (3 = 64 quad per faccia quadrata).
 SubDLimitDisplay BuildSubDLimit(const ON_SubD& subd, int levels = 3);
+// Griglie di punti della superficie limite per la conversione in NURBS (ToNURBS):
+// una griglia (n+1)x(n+1), n = 2^extraLevels, per ogni quad della prima suddivisione
+// (un quad per faccia quadrata, n quad per una faccia di n lati). grid[i + j*(n+1)].
+struct SubDPatchGrid { int n = 0; std::vector<ON_3dPoint> grid; };
+std::vector<SubDPatchGrid> BuildSubDPatchGrids(const ON_SubD& subd, int extraLevels = 3);
 // Gabbia piatta (SubDDisplayToggle): la rete di controllo come mesh e i suoi spigoli.
 SubDLimitDisplay BuildSubDFlat(const ON_SubD& subd);
 

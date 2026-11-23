@@ -1507,6 +1507,21 @@ void MainWindow::Run(const std::string& script) {
   for (const QString& l : out.split('\n'))
     if (!l.trimmed().isEmpty() && !(r == Engine::Result::NeedsInput && l.contains("Errore:"))) Log(l);
   if (r != Engine::Result::NeedsInput) m_pending.clear();
+  {  // Trim ed Extend continuano a chiedere altre parti dopo ogni clic (Invio o Esc per finire)
+    std::istringstream in(script);
+    std::string first, last, tok;
+    in >> first;
+    while (in >> tok) last = tok;
+    const std::string cmd = NormalizeName(first);
+    if (r == Engine::Result::Done && (cmd == "trim" || cmd == "extend") && !last.empty() && !IsEnter(last) &&
+        !m_engine.Selection().empty()) {
+      AfterCommand();
+      m_out.str("");
+      m_engine.RunInteractive("_" + cmd, &m_pending);
+      AfterCommand();
+      return;
+    }
+  }
   // quote automatiche solo se il comando ha davvero creato qualcosa di nuovo
   if (r == Engine::Result::Done && !m_engine.LastCreated().empty() &&
       (createdBefore.empty() || ON_UuidCompare(createdBefore.front(), m_engine.LastCreated().front()) != 0))
@@ -1516,6 +1531,7 @@ void MainWindow::Run(const std::string& script) {
 
 void MainWindow::Cancel() {
   Viewport::Shared().dyn.fields.Clear();
+  if (m_pending.empty()) m_engine.analysisMarks.Clear();  // Esc toglie i grafici delle analisi
   if (!m_pending.empty()) Log("Comando annullato");
   m_pending.clear();
   AfterCommand();

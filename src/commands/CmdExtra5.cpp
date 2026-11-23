@@ -273,7 +273,13 @@ bool CmdToNURBS(Engine& e, TokenStream&) {
     const ON_Geometry* g = Geo(e, id);
     if (!g || ON_Brep::Cast(g) || ON_Mesh::Cast(g)) continue;
     ON_Brep* b = nullptr;
-    if (const auto* sd = ON_SubD::Cast(g)) b = sd->BrepForm(nullptr);  // vuoto con openNURBS pubblico
+    if (const auto* sd = ON_SubD::Cast(g)) {
+#ifdef CAD_WITH_OCCT
+      b = SubDToNurbsBrep(*sd, e.Tolerance());
+#else
+      b = sd->BrepForm(nullptr);  // vuoto con openNURBS pubblico
+#endif
+    }
     else if (g->HasBrepForm()) b = g->BrepForm();
     if (!b) continue;
     b->Standardize();  // superfici proxy (es. ON_SurfaceProxy dell'estrusione) -> superfici vere
@@ -288,7 +294,7 @@ bool CmdToNURBS(Engine& e, TokenStream&) {
     e.ReplaceObject(id, b);
     n++;
   }
-  if (!n) return e.Fail("nessun oggetto da convertire (estrusioni; i SubD non sono ancora convertibili)");
+  if (!n) return e.Fail("nessun oggetto da convertire (estrusioni o SubD)");
   e.Out() << "  Convertiti in NURBS " << n << " oggetti\n";
   return true;
 }
