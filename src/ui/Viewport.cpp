@@ -2049,10 +2049,10 @@ void Viewport::DrawDynamicInput(QPainter& p) {
     if (D.result.tracked && !D.fields.locked[1]) {
       const double ar = D.result.trackAngle * ON_PI / 180.0;
       const ON_3dVector dir = pl.xaxis * std::cos(ar) + pl.yaxis * std::sin(ar);
-      QPointF far;
-      if (scr(A3 + dir * (upp * 4.0 * (W + H)), far)) {
+      QPointF farPt;
+      if (scr(A3 + dir * (upp * 4.0 * (W + H)), farPt)) {
         p.setPen(QPen(guide, 1, Qt::DashLine));
-        p.drawLine(A, far);
+        p.drawLine(A, farPt);
       }
     }
     // linea di quota parallela all'elastico, spostata di 22 pixel
