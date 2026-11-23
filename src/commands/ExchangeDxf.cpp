@@ -868,7 +868,8 @@ class DxfReader {
       else { rp = W(15); center = 0.5 * (W(15) + W(10)); }
       if (center.DistanceTo(rp) < 1e-12) return nullptr;
       ON_3dPoint tp = e.Has(11) ? O(11) : rp;
-      ON_Plane pl = AnnotationPlane(center, rp - center, N);
+      // asse X del piano = X dell'OCS (come Rhino: la piega del testo e' orizzontale)
+      ON_Plane pl = AnnotationPlane(center, xf * ocs.xaxis, N);
       auto* d = new ON_DimRadial();
       if (!d->Create(type == 3 ? ON::AnnotationType::Diameter : ON::AnnotationType::Radius, ds.Id(), pl, center, rp,
                      pl.ClosestPointTo(tp))) { delete d; return nullptr; }
@@ -1714,6 +1715,9 @@ class DxfWriter {
   std::map<std::string, std::string> m_blockBodies;  // nome -> entita'
   std::set<ON_UUID, UuidLess> m_blocksDone;
   int m_count = 0;
+  // quote: blocchi anonimi *Dn e stili di quota (nome -> stile effettivo)
+  std::vector<std::pair<std::string, std::string>> m_dimBlocks;
+  std::vector<std::pair<std::string, ON_DimStyle>> m_dimStyles;
 
   void Pt(std::ostringstream& s, int code, const ON_3dPoint& p) {
     s << code << "\n" << p.x << "\n" << code + 10 << "\n" << p.y << "\n" << code + 20 << "\n" << p.z << "\n";
@@ -1832,8 +1836,99 @@ class DxfWriter {
     return false;
   }
 
-  // Annotazioni (quote, testi, direttrici): la loro geometria di visualizzazione.
+  // Annotazioni: le quote come DIMENSION, il resto (testi, direttrici) come geometria.
   void Annotation(std::ostringstream& s, const Style& st, const ON_Annotation& a) {
+    if (const auto* dim = ON_Dimension::Cast(&a); dim && m_model && Dimension(s, st, *dim)) return;
+    Exploded(s, st, a);
+  }
+
+  // Nome dello stile di quota DXF con i valori effettivi della quota (stile + sostituzioni).
+  // "STANDARD" e' anche lo stile dei testi: deve avere scala 1.
+  std::string DimStyleName(const ON_DimStyle& ds, const ON_wString& parentName) {
+    auto same = [](const ON_DimStyle& a, const ON_DimStyle& b) {
+      return a.TextHeight() == b.TextHeight() && a.ArrowSize() == b.ArrowSize() && a.ExtOffset() == b.ExtOffset() &&
+             a.ExtExtension() == b.ExtExtension() && a.TextGap() == b.TextGap() && a.DimScale() == b.DimScale() &&
+             a.LengthFactor() == b.LengthFactor() && a.LengthResolution() == b.LengthResolution() &&
+             a.AngleResolution() == b.AngleResolution() && a.DecimalSeparator() == b.DecimalSeparator() &&
+             a.ZeroSuppress() == b.ZeroSuppress() && a.DimTextLocation() == b.DimTextLocation() &&
+             a.ArrowType1() == b.ArrowType1() && a.Prefix() == b.Prefix() && a.Suffix() == b.Suffix();
+    };
+    for (const auto& [n, x] : m_dimStyles) if (same(x, ds)) return n;
+    std::string base = DxfName(ToUtf8(ds.Name().IsEmpty() ? parentName : ds.Name()));
+    if (base.empty() || base == "0") base = "Kurva3D";
+    if (Upper(base) == "STANDARD" && ds.DimScale() != 1.0) base += "_2";  // STANDARD (dei testi) ha scala 1
+    std::string name = base;
+    for (int k = 2; std::any_of(m_dimStyles.begin(), m_dimStyles.end(), [&](const auto& x) { return Upper(x.first) == Upper(name); }); k++)
+      name = base + "_" + std::to_string(k);
+    m_dimStyles.emplace_back(name, ds);
+    return name;
+  }
+
+  // Quota vera: DIMENSION con i punti di definizione, il blocco anonimo *Dn con la sua geometria
+  // (per i programmi che non ricalcolano la quota) e lo stile di quota. false = da esplodere.
+  bool Dimension(std::ostringstream& s, const Style& st, const ON_Dimension& dim) {
+    const ON_Plane& pl = dim.Plane();
+    if (std::fabs(pl.zaxis.z - 1) > 1e-9) return false;  // solo nel piano XY (OCS = WCS)
+    int type = 0;
+    double angle = 0;
+    ON_3dPoint p10, p11, p13, p14, p15;
+    bool has13 = false, has15 = false;
+    if (const auto* lin = ON_DimLinear::Cast(&dim)) {
+      ON_3dPoint d1, d2, a1, a2, dl, tp;
+      if (!lin->Get3dPoints(&d1, &d2, &a1, &a2, &dl, &tp)) return false;
+      type = lin->Type() == ON::AnnotationType::Aligned ? 1 : 0;
+      ON_3dVector dir = a2 - a1;
+      if (!dir.Unitize()) dir = pl.xaxis;
+      angle = std::atan2(dir.y, dir.x) * 180 / ON_PI;
+      p10 = dl; p11 = tp; p13 = d1; p14 = d2;  // dl e' sulla linea di quota (punto scelto)
+      has13 = true;
+    } else if (const auto* rad = ON_DimRadial::Cast(&dim)) {
+      ON_3dPoint c, r, dl, kn;
+      if (!rad->Get3dPoints(&c, &r, &dl, &kn)) return false;
+      if (rad->Type() == ON::AnnotationType::Diameter) { type = 3; p10 = c - (r - c); }
+      else { type = 4; p10 = c; }
+      p15 = r; p11 = dl;
+      has15 = true;
+    } else if (const auto* ang = ON_DimAngular::Cast(&dim)) {
+      ON_3dPoint c, d1, d2, a1, a2, dl, tp;
+      if (!ang->Get3dPoints(&c, &d1, &d2, &a1, &a2, &dl, &tp)) return false;
+      type = 5;  // angolare a tre punti
+      p15 = c; p13 = d1; p14 = d2; p10 = dl; p11 = tp;
+      has13 = has15 = true;
+    } else {
+      return false;  // coordinate e altre: geometria
+    }
+    if (!p11.IsValid()) p11 = p10;
+    // blocco anonimo con la geometria visibile (livello 0, colore DaBlocco: prende quelli della quota)
+    std::ostringstream body;
+    body.precision(12);
+    Style bst;
+    bst.layer = "0";
+    bst.color = 0;
+    bst.linetype = "BYBLOCK";
+    Exploded(body, bst, dim);
+    const std::string block = "*D" + std::to_string(m_dimBlocks.size() + 1);
+    m_dimBlocks.emplace_back(block, body.str());
+    const ON_DimStyle& parent = ParentDimStyle(*m_model, dim);
+    const ON_DimStyle& style = dim.DimensionStyle(parent);
+    Head(s, "DIMENSION", st);
+    s << "2\n" << block << "\n3\n" << DimStyleName(style, parent.Name()) << "\n";
+    Pt(s, 10, p10);
+    Pt(s, 11, p11);
+    // 128: testo spostato dall'utente (posizione in 11)
+    const bool moved = (type == 0 || type == 1) && !dim.UseDefaultTextPoint();
+    s << "70\n" << (type | (moved ? 128 : 0)) << "\n";
+    // testo sostituito; vuoto = valore misurato
+    std::string user = dim.UserText() ? ToUtf8(ON_wString(dim.PlainUserText())) : "";
+    if (!user.empty() && Trim(user) != "<>") s << "1\n" << user << "\n";
+    if (has13) { Pt(s, 13, p13); Pt(s, 14, p14); }
+    if (has15) Pt(s, 15, p15);
+    if (type == 0) s << "50\n" << angle << "\n";
+    return true;
+  }
+
+  // Geometria di visualizzazione di un'annotazione: linee, frecce piene (SOLID) e TEXT.
+  void Exploded(std::ostringstream& s, const Style& st, const ON_Annotation& a) {
     AnnotationDisplay d;
     if (!m_model || !BuildAnnotationDisplay(*m_model, a, d)) return;
     for (const auto& w : d.wires) {
@@ -1991,7 +2086,7 @@ bool WriteDXF(const std::string& path, const std::vector<ExportItem>& items, ON:
                       docUnits != ON::LengthUnitSystem::Yards && docUnits != ON::LengthUnitSystem::Miles &&
                       docUnits != ON::LengthUnitSystem::Mils && docUnits != ON::LengthUnitSystem::Microinches;
   f << "0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n" << InsUnitsCode(docUnits)
-    << "\n9\n$MEASUREMENT\n70\n" << (metric ? 1 : 0) << "\n0\nENDSEC\n";
+    << "\n9\n$MEASUREMENT\n70\n" << (metric ? 1 : 0) << "\n9\n$DIMSTYLE\n2\nSTANDARD\n0\nENDSEC\n";
   f << "0\nSECTION\n2\nTABLES\n";
   // tipi di linea
   f << "0\nTABLE\n2\nLTYPE\n70\n" << w.m_linetypes.size() + 1 << "\n";
@@ -2022,9 +2117,33 @@ bool WriteDXF(const std::string& path, const std::vector<ExportItem>& items, ON:
   }
   f << "0\nENDTAB\n";
   f << "0\nTABLE\n2\nSTYLE\n70\n1\n0\nSTYLE\n2\nSTANDARD\n70\n0\n40\n0.0\n41\n1.0\n50\n0.0\n71\n0\n42\n2.5\n3\ntxt\n4\n\n0\nENDTAB\n";
+  // stili di quota: STANDARD (scala 1, per i testi) e uno per ogni insieme di valori delle quote
+  const bool hasStandard = std::any_of(w.m_dimStyles.begin(), w.m_dimStyles.end(), [](const auto& x) { return Upper(x.first) == "STANDARD"; });
+  f << "0\nTABLE\n2\nDIMSTYLE\n70\n" << w.m_dimStyles.size() + (hasStandard ? 0 : 1) << "\n";
+  if (!hasStandard) f << "0\nDIMSTYLE\n2\nSTANDARD\n70\n0\n40\n1.0\n";
+  for (const auto& [name, ds] : w.m_dimStyles) {
+    f << "0\nDIMSTYLE\n2\n" << name << "\n70\n0\n";
+    const std::string pre = ToUtf8(ds.Prefix()), suf = ToUtf8(ds.Suffix());
+    if (!pre.empty() || !suf.empty()) f << "3\n" << pre << "<>" << suf << "\n";
+    const ON_DimStyle::suppress_zero z = ds.ZeroSuppress();
+    const int dimzin = z == ON_DimStyle::suppress_zero::SuppressLeadingAndTrailing ? 12
+                     : z == ON_DimStyle::suppress_zero::SuppressLeading ? 4
+                     : z == ON_DimStyle::suppress_zero::SuppressTrailing ? 8 : 0;
+    const bool tick = ds.ArrowType1() == ON_Arrowhead::arrow_type::Tick;
+    f << "40\n" << ds.DimScale() << "\n41\n" << ds.ArrowSize() << "\n42\n" << ds.ExtOffset() << "\n44\n" << ds.ExtExtension()
+      << "\n140\n" << ds.TextHeight() << "\n142\n" << (tick ? ds.ArrowSize() : 0.0) << "\n144\n" << ds.LengthFactor()
+      << "\n147\n" << ds.TextGap() << "\n77\n" << (ds.DimTextLocation() == ON_DimStyle::TextLocation::AboveDimLine ? 1 : 0)
+      << "\n78\n" << dimzin << "\n179\n" << ds.AngleResolution() << "\n271\n" << ds.LengthResolution()
+      << "\n278\n" << (int)ds.DecimalSeparator() << "\n";
+  }
+  f << "0\nENDTAB\n";
   f << "0\nENDSEC\n";
   // blocchi
   f << "0\nSECTION\n2\nBLOCKS\n";
+  for (const auto& [name, body] : w.m_dimBlocks) {
+    f << "0\nBLOCK\n8\n0\n2\n" << name << "\n70\n1\n10\n0.0\n20\n0.0\n30\n0.0\n3\n" << name << "\n" << body;
+    f << "0\nENDBLK\n8\n0\n";
+  }
   for (const auto& [name, body] : w.m_blockBodies) {
     f << "0\nBLOCK\n8\n0\n2\n" << name << "\n70\n0\n10\n0.0\n20\n0.0\n30\n0.0\n3\n" << name << "\n" << body;
     f << "0\nENDBLK\n8\n0\n";
