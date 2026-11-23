@@ -66,10 +66,10 @@ Fonti: codice in `src/`, [COMANDI.md](COMANDI.md), [COMPATIBILITA.md](COMPATIBIL
 
 - Test automatici: 169 test CTest, tra cui `commands` con 2804 controlli, 14 test dei file
   di prova Rhino 8, test di collaborazione, AI, interfaccia e Python sulla CI Windows.
-- **Ultima build completa su `main` (merge della PR #15, 23/11/2026): fallita**, con 1
-  controllo su 2804 del test `commands` non superato su Windows. La build del merge della
-  PR #16 era in corso quando è stato scritto questo documento. Fino a quando non torna
-  verde, `main` non va considerato stabile.
+- Build su `main`: il merge della PR #15 (23/11/2026) era fallito su Windows (1 controllo
+  su 2804 del test `commands`: un testo DXF che si spostava a ogni andata e ritorno); la
+  PR #16 lo ha corretto e la build completa di `main` (commit 397f4e6) è tornata **verde**.
+  La CI verde dice che i test passano, non che il programma sia stabile nell'uso reale.
 - Nessun problema aperto su GitHub, ma questo vuol dire solo che nessuno li ha segnalati:
   il programma è stato usato da una sola persona e per pochi giorni.
 - Le geometrie sono calcolate con OpenCASCADE (D-017): su modelli complessi i risultati di
@@ -81,7 +81,7 @@ Fonti: codice in `src/`, [COMANDI.md](COMANDI.md), [COMPATIBILITA.md](COMPATIBIL
 
 In ordine di importanza:
 
-1. **CI verde su `main`** e nessuna regressione per alcune settimane di uso.
+1. **CI verde su `main` per alcune settimane di uso**, senza regressioni (oggi è verde).
 2. **Verifica con Rhino 8 reale** (serve mattia o chi ha Rhino 8): aprire in Rhino 8 i 14
    file di `rhino8-prova/` seguendo il LEGGIMI, e mettere in `tests/rhino8_files/` file
    salvati da Rhino 8 per ogni categoria. Solo dopo si possono segnare ✅ nella matrice
