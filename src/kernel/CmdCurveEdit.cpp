@@ -432,9 +432,9 @@ bool GeneralCorner(Engine& e, const Corner& k, bool fillet, double r, double d0,
       const ON_3dVector u0 = c[0]->PointAt(tp0) - X, u1 = c[1]->PointAt(tp1) - X;
       ON_3dVector bis = (u0.Length() > 0 ? u0 / u0.Length() : u0) + (u1.Length() > 0 ? u1 / u1.Length() : u1);
       bis.Unitize();
-      const ON_3dPoint near = X + bis * r;
+      const ON_3dPoint nearPt = X + bis * r;
       TopoDS_Edge m0, m1;
-      const TopoDS_Edge arcE = api.Result(gp_Pnt(near.x, near.y, near.z), m0, m1);
+      const TopoDS_Edge arcE = api.Result(gp_Pnt(nearPt.x, nearPt.y, nearPt.z), m0, m1);
       if (arcE.IsNull()) return e.Fail("raccordo impossibile con questo raggio");
       std::vector<ON_Curve*> arcs = occt::ShapeToCurves(arcE, tol);
       if (arcs.empty()) return e.Fail("raccordo non convertito");
