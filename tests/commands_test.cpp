@@ -15,6 +15,7 @@
 #include "ui/Scene.h"
 #include "core/SubDLimit.h"
 #include "core/ModelCompare.h"
+#include "core/DynamicInput.h"
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -118,6 +119,119 @@ static void Case(const char* name, const std::string& script, const std::functio
   CHECK(back.Summarize().rhinoVersion == 8);
 }
 
+// Input dinamico (misure accanto al cursore, vincoli digitati, quote automatiche)
+static void TestDynamicInput() {
+  std::printf("DynamicInput\n");
+  const ON_Plane xy = ON_Plane::World_xy;
+  const ON_3dPoint a(10, 5, 0);
+  DynOptions noTrack;
+  noTrack.polarTracking = false;
+  DynFields f;
+  // senza vincoli: il punto e' il cursore, misure lunghezza/angolo
+  DynResult r = SolveDynamicPoint(xy, a, ON_3dPoint(13, 9, 0), DynMode::Polar, f, noTrack);
+  CHECK(NearPt(r.point, ON_3dPoint(13, 9, 0)) && Near(r.length, 5.0) && Near(r.angle, std::atan2(4.0, 3.0) * 180 / ON_PI));
+  // distanza bloccata (Rhino "25" Invio): direzione dal cursore
+  f.locked[0] = true; f.value[0] = 25;
+  r = SolveDynamicPoint(xy, a, ON_3dPoint(13, 9, 0), DynMode::Polar, f, noTrack);
+  CHECK(NearPt(r.point, ON_3dPoint(10 + 15, 5 + 20, 0)) && Near(r.length, 25.0));
+  // distanza e angolo bloccati: il cursore non conta piu'
+  f.locked[1] = true; f.value[1] = 90;
+  r = SolveDynamicPoint(xy, a, ON_3dPoint(-100, -100, 0), DynMode::Polar, f, noTrack);
+  CHECK(NearPt(r.point, ON_3dPoint(10, 30, 0), 1e-9) && Near(r.angle, 90.0));
+  // solo angolo ("<45"): lunghezza = proiezione del cursore sulla direzione
+  f.Clear(); f.locked[1] = true; f.value[1] = 45;
+  r = SolveDynamicPoint(xy, ON_3dPoint::Origin, ON_3dPoint(10, 0, 0), DynMode::Polar, f, noTrack);
+  CHECK(NearPt(r.point, ON_3dPoint(5, 5, 0), 1e-9));
+  // tracciamento polare: 44 gradi -> 45, entro la tolleranza
+  DynOptions track;
+  f.Clear();
+  const double a44 = 44.0 * ON_PI / 180;
+  r = SolveDynamicPoint(xy, ON_3dPoint::Origin, ON_3dPoint(10 * std::cos(a44), 10 * std::sin(a44), 0), DynMode::Polar, f, track);
+  CHECK(r.tracked && Near(r.trackAngle, 45.0) && Near(r.angle, 45.0, 1e-9));
+  // fuori tolleranza (37 gradi) nessun aggancio
+  const double a37 = 37.0 * ON_PI / 180;
+  r = SolveDynamicPoint(xy, ON_3dPoint::Origin, ON_3dPoint(std::cos(a37), std::sin(a37), 0), DynMode::Polar, f, track);
+  CHECK(!r.tracked && Near(r.angle, 37.0, 1e-9));
+  // Orto vince: 37 gradi -> 0 gradi
+  DynOptions ortho; ortho.ortho = true;
+  r = SolveDynamicPoint(xy, ON_3dPoint::Origin, ON_3dPoint(10, 7, 0), DynMode::Polar, f, ortho);
+  CHECK(r.tracked && NearPt(r.point, ON_3dPoint(10, 0, 0), 1e-9));
+  // osnap senza vincoli: punto esatto (anche fuori dal piano)
+  r = SolveDynamicPoint(xy, ON_3dPoint::Origin, ON_3dPoint(3, 4, 7), DynMode::Polar, f, track, true);
+  CHECK(NearPt(r.point, ON_3dPoint(3, 4, 7)));
+  // osnap con distanza bloccata: solo la direzione dell'osnap
+  f.locked[0] = true; f.value[0] = 10;
+  r = SolveDynamicPoint(xy, ON_3dPoint::Origin, ON_3dPoint(3, 4, 0), DynMode::Polar, f, noTrack, true);
+  CHECK(NearPt(r.point, ON_3dPoint(6, 8, 0), 1e-9));
+  // Delta (rettangolo): larghezza bloccata, altezza dal cursore; il segno segue il cursore
+  f.Clear(); f.locked[0] = true; f.value[0] = 30;
+  r = SolveDynamicPoint(xy, ON_3dPoint(1, 1, 0), ON_3dPoint(-5, 8, 0), DynMode::Delta, f, track);
+  CHECK(NearPt(r.point, ON_3dPoint(-29, 8, 0), 1e-9) && Near(r.dx, -30) && Near(r.dy, 7));
+  f.locked[1] = true; f.value[1] = -20;
+  r = SolveDynamicPoint(xy, ON_3dPoint(1, 1, 0), ON_3dPoint(50, 50, 0), DynMode::Delta, f, track);
+  CHECK(NearPt(r.point, ON_3dPoint(31, -19, 0), 1e-9));
+  // CPlane ruotato (vista Front): misure nel CPlane
+  const ON_Plane front(ON_3dPoint::Origin, ON_3dVector::XAxis, ON_3dVector::ZAxis);
+  f.Clear(); f.locked[0] = true; f.value[0] = 10; f.locked[1] = true; f.value[1] = 90;
+  r = SolveDynamicPoint(front, ON_3dPoint::Origin, ON_3dPoint(1, 0, 1), DynMode::Polar, f, noTrack);
+  CHECK(NearPt(r.point, ON_3dPoint(0, 0, 10), 1e-9));
+  // testo digitato
+  double v = 0;
+  CHECK(ParseDynamicText("25", v) == DynTyped::Number && Near(v, 25));
+  CHECK(ParseDynamicText(" 2.5 ", v) == DynTyped::Number && Near(v, 2.5));
+  CHECK(ParseDynamicText("<45", v) == DynTyped::Angle && Near(v, 45));
+  CHECK(ParseDynamicText("< -30", v) == DynTyped::Angle && Near(v, -30));
+  CHECK(ParseDynamicText("10,5", v) == DynTyped::Other);
+  CHECK(ParseDynamicText("r10<30", v) == DynTyped::Other);
+  CHECK(ParseDynamicText("@3,4", v) == DynTyped::Other);
+  CHECK(ParseDynamicText("Close", v) == DynTyped::Other);
+  CHECK(ParseDynamicText("  ", v) == DynTyped::Empty);
+  CHECK(DynamicModeFor("Rectangle") == DynMode::Delta && DynamicModeFor("_Line") == DynMode::Polar);
+  CHECK(std::string(DynamicLengthLabel("Circle")) == "R" && std::string(DynamicLengthLabel("Line")) == "L");
+  CHECK(AutoDimensionCommand("Polyline") && !AutoDimensionCommand("Circle"));
+  // il punto digitato dall'input dinamico arriva al comando come coordinate assolute
+  {
+    Document3dm doc;
+    std::ostringstream log;
+    Engine e(doc, log);
+    DynFields lf; lf.locked[0] = true; lf.value[0] = 12.5; lf.locked[1] = true; lf.value[1] = 30;
+    const ON_3dPoint p = SolveDynamicPoint(xy, ON_3dPoint(1, 2, 0), ON_3dPoint(0, 0, 0), DynMode::Polar, lf, noTrack).point;
+    CHECK(e.Run("_Line 1,2,0 " + PointToken(p)));
+    auto ids = e.AllObjectIds(true);
+    const auto* l = ids.empty() ? nullptr : ON_LineCurve::Cast(e.Object(ids.back())->Geometry(nullptr));
+    CHECK(l && Near(l->m_line.Length(), 12.5, 1e-9));
+    CHECK(l && Near(std::atan2(l->m_line.to.y - 2, l->m_line.to.x - 1) * 180 / ON_PI, 30.0, 1e-9));
+  }
+  // quote "a lato" dopo il disegno: rettangolo -> 4 quote allineate verso l'esterno
+  Case("AutoDimensions_rectangle", "_Rectangle 0,0 20,10", [](Ctx& c) {
+    const auto cmds = AutoDimensionCommands(c.Last(), 2.0);
+    CHECK(cmds.size() == 4);
+    for (const auto& s : cmds) CHECK(c.e.Run(s));
+    int dims = 0;
+    for (auto* g : c.Objects())
+      if (const auto* d = ON_DimLinear::Cast(g)) {
+        dims++;
+        const double m = d->Measurement();
+        CHECK(Near(m, 20.0, 1e-9) || Near(m, 10.0, 1e-9));
+        // la linea di quota sta fuori dal rettangolo
+        ON_3dPoint p1, p2, a1, a2, dimpt, textpt;
+        d->Get3dPoints(&p1, &p2, &a1, &a2, &dimpt, &textpt);
+        const bool outside = dimpt.x < -1.5 || dimpt.x > 21.5 || dimpt.y < -1.5 || dimpt.y > 11.5;
+        CHECK(outside);
+      }
+    CHECK(dims == 4);
+  });
+  // linea singola orizzontale: quota sopra; verticale: a sinistra
+  Case("AutoDimensions_line", "_Line 0,0 10,0", [](Ctx& c) {
+    const auto cmds = AutoDimensionCommands(c.Last(), 3.0);
+    CHECK(cmds.size() == 1 && cmds[0].find("5,3,0") != std::string::npos);
+    ON_LineCurve v(ON_3dPoint(0, 0, 0), ON_3dPoint(0, 10, 0));
+    const auto vc = AutoDimensionCommands(&v, 3.0);
+    CHECK(vc.size() == 1 && vc[0].find("-3,5,0") != std::string::npos);
+    CHECK(AutoDimensionCommands(nullptr, 3.0).empty());
+  });
+}
+
 int main(int argc, char** argv) {
   // senza buffer: se il processo si interrompe si vede l'ultimo gruppo di controlli
   std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -136,6 +250,7 @@ int main(int argc, char** argv) {
   g_outDir = argc > 1 ? argv[1] : "commands_out";
   std::filesystem::create_directories(g_outDir);
   InitLibrary();
+  TestDynamicInput();
 
   Case("Line", "_Line 0,0,0 10,0,0", [](Ctx& c) {
     auto* l = ON_LineCurve::Cast(c.Last());

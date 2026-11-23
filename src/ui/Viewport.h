@@ -6,11 +6,14 @@
 // Rendering OpenGL 1.1 (funziona su qualsiasi scheda/driver Windows).
 #include "ui/Scene.h"
 #include "kernel/SurfaceAnalysis.h"
+#include "core/DynamicInput.h"
 #include <QOpenGLWidget>
 #include <memory>
 #include <QPainter>
 #include <QPoint>
 #include <functional>
+
+class QTouchEvent;
 
 namespace cad::ui {
 
@@ -94,6 +97,24 @@ public:
       QColor cage{70, 70, 70};
       QColor selected{255, 214, 0};
     } colors;
+    // Input dinamico (misure accanto al cursore, modificabili digitando) e quote automatiche
+    struct Dynamic {
+      bool enabled = true;               // "Input dinamico" nella barra di stato
+      bool autoDims = false;             // "Quote auto": quote allineate dopo Line/Polyline/Rectangle
+      cad::DynEnter enter = cad::DynEnter::AutoCAD;  // numero + Invio: punto subito o vincolo
+      cad::DynOptions opts;              // tracciamento polare
+      cad::DynFields fields;             // campi bloccati e campo attivo
+      cad::DynMode mode = cad::DynMode::Polar;
+      std::string command;               // comando in corso (etichetta L/R)
+      QString prompt;                    // richiesta del comando (suggerimento accanto al cursore)
+      QString typing;                    // testo digitato nella riga di comando
+      // ultimo cursore della vista attiva: serve per completare il punto con Invio
+      bool hasCursor = false, cursorSnapped = false;
+      ON_3dPoint cursor;
+      ON_Plane plane = ON_Plane::World_xy;
+      cad::DynResult result;
+    } dyn;
+    bool DynActive() const { return dyn.enabled && waitingForPoint && hasLastPoint && !pickOnObjects; }
     // Colore con cui disegnare un oggetto: il nero diventa l'inchiostro del tema
     QColor ObjectColor(const ON_Color& c) const {
       if (c.Red() == 0 && c.Green() == 0 && c.Blue() == 0) return colors.ink;
@@ -119,6 +140,9 @@ signals:
   void Activated(Viewport* v);
   // Trascinamento del Gumball concluso: comando da eseguire (Move, Rotate3D, Scale1D)
   void GumballCommand(QString command);
+  // Input dinamico: Tab nella vista (campo successivo) e clic/tocco su un campo delle misure
+  void DynamicTab(bool backwards);
+  void DynamicFieldClicked(int field);
 
 protected:
   void initializeGL() override;
@@ -131,6 +155,7 @@ protected:
   void dragEnterEvent(QDragEnterEvent* e) override;
   void dragMoveEvent(QDragMoveEvent* e) override;
   void dropEvent(QDropEvent* e) override;
+  bool event(QEvent* e) override;  // tocco (schermi touch) e Tab dell'input dinamico
 
 public:
   bool showGrid = true;  // griglia e assi (ViewCaptureToFile DrawGrid=No)
@@ -141,6 +166,26 @@ private:
   std::map<std::string, unsigned> m_textures;
   ON_3dPoint PointUnderMouse(const QPoint& pos, bool* snapped = nullptr, bool allowSnap = true, QString* label = nullptr) const;
   bool FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) const;
+  // Punto per il comando in corso: osnap/griglia/orto e, con l'input dinamico, i vincoli digitati
+  // e il tracciamento polare. Aggiorna anche lo stato condiviso dell'input dinamico.
+  ON_3dPoint InputPoint(const QPoint& pos, bool* snapped = nullptr, QString* label = nullptr);
+  void DrawDynamicInput(QPainter& p);
+  QRectF m_dynRects[2];          // riquadri dei campi disegnati (clic/tocco = scrivi in quel campo)
+  int DynamicFieldAt(const QPoint& pos) const;
+  // --- tocco: un dito con mirino spostato sopra il dito (punto preciso), due dita zoom e pan,
+  // tre dita rotazione della prospettiva ---
+  bool TouchEvent(QTouchEvent* e);
+  struct Touch {
+    bool pointMode = false;      // un dito durante la richiesta di un punto
+    bool mouse = false;          // un dito fuori dai comandi: si comporta come il mouse
+    bool gesture = false;        // due o piu' dita
+    int fingers = 0;
+    QPointF finger, lastCenter;
+    double lastDist = 0;
+    int field = -1;              // tocco iniziato su un campo delle misure
+  } m_touch;
+  double m_snapRadius = 10.0;    // pixel; piu' grande col tocco
+  bool m_cursorInside = false;
   void DrawLabels(QPainter& p) const;
   void ShowViewMenu(const QPoint& at);
   std::vector<ON_UUID> PickAt(const QPoint& pos) const;

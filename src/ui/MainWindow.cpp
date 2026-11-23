@@ -52,6 +52,8 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSettings>
+#include "core/DynamicInput.h"
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPlainTextEdit>
@@ -203,6 +205,11 @@ MainWindow::MainWindow(QWidget* parent)
   m_input = new QLineEdit;
   m_input->setFont(MonoFont(10));
   m_input->installEventFilter(this);
+  connect(m_input, &QLineEdit::textChanged, this, [this](const QString& t) {
+    auto& S = Viewport::Shared();
+    S.dyn.typing = S.DynActive() ? t : QString();
+    if (S.DynActive()) DynamicRefresh();
+  });
   {  // completamento automatico dei nomi dei comandi (come la riga di comando di Rhino 8)
     QStringList names;
     for (auto& [k, c] : m_engine.Commands()) names << QString::fromStdString(c.name);
@@ -240,6 +247,15 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_views[i], &Viewport::ObjectsClicked, this, &MainWindow::OnObjectsClicked);
     connect(m_views[i], &Viewport::GumballCommand, this, [this](QString c) { PropertyCommand(c); });
     connect(m_views[i], &Viewport::ToggleMaximize, this, &MainWindow::ToggleMaximize);
+    connect(m_views[i], &Viewport::DynamicTab, this, &MainWindow::DynamicTab);
+    connect(m_views[i], &Viewport::DynamicFieldClicked, this, [this](int field) {
+      // clic o tocco su una misura: si scrive in quel campo (sui tablet si apre la tastiera)
+      auto& D = Viewport::Shared().dyn;
+      if (D.fields.locked[field]) D.fields.locked[field] = false;
+      D.fields.active = field;
+      m_input->setFocus();
+      DynamicRefresh();
+    });
     connect(m_views[i], &Viewport::Activated, this, [this](Viewport* v) { m_active = v; m_engine.activeViewportId = v->id; });
     connect(m_views[i], &Viewport::MouseWorld, this, [this](ON_3dPoint p) {
       m_coords->setText(QString("x %1   y %2   z %3").arg(p.x, 0, 'f', 3).arg(p.y, 0, 'f', 3).arg(p.z, 0, 'f', 3));
@@ -1073,6 +1089,58 @@ void MainWindow::BuildStatusBar() {
     });
   }
   toggle("Osnap", S.osnap);
+  {  // Input dinamico (misure accanto al cursore) e quote automatiche, salvati tra le sessioni
+    QSettings st;
+    S.dyn.enabled = st.value("inputDinamico/attivo", true).toBool();
+    S.dyn.autoDims = st.value("inputDinamico/quoteAuto", false).toBool();
+    S.dyn.enter = st.value("inputDinamico/invio", "autocad").toString() == "rhino" ? cad::DynEnter::Rhino : cad::DynEnter::AutoCAD;
+    S.dyn.opts.polarTracking = st.value("inputDinamico/polare", true).toBool();
+    S.dyn.opts.polarStep = st.value("inputDinamico/passoPolare", 15.0).toDouble();
+    auto* dynBtn = new QToolButton;
+    dynBtn->setText("Input dinamico");
+    dynBtn->setCheckable(true);
+    dynBtn->setChecked(S.dyn.enabled);
+    dynBtn->setToolTip("Misure accanto al cursore: scrivi lunghezza, Tab, angolo, Invio "
+                       "(clic destro: comportamento di Invio e tracciamento polare)");
+    connect(dynBtn, &QToolButton::toggled, this, [this](bool on) {
+      Viewport::Shared().dyn.enabled = on;
+      Viewport::Shared().dyn.fields.Clear();
+      SaveDynamicSettings();
+      DynamicRefresh();
+    });
+    dynBtn->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(dynBtn, &QToolButton::customContextMenuRequested, this, [this, dynBtn](const QPoint& pos) {
+      auto& D = Viewport::Shared().dyn;
+      QMenu m;
+      QAction* acad = m.addAction("Numero + Invio = punto subito (AutoCAD)");
+      QAction* rh = m.addAction("Numero + Invio = vincolo di distanza (Rhino)");
+      acad->setCheckable(true); rh->setCheckable(true);
+      acad->setChecked(D.enter == cad::DynEnter::AutoCAD); rh->setChecked(D.enter == cad::DynEnter::Rhino);
+      m.addSeparator();
+      QAction* polar = m.addAction("Tracciamento polare");
+      polar->setCheckable(true);
+      polar->setChecked(D.opts.polarTracking);
+      QMenu* steps = m.addMenu("Passo del tracciamento polare");
+      for (double st : {5.0, 15.0, 30.0, 45.0, 90.0}) {
+        QAction* a = steps->addAction(QString("%1°").arg(st));
+        a->setCheckable(true);
+        a->setChecked(std::fabs(D.opts.polarStep - st) < 1e-9);
+        connect(a, &QAction::triggered, this, [this, st] { Viewport::Shared().dyn.opts.polarStep = st; SaveDynamicSettings(); });
+      }
+      connect(acad, &QAction::triggered, this, [this] { Viewport::Shared().dyn.enter = cad::DynEnter::AutoCAD; SaveDynamicSettings(); });
+      connect(rh, &QAction::triggered, this, [this] { Viewport::Shared().dyn.enter = cad::DynEnter::Rhino; SaveDynamicSettings(); });
+      connect(polar, &QAction::toggled, this, [this](bool on) { Viewport::Shared().dyn.opts.polarTracking = on; SaveDynamicSettings(); });
+      m.exec(dynBtn->mapToGlobal(pos));
+    });
+    statusBar()->addPermanentWidget(dynBtn);
+    auto* dimBtn = new QToolButton;
+    dimBtn->setText("Quote auto");
+    dimBtn->setCheckable(true);
+    dimBtn->setChecked(S.dyn.autoDims);
+    dimBtn->setToolTip("Dopo Linea, Polilinea, Rettangolo e Poligono aggiunge le quote allineate a lato di ogni segmento");
+    connect(dimBtn, &QToolButton::toggled, this, [this](bool on) { Viewport::Shared().dyn.autoDims = on; SaveDynamicSettings(); });
+    statusBar()->addPermanentWidget(dimBtn);
+  }
   // Registra storia (History Record): i comandi che la supportano ricordano gli ingressi
   m_historyBtn = new QToolButton;
   m_historyBtn->setText("Registra storia");
@@ -1290,6 +1358,7 @@ void MainWindow::Submit(const QString& text) {
     if (bb.IsValid()) for (auto* v : m_views) v->ZoomBox(bb);
     return;
   }
+  if (!m_pending.empty() && DynamicSubmit(t)) return;
   if (HandleAnalysisCommand(t)) return;
   if (m_pending.empty() && NormalizeName(t.substr(0, t.find(' '))) == "gumballalignment") {
     // GumballAlignment World|CPlane|Object (senza valore: si passa al successivo)
@@ -1342,16 +1411,23 @@ void MainWindow::Submit(const QString& text) {
 void MainWindow::Run(const std::string& script) {
   m_out.str("");
   if (m_pending.empty()) Log(QString("Comando: ") + QString::fromStdString(script));
+  Viewport::Shared().dyn.fields.Clear();  // nuovo input al comando: le misure ripartono libere
+  const std::vector<ON_UUID> createdBefore = m_engine.LastCreated();
   const auto r = m_engine.RunInteractive(script, &m_pending);
   const QString out = QString::fromStdString(m_out.str()).trimmed();
   // nella cronologia solo i messaggi utili (gli errori "manca ..." sono le richieste)
   for (const QString& l : out.split('\n'))
     if (!l.trimmed().isEmpty() && !(r == Engine::Result::NeedsInput && l.contains("Errore:"))) Log(l);
   if (r != Engine::Result::NeedsInput) m_pending.clear();
+  // quote automatiche solo se il comando ha davvero creato qualcosa di nuovo
+  if (r == Engine::Result::Done && !m_engine.LastCreated().empty() &&
+      (createdBefore.empty() || ON_UuidCompare(createdBefore.front(), m_engine.LastCreated().front()) != 0))
+    AutoDimensions();
   AfterCommand();
 }
 
 void MainWindow::Cancel() {
+  Viewport::Shared().dyn.fields.Clear();
   if (!m_pending.empty()) Log("Comando annullato");
   m_pending.clear();
   AfterCommand();
@@ -1367,6 +1443,17 @@ void MainWindow::UpdatePrompt() {
   S.lastPoint = m_engine.lastPoint;
   // l'elastico parte dall'ultimo punto solo se il comando ne ha gia' ricevuto uno
   S.hasLastPoint = pending && kind == Engine::InputKind::Point && m_pending.find(',') != std::string::npos;
+  {  // input dinamico: comando, modalita' delle misure e richiesta da mostrare accanto al cursore
+    std::string cmd = m_pending.substr(0, m_pending.find(' '));
+    if (const CommandInfo* ci = m_engine.FindCommand(cmd)) cmd = ci->name;
+    S.dyn.command = cmd;
+    S.dyn.mode = cad::DynamicModeFor(cmd);
+    QString pr = QString::fromStdString(m_engine.Prompt());
+    if (!pr.isEmpty()) pr[0] = pr[0].toUpper();
+    S.dyn.prompt = pr;
+    S.dyn.typing = S.DynActive() ? m_input->text() : QString();
+    if (!S.DynActive()) S.dyn.fields.Clear();
+  }
   if (m_pending.empty()) {
     m_prompt->setText("Comando:");
   } else {
@@ -1617,7 +1704,10 @@ void MainWindow::ToggleMaximize(Viewport* v) {
 
 void MainWindow::keyPressEvent(QKeyEvent* e) {
   if (e->key() == Qt::Key_Escape) {
-    if (!m_pending.empty()) Cancel();
+    if (Viewport::Shared().DynActive() && Viewport::Shared().dyn.fields.AnyLocked()) {
+      Viewport::Shared().dyn.fields.Clear();
+      DynamicRefresh();
+    } else if (!m_pending.empty()) Cancel();
     else if (m_engine.Selection().empty() && !m_engine.pointsOn.empty()) Submit("_PointsOff");  // come Rhino: Esc spegne i punti
     else { m_engine.ClearSelection(); m_scene.RefreshSelection(); RefreshPanels(); for (auto* v : m_views) v->update(); }
     return;
@@ -1647,7 +1737,20 @@ void MainWindow::keyPressEvent(QKeyEvent* e) {
 bool MainWindow::eventFilter(QObject* o, QEvent* e) {
   if (o == m_input && e->type() == QEvent::KeyPress) {
     auto* k = static_cast<QKeyEvent*>(e);
-    if (k->key() == Qt::Key_Escape) { m_input->clear(); Cancel(); return true; }
+    if (k->key() == Qt::Key_Escape) {
+      // input dinamico: il primo Esc sblocca le misure, il secondo annulla il comando
+      if (Viewport::Shared().DynActive() && (Viewport::Shared().dyn.fields.AnyLocked() || !m_input->text().isEmpty())) {
+        m_input->clear();
+        Viewport::Shared().dyn.fields.Clear();
+        DynamicRefresh();
+        return true;
+      }
+      m_input->clear(); Cancel(); return true;
+    }
+    if ((k->key() == Qt::Key_Tab || k->key() == Qt::Key_Backtab) && Viewport::Shared().DynActive()) {
+      DynamicTab(k->key() == Qt::Key_Backtab);
+      return true;
+    }
     // Invio e (come in Rhino) Spazio confermano la riga; lo spazio resta nel testo solo tra virgolette.
     const bool inQuotes = m_input->text().count('"') % 2 == 1;
     if (k->key() == Qt::Key_Return || k->key() == Qt::Key_Enter || (k->key() == Qt::Key_Space && !inQuotes)) {
@@ -1810,6 +1913,140 @@ bool MainWindow::PrintPages(const std::vector<PageDrawing>& pages) {
   }
   p.end();
   return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// Input dinamico
+// ---------------------------------------------------------------------------
+void MainWindow::SaveDynamicSettings() {
+  const auto& D = Viewport::Shared().dyn;
+  QSettings st;
+  st.setValue("inputDinamico/attivo", D.enabled);
+  st.setValue("inputDinamico/quoteAuto", D.autoDims);
+  st.setValue("inputDinamico/invio", D.enter == cad::DynEnter::Rhino ? "rhino" : "autocad");
+  st.setValue("inputDinamico/polare", D.opts.polarTracking);
+  st.setValue("inputDinamico/passoPolare", D.opts.polarStep);
+}
+
+void MainWindow::DynamicRefresh() {
+  for (auto* v : m_views) v->update();
+}
+
+// Testo confermato con Invio durante la richiesta di un punto (dopo il primo punto):
+//  numero      -> valore del campo attivo (lunghezza/larghezza, o angolo/altezza dopo Tab)
+//  <angolo     -> vincolo di angolo (come Rhino)
+//  Invio vuoto -> con misure bloccate conferma il punto
+//  altro       -> coordinate, opzioni, Chiudi... passano al comando come prima
+bool MainWindow::DynamicSubmit(const std::string& text) {
+  auto& S = Viewport::Shared();
+  if (!S.DynActive()) return false;
+  if (m_stack && m_stack->currentWidget() == m_layoutView) return false;  // tavole: punti in mm sulla pagina
+  auto& D = S.dyn;
+  double v = 0;
+  const cad::DynTyped k = cad::ParseDynamicText(text, v);
+  if (k == cad::DynTyped::Other) { D.fields.Clear(); return false; }
+  if (k == cad::DynTyped::Empty) {
+    if (!D.fields.AnyLocked()) return false;  // Invio normale: fine del comando
+    DynamicCommit();
+    return true;
+  }
+  if (k == cad::DynTyped::Angle) {
+    if (D.mode != cad::DynMode::Polar) return false;
+    D.fields.locked[1] = true;
+    D.fields.value[1] = v;
+    D.fields.active = 0;
+    if (D.fields.locked[0]) DynamicCommit(); else DynamicRefresh();
+    return true;
+  }
+  // numero
+  const int f = D.fields.active;
+  if (D.mode == cad::DynMode::Polar && f == 0 && v < 0) {
+    // lunghezza negativa: direzione opposta al cursore (come AutoCAD)
+    D.fields.locked[0] = true;
+    D.fields.value[0] = v;
+  } else {
+    D.fields.locked[f] = true;
+    D.fields.value[f] = v;
+  }
+  bool commit = D.fields.AllLocked();
+  if (!commit && D.mode == cad::DynMode::Polar && f == 0 && D.enter == cad::DynEnter::AutoCAD) commit = true;
+  if (commit) { DynamicCommit(); return true; }
+  // il campo successivo ancora libero diventa attivo (es. "30" Invio "20" Invio per il rettangolo)
+  if (D.mode == cad::DynMode::Delta || f == 1) D.fields.active = D.fields.locked[0] ? 1 : 0;
+  DynamicRefresh();
+  return true;
+}
+
+void MainWindow::DynamicTab(bool backwards) {
+  auto& S = Viewport::Shared();
+  if (!S.DynActive()) return;
+  auto& D = S.dyn;
+  double v = 0;
+  const cad::DynTyped k = cad::ParseDynamicText(m_input->text().toStdString(), v);
+  if (k == cad::DynTyped::Number) {
+    D.fields.locked[D.fields.active] = true;
+    D.fields.value[D.fields.active] = v;
+  } else if (k == cad::DynTyped::Angle && D.mode == cad::DynMode::Polar) {
+    D.fields.locked[1] = true;
+    D.fields.value[1] = v;
+  }
+  if (k != cad::DynTyped::Other) m_input->clear();
+  (void)backwards;  // due campi: avanti e indietro portano all'altro
+  D.fields.active = 1 - D.fields.active;
+  m_input->setFocus();
+  DynamicRefresh();
+}
+
+void MainWindow::DynamicCommit() {
+  auto& S = Viewport::Shared();
+  auto& D = S.dyn;
+  ON_Plane pl = D.plane;
+  ON_3dPoint cursor = D.cursor;
+  bool snapped = D.cursorSnapped;
+  if (!D.hasCursor) {  // nessun movimento del mouse: CPlane della vista attiva, direzione x
+    pl = Active()->Cam().CPlane();
+    pl.origin = S.lastPoint;
+    pl.UpdateEquation();
+    cursor = S.lastPoint + pl.xaxis;
+    snapped = false;
+  }
+  D.opts.ortho = S.ortho;
+  const cad::DynResult r = cad::SolveDynamicPoint(pl, S.lastPoint, cursor, D.mode, D.fields, D.opts, snapped);
+  QString note;
+  if (D.mode == cad::DynMode::Polar)
+    note = QString("Input dinamico: %1=%2  angolo=%3°").arg(cad::DynamicLengthLabel(D.command))
+               .arg(r.length, 0, 'g', 10).arg(r.angle, 0, 'g', 10);
+  else
+    note = QString("Input dinamico: X=%1  Y=%2").arg(r.dx, 0, 'g', 10).arg(r.dy, 0, 'g', 10);
+  Log(note);
+  D.fields.Clear();
+  if (m_pending.empty()) return;
+  Run(m_pending + " " + cad::PointToken(r.point));
+}
+
+// Quote "a lato" dei segmenti appena disegnati, in un passo di annullamento a parte.
+void MainWindow::AutoDimensions() {
+  const auto& D = Viewport::Shared().dyn;
+  if (!D.autoDims || !cad::AutoDimensionCommand(m_engine.LastCommandName())) return;
+  const auto created = m_engine.LastCreated();
+  if (created.empty()) return;
+  // distanza della quota: circa 25 pixel nella vista attiva
+  const double upp = Active()->Cam().UnitsPerPixel(std::max(1, Active()->height()));
+  const double offset = upp > 0 ? 25.0 * upp : 1.0;
+  std::vector<std::string> cmds;
+  for (const auto& id : created)
+    if (const auto* o = m_engine.Object(id))
+      for (auto& c : cad::AutoDimensionCommands(o->Geometry(nullptr), offset)) cmds.push_back(c);
+  if (cmds.empty()) return;
+  m_out.str("");
+  const bool ok = m_engine.Transaction("AutoDimensions", [&] {
+    for (const auto& c : cmds)
+      if (!m_engine.Run(c)) return false;
+    return true;
+  });
+  m_out.str("");
+  Log(ok ? QString("Quote automatiche: %1").arg(cmds.size()) : QString("Quote automatiche non riuscite"));
 }
 
 }  // namespace cad::ui

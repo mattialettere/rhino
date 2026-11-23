@@ -7,6 +7,9 @@
 #include <memory>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QTouchEvent>
+#include <QPainterPath>
+#include <QPointingDevice>
 #include <QOpenGLFunctions_1_1>
 #include <QImage>
 #include <QDragEnterEvent>
@@ -147,6 +150,7 @@ Viewport::Viewport(Scene& scene, Camera::Kind kind, QWidget* parent) : QOpenGLWi
   setFocusPolicy(Qt::ClickFocus);
   setMinimumSize(120, 90);
   setAcceptDrops(true);
+  setAttribute(Qt::WA_AcceptTouchEvents);  // schermi touch: vedi TouchEvent
 }
 
 namespace {
@@ -1116,7 +1120,13 @@ void Viewport::paintGL() {
   // Elastico dall'ultimo punto al cursore durante un comando
   const Settings& S = Shared();
   gl->glDisable(GL_DEPTH_TEST);
-  if (S.waitingForPoint && S.hasLastPoint && underMouse()) {
+  m_cursorInside = underMouse() || m_touch.pointMode;
+  if (S.DynActive() && m_cursorInside) {
+    m_hoverSnapLabel.clear();
+    m_hoverWorld = InputPoint(m_hover, &m_hoverSnapped, &m_hoverSnapLabel);
+  }
+  // (col rettangolo dell'input dinamico l'elastico diagonale non serve)
+  if (S.waitingForPoint && S.hasLastPoint && m_cursorInside && !(S.DynActive() && S.dyn.mode == cad::DynMode::Delta)) {
     gl->glColor3ub(S.colors.overlay.red(), S.colors.overlay.green(), S.colors.overlay.blue());
     gl->glLineWidth(1.0f);
     gl->glBegin(GL_LINES);
@@ -1161,7 +1171,8 @@ void Viewport::paintGL() {
     p.setBrush(crossing ? QColor(80, 200, 80, 40) : QColor(80, 80, 200, 40));
     p.drawRect(QRect(m_pressPos, m_hover).normalized());
   }
-  if (m_hoverSnapped && underMouse()) {
+  DrawDynamicInput(p);
+  if (m_hoverSnapped && m_cursorInside) {
     double sx, sy;
     if (m_cam.Project(m_hoverWorld, w, h, sx, sy)) {
       p.setPen(QPen(QColor(255, 255, 255), 2)); p.setBrush(Qt::NoBrush);
@@ -1490,7 +1501,7 @@ void Viewport::DrawGumball(QPainter& p) const {
 bool Viewport::FindOsnap(const QPoint& pos, ON_3dPoint& out, QString& label) const {
   const Settings& S = Shared();
   const unsigned m = S.osnapMask;
-  const double R = 10.0;
+  const double R = m_snapRadius;
   const int W = width(), H = height();
   double best = R;
   bool found = false;
@@ -1860,7 +1871,7 @@ void Viewport::mouseMoveEvent(QMouseEvent* e) {
       (e->pos() - m_pressPos).manhattanLength() > 4)
     m_windowSelecting = true;
   m_hoverSnapLabel.clear();
-  m_hoverWorld = PointUnderMouse(e->pos(), &m_hoverSnapped, true, &m_hoverSnapLabel);
+  m_hoverWorld = InputPoint(e->pos(), &m_hoverSnapped, &m_hoverSnapLabel);
   emit MouseWorld(m_hoverWorld);
   update();
 }
@@ -1903,7 +1914,9 @@ void Viewport::mouseReleaseEvent(QMouseEvent* e) {
     if (m_windowSelecting) {
       emit ObjectsClicked(PickWindow(m_pressPos, e->pos()), add, remove);
     } else if (Shared().waitingForPoint) {
-      emit PointPicked(Shared().pickOnObjects ? PointOnObjects(e->pos()) : PointUnderMouse(e->pos()));
+      const int field = DynamicFieldAt(e->pos());
+      if (field >= 0) emit DynamicFieldClicked(field);  // clic su una misura: si scrive in quel campo
+      else emit PointPicked(Shared().pickOnObjects ? PointOnObjects(e->pos()) : InputPoint(e->pos()));
     } else if (!wasDrag) {
       emit ObjectsClicked(PickAt(e->pos()), add, remove);
     }
@@ -1929,6 +1942,367 @@ void Viewport::wheelEvent(QWheelEvent* e) {
     m_cam.target = m_cam.target + (before - after);
   }
   update();
+}
+
+
+// ---------------------------------------------------------------------------
+// Input dinamico: misure accanto al cursore (lunghezza/angolo o larghezza/altezza),
+// tracciamento polare e vincoli digitati. La matematica e' in core/DynamicInput.
+// ---------------------------------------------------------------------------
+ON_3dPoint Viewport::InputPoint(const QPoint& pos, bool* snapped, QString* label) {
+  Settings& S = Shared();
+  bool sn = false;
+  const ON_3dPoint raw = PointUnderMouse(pos, &sn, true, label);
+  if (snapped) *snapped = sn;
+  if (!S.DynActive()) return raw;
+  ON_Plane pl = m_cam.CPlane();
+  pl.origin = S.lastPoint;
+  pl.UpdateEquation();
+  S.dyn.opts.ortho = S.ortho;
+  S.dyn.hasCursor = true;
+  S.dyn.cursor = raw;
+  S.dyn.cursorSnapped = sn;
+  S.dyn.plane = pl;
+  // il valore che si sta scrivendo si vede gia' nell'anteprima (come AutoCAD), senza bloccarlo
+  cad::DynFields preview = S.dyn.fields;
+  double typed = 0;
+  const cad::DynTyped tk = cad::ParseDynamicText(S.dyn.typing.toStdString(), typed);
+  if (tk == cad::DynTyped::Number) { preview.locked[preview.active] = true; preview.value[preview.active] = typed; }
+  else if (tk == cad::DynTyped::Angle && S.dyn.mode == cad::DynMode::Polar) { preview.locked[1] = true; preview.value[1] = typed; }
+  S.dyn.result = cad::SolveDynamicPoint(pl, S.lastPoint, raw, S.dyn.mode, preview, S.dyn.opts, sn);
+  // con un vincolo il punto non e' piu' quello dell'osnap
+  if (snapped && preview.AnyLocked()) *snapped = false;
+  return S.dyn.result.point;
+}
+
+int Viewport::DynamicFieldAt(const QPoint& pos) const {
+  if (!Shared().DynActive() || !m_cursorInside) return -1;
+  for (int i = 0; i < 2; i++)
+    if (!m_dynRects[i].isEmpty() && m_dynRects[i].adjusted(-4, -4, 4, 4).contains(pos)) return i;
+  return -1;
+}
+
+void Viewport::DrawDynamicInput(QPainter& p) {
+  m_dynRects[0] = m_dynRects[1] = QRectF();
+  const Settings& S = Shared();
+  if (!S.DynActive() || !m_cursorInside) return;
+  const auto& D = S.dyn;
+  const int W = width(), H = height();
+  auto scr = [&](const ON_3dPoint& q, QPointF& out) {
+    double x, y;
+    if (!m_cam.Project(q, W, H, x, y)) return false;
+    out = QPointF(x, y);
+    return true;
+  };
+  const ON_Plane& pl = D.plane;
+  const ON_3dPoint A3 = S.lastPoint, P3 = D.result.point;
+  QPointF A, P;
+  if (!scr(A3, A) || !scr(P3, P)) return;
+  p.save();
+  p.setRenderHint(QPainter::Antialiasing);
+  QFont f = p.font();
+  f.setBold(false);
+  f.setPixelSize(12);
+  p.setFont(f);
+  const QFontMetrics fm(f);
+  const QColor guide = S.colors.dark ? QColor(150, 190, 255) : QColor(30, 90, 200);
+  const QColor accent(59, 130, 246);
+  auto fmt = [](double v, int dec = 2) {
+    QString t = QString::number(v, 'f', dec);
+    if (t.contains('.')) { while (t.endsWith('0')) t.chop(1); if (t.endsWith('.')) t.chop(1); }
+    if (t == "-0") t = "0";
+    return t;
+  };
+  // campo: valore attuale, testo che si sta scrivendo (campo attivo) o valore bloccato
+  auto field = [&](int i, const QString& label, double live, const QString& unit, QPointF at) {
+    const bool locked = D.fields.locked[i];
+    const bool active = D.fields.active == i;
+    QString text;
+    if (active && !D.typing.isEmpty()) text = D.typing + "|";
+    else text = fmt(locked ? D.fields.value[i] : live) + unit;
+    const QString full = label.isEmpty() ? text : label + " " + text;
+    const double wd = fm.horizontalAdvance(full) + (locked ? 22 : 12), ht = fm.height() + 6;
+    QRectF r(at.x() - wd / 2, at.y() - ht / 2, wd, ht);
+    r.moveLeft(std::clamp(r.left(), 2.0, std::max(2.0, W - wd - 2)));
+    r.moveTop(std::clamp(r.top(), 2.0, std::max(2.0, H - ht - 2)));
+    m_dynRects[i] = r;
+    p.setPen(QPen(active ? accent : QColor(120, 120, 120), active ? 2 : 1));
+    p.setBrush(locked ? accent : (S.colors.dark ? QColor(40, 42, 46, 235) : QColor(255, 255, 255, 235)));
+    p.drawRoundedRect(r, 3, 3);
+    QRectF tr = r;
+    if (locked) {  // lucchetto: valore bloccato
+      const QPointF c(r.left() + 9, r.center().y() + 1);
+      p.setPen(QPen(Qt::white, 1.4));
+      p.setBrush(Qt::NoBrush);
+      p.drawArc(QRectF(c.x() - 3, c.y() - 7, 6, 7), 0, 180 * 16);
+      p.setBrush(Qt::white);
+      p.drawRect(QRectF(c.x() - 4, c.y() - 3, 8, 6));
+      tr.setLeft(r.left() + 14);
+    }
+    p.setPen(locked ? QColor(Qt::white) : (S.colors.dark ? QColor(230, 230, 230) : QColor(20, 20, 20)));
+    p.drawText(tr, Qt::AlignCenter, full);
+  };
+  QPen dimPen(guide, 1);
+  const double upp = m_cam.UnitsPerPixel(H);
+  if (D.mode == cad::DynMode::Polar) {
+    // tracciamento polare: linea tratteggiata lungo la direzione agganciata
+    if (D.result.tracked && !D.fields.locked[1]) {
+      const double ar = D.result.trackAngle * ON_PI / 180.0;
+      const ON_3dVector dir = pl.xaxis * std::cos(ar) + pl.yaxis * std::sin(ar);
+      QPointF far;
+      if (scr(A3 + dir * (upp * 4.0 * (W + H)), far)) {
+        p.setPen(QPen(guide, 1, Qt::DashLine));
+        p.drawLine(A, far);
+      }
+    }
+    // linea di quota parallela all'elastico, spostata di 22 pixel
+    const QPointF v = P - A;
+    const double l = std::hypot(v.x(), v.y());
+    if (l > 8) {
+      QPointF nrm(-v.y() / l, v.x() / l);
+      if (nrm.y() > 0) nrm = -nrm;  // sopra (sullo schermo)
+      const QPointF a = A + nrm * 22, b = P + nrm * 22;
+      p.setPen(dimPen);
+      p.drawLine(A + nrm * 4, A + nrm * 27);
+      p.drawLine(P + nrm * 4, P + nrm * 27);
+      p.drawLine(a, b);
+      auto tick = [&](QPointF c) { p.drawLine(c - (nrm + v / l) * 4, c + (nrm + v / l) * 4); };
+      tick(a);
+      tick(b);
+      field(0, QString::fromLatin1(cad::DynamicLengthLabel(D.command)), D.result.length, QString(), (a + b) / 2);
+      // arco dell'angolo dall'asse x del CPlane, raggio 46 pixel
+      const double rW = 46 * upp;
+      const double ang = D.result.angle;
+      QPointF ref;
+      if (scr(A3 + pl.xaxis * (rW * 1.35), ref)) {
+        p.setPen(QPen(guide, 1, Qt::DotLine));
+        p.drawLine(A, ref);
+      }
+      QPainterPath arc;
+      const int steps = std::max(2, int(std::fabs(ang) / 5));
+      for (int i = 0; i <= steps; i++) {
+        const double t = ang * i / steps * ON_PI / 180.0;
+        QPointF q;
+        if (!scr(A3 + (pl.xaxis * std::cos(t) + pl.yaxis * std::sin(t)) * rW, q)) continue;
+        if (arc.elementCount() == 0) arc.moveTo(q); else arc.lineTo(q);
+      }
+      p.setPen(dimPen);
+      p.setBrush(Qt::NoBrush);
+      p.drawPath(arc);
+      const double tm = ang * 0.5 * ON_PI / 180.0;
+      QPointF am;
+      if (scr(A3 + (pl.xaxis * std::cos(tm) + pl.yaxis * std::sin(tm)) * (rW + 22 * upp), am))
+        field(1, QString(), ang, QString::fromUtf8("°"), am);
+    }
+  } else {
+    // Delta: quota della larghezza sotto/sopra il lato orizzontale, dell'altezza accanto al lato verticale
+    const ON_3dPoint C3 = A3 + pl.xaxis * D.result.dx;
+    QPointF C, E;
+    if (scr(C3, C) && scr(A3 + pl.yaxis * D.result.dy, E)) {
+      // anteprima del rettangolo
+      p.setPen(QPen(S.colors.overlay, 1));
+      p.setBrush(Qt::NoBrush);
+      p.drawPolygon(QPolygonF({A, C, P, E}));
+      p.setPen(dimPen);
+      const double sy = (C.y() >= P.y()) ? 1 : -1;  // dalla parte opposta al rettangolo
+      const QPointF off(0, 20 * sy);
+      p.drawLine(A + off, C + off);
+      if (std::fabs(C.x() - A.x()) > 1) field(0, "X", D.result.dx, QString(), (A + C) / 2 + off);
+      const double sx = (C.x() >= A.x()) ? 1 : -1;
+      const QPointF offx(20 * sx, 0);
+      p.setPen(dimPen);
+      p.drawLine(C + offx, P + offx);
+      if (std::fabs(C.y() - P.y()) > 1) field(1, "Y", D.result.dy, QString(), (C + P) / 2 + offx + QPointF(18 * sx, 0));
+      if (m_dynRects[0].isEmpty()) field(0, "X", D.result.dx, QString(), (A + C) / 2 + off);
+      if (m_dynRects[1].isEmpty()) field(1, "Y", D.result.dy, QString(), (C + P) / 2 + offx + QPointF(18 * sx, 0));
+    }
+  }
+  // suggerimento accanto al cursore: richiesta del comando (sopra) e tasti (sotto, in grigio)
+  {
+    const QPointF c = m_hover;
+    QString tip = D.prompt;
+    if (D.result.tracked && !D.fields.locked[1]) tip = QString("Polare %1°  -  ").arg(fmt(D.result.trackAngle)) + tip;
+    const QString keys = D.fields.AnyLocked() ? QString("Invio conferma   Esc sblocca")
+                                              : QString("Scrivi un valore   Tab campo successivo");
+    QFont tf = f;
+    tf.setPixelSize(11);
+    p.setFont(tf);
+    const QFontMetrics tm(tf);
+    const double wd = std::max(tm.horizontalAdvance(tip), tm.horizontalAdvance(keys)) + 12;
+    const double ht = 2 * tm.height() + 6;
+    // prima posizione libera tra: sotto a destra, sotto a sinistra, sopra a destra, sopra a sinistra, piu' in basso o in alto
+    const QPointF cand[] = {{c.x() + 20, c.y() + 20}, {c.x() - 20 - wd, c.y() + 20}, {c.x() + 20, c.y() - 20 - ht},
+                            {c.x() - 20 - wd, c.y() - 20 - ht}, {c.x() - wd / 2, c.y() + 60}, {c.x() - wd / 2, c.y() - 60 - ht},
+                            {W - wd - 8, H - ht - 8}, {60.0, H - ht - 8}};  // ultimi: angoli in basso della vista
+    QRectF r(cand[0], QSizeF(wd, ht));
+    for (const QPointF& q : cand) {
+      const QRectF t(q, QSizeF(wd, ht));
+      if (t.left() < 2 || t.top() < 2 || t.right() > W - 2 || t.bottom() > H - 2) continue;
+      if (t.intersects(m_dynRects[0]) || t.intersects(m_dynRects[1])) continue;
+      r = t;
+      break;
+    }
+    r.moveLeft(std::clamp(r.left(), 2.0, std::max(2.0, W - wd - 2)));
+    r.moveTop(std::clamp(r.top(), 2.0, std::max(2.0, H - ht - 2)));
+    p.setPen(QColor(110, 110, 110));
+    p.setBrush(S.colors.dark ? QColor(40, 42, 46, 225) : QColor(255, 255, 225, 235));
+    p.drawRect(r);
+    p.setPen(S.colors.dark ? QColor(225, 225, 225) : QColor(30, 30, 30));
+    p.drawText(QRectF(r.left() + 6, r.top() + 2, wd, tm.height()), Qt::AlignLeft | Qt::AlignVCenter, tip);
+    p.setPen(QColor(120, 120, 120));
+    p.drawText(QRectF(r.left() + 6, r.top() + 3 + tm.height(), wd, tm.height()), Qt::AlignLeft | Qt::AlignVCenter, keys);
+  }
+  // tocco: mirino sul punto e linea verso il dito (il dito non copre il punto)
+  if (m_touch.pointMode) {
+    const QPointF c = m_hover;
+    p.setPen(QPen(accent, 1.5));
+    p.setBrush(Qt::NoBrush);
+    p.drawLine(c + QPointF(-14, 0), c + QPointF(14, 0));
+    p.drawLine(c + QPointF(0, -14), c + QPointF(0, 14));
+    p.setPen(QPen(accent, 1, Qt::DotLine));
+    p.drawLine(c, m_touch.finger);
+    p.drawEllipse(m_touch.finger, 18, 18);
+  }
+  p.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Tocco e Tab
+// ---------------------------------------------------------------------------
+bool Viewport::event(QEvent* e) {
+  switch (e->type()) {
+    case QEvent::TouchBegin:
+    case QEvent::TouchUpdate:
+    case QEvent::TouchEnd:
+    case QEvent::TouchCancel:
+      return TouchEvent(static_cast<QTouchEvent*>(e));
+    case QEvent::KeyPress: {
+      auto* k = static_cast<QKeyEvent*>(e);
+      if ((k->key() == Qt::Key_Tab || k->key() == Qt::Key_Backtab) && Shared().DynActive()) {
+        emit DynamicTab(k->key() == Qt::Key_Backtab);
+        return true;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return QOpenGLWidget::event(e);
+}
+
+// Il mirino sta 70 pixel sopra il dito: si vede dove cade il punto e l'osnap ha un raggio
+// di cattura piu' grande. Alzando il dito il punto viene dato al comando (come un clic).
+bool Viewport::TouchEvent(QTouchEvent* e) {
+  if (e->device() && e->device()->type() != QInputDevice::DeviceType::TouchScreen)
+    return QOpenGLWidget::event(e);  // touchpad: gestito come mouse da Qt
+  const auto& pts = e->points();
+  // posizione nella vista dalla posizione globale (vale anche per eventi costruiti a mano)
+  auto Local = [this](const QEventPoint& tp) { return QPointF(mapFromGlobal(tp.globalPosition())); };
+  int down = 0;
+  QPointF center;
+  for (const auto& tp : pts)
+    if (tp.state() != QEventPoint::State::Released) { down++; center += Local(tp); }
+  if (down) center /= down;
+  const Qt::KeyboardModifiers mods = Qt::NoModifier;
+  auto mouse = [&](QEvent::Type t, const QPointF& at, Qt::MouseButtons buttons) {
+    QMouseEvent me(t, at, mapToGlobal(at), Qt::LeftButton, buttons, mods);
+    if (t == QEvent::MouseButtonPress) mousePressEvent(&me);
+    else if (t == QEvent::MouseMove) mouseMoveEvent(&me);
+    else mouseReleaseEvent(&me);
+  };
+  const QPointF offset(0, -70);
+  const bool finished = e->type() == QEvent::TouchEnd || e->type() == QEvent::TouchCancel;
+
+  if (e->type() == QEvent::TouchBegin) {
+    m_touch = Touch();
+    setFocus();
+    emit Activated(this);
+    m_touch.finger = pts.isEmpty() ? QPointF() : Local(pts.first());
+    m_touch.fingers = down;
+    if (Shared().waitingForPoint) {
+      m_touch.field = DynamicFieldAt(m_touch.finger.toPoint());
+      m_touch.pointMode = m_touch.field < 0;
+      m_snapRadius = 22.0;
+      m_hover = (m_touch.finger + offset).toPoint();
+      m_hoverSnapLabel.clear();
+      m_hoverWorld = InputPoint(m_hover, &m_hoverSnapped, &m_hoverSnapLabel);
+      emit MouseWorld(m_hoverWorld);
+    } else {
+      m_touch.mouse = true;
+      mouse(QEvent::MouseButtonPress, m_touch.finger, Qt::LeftButton);
+    }
+    update();
+    e->accept();
+    return true;
+  }
+  if (!finished && down >= 2) {
+    double dist = 0;
+    for (const auto& tp : pts)
+      if (tp.state() != QEventPoint::State::Released) dist += QLineF(Local(tp), center).length();
+    dist /= down;
+    if (!m_touch.gesture) {
+      // passa ai gesti: annulla selezione a finestra o punto in corso
+      m_touch.gesture = true;
+      m_touch.pointMode = false;
+      m_touch.mouse = false;
+      m_windowSelecting = false;
+      m_dragButton = Qt::NoButton;
+      m_gripDrag = {};
+      m_gbDrag = {};
+      m_touch.lastCenter = center;
+      m_touch.lastDist = dist;
+      m_touch.fingers = down;
+    } else {
+      const QPointF d = center - m_touch.lastCenter;
+      if (down >= 3 && m_cam.kind == Camera::Kind::Perspective) {
+        m_cam.yaw -= d.x() * 0.01;
+        m_cam.pitch = std::clamp(m_cam.pitch + d.y() * 0.01, -1.55, 1.55);
+      } else {
+        if (m_touch.lastDist > 1 && dist > 1) {
+          const double f = m_touch.lastDist / dist;
+          m_cam.halfHeight *= f;
+          m_cam.distance *= f;
+        }
+        const double upp = m_cam.UnitsPerPixel(height());
+        m_cam.target = m_cam.target - m_cam.Right() * (d.x() * upp) + m_cam.Up() * (d.y() * upp);
+      }
+      m_touch.lastCenter = center;
+      m_touch.lastDist = dist;
+    }
+    update();
+    e->accept();
+    return true;
+  }
+  const QPointF pos = pts.isEmpty() ? m_touch.finger : Local(pts.first());
+  if (!finished) {
+    if (m_touch.pointMode) {
+      m_touch.finger = pos;
+      m_hover = (pos + offset).toPoint();
+      m_hoverSnapLabel.clear();
+      m_hoverWorld = InputPoint(m_hover, &m_hoverSnapped, &m_hoverSnapLabel);
+      emit MouseWorld(m_hoverWorld);
+    } else if (m_touch.mouse) {
+      mouse(QEvent::MouseMove, pos, Qt::LeftButton);
+    }
+    update();
+    e->accept();
+    return true;
+  }
+  // dito alzato
+  if (m_touch.field >= 0 && !m_touch.gesture && e->type() == QEvent::TouchEnd) {
+    emit DynamicFieldClicked(m_touch.field);
+  } else if (m_touch.pointMode && e->type() == QEvent::TouchEnd && Shared().waitingForPoint) {
+    const ON_3dPoint pt = Shared().pickOnObjects ? PointOnObjects(m_hover) : InputPoint(m_hover);
+    m_touch.pointMode = false;
+    emit PointPicked(pt);
+  } else if (m_touch.mouse) {
+    mouse(QEvent::MouseButtonRelease, pos, Qt::NoButton);
+  }
+  m_touch = Touch();
+  m_snapRadius = 10.0;
+  update();
+  e->accept();
+  return true;
 }
 
 }  // namespace cad::ui

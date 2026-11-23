@@ -81,6 +81,15 @@ private:
   Viewport* Active() { return m_active ? m_active : m_views[1]; }
   void BuildStatusBar();
   void OnPointPicked(ON_3dPoint p);
+  // Input dinamico: numeri, "<angolo", Tab e Invio durante la richiesta di un punto.
+  // true se il testo e' stato usato per le misure (non va al comando).
+  bool DynamicSubmit(const std::string& text);
+  void DynamicTab(bool backwards);
+  void DynamicCommit();
+  void DynamicRefresh();
+  // Quote automatiche dopo Line/Polyline/Rectangle/Polygon (pulsante "Quote auto")
+  void AutoDimensions();
+  void SaveDynamicSettings();
   void OnObjectsClicked(std::vector<ON_UUID> ids, bool add, bool remove);
   void ToggleMaximize(Viewport* v);
   void ShowSelectionFilter();
