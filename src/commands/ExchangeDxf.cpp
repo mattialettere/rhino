@@ -1839,7 +1839,37 @@ class DxfWriter {
   // Annotazioni: le quote come DIMENSION, il resto (testi, direttrici) come geometria.
   void Annotation(std::ostringstream& s, const Style& st, const ON_Annotation& a) {
     if (const auto* dim = ON_Dimension::Cast(&a); dim && m_model && Dimension(s, st, *dim)) return;
+    if (const auto* tx = ON_Text::Cast(&a); tx && m_model && TextObject(s, st, *tx)) return;
     Exploded(s, st, a);
+  }
+
+  // Testo di una riga nel piano XY: TEXT con lo stesso punto di inserimento e allineamento del
+  // testo (non la posizione misurata dei caratteri, che cambia da un computer all'altro).
+  bool TextObject(std::ostringstream& s, const Style& st, const ON_Text& t) {
+    const ON_Plane& pl = t.Plane();
+    if (std::fabs(pl.zaxis.z - 1) > 1e-9) return false;
+    const std::string text = ToUtf8(t.PlainText());
+    if (Trim(text).empty() || text.find_first_of("\r\n") != std::string::npos) return false;
+    const ON_DimStyle& style = t.DimensionStyle(ParentDimStyle(*m_model, t));
+    const double scale = t.DimScale(&style) > 0 ? t.DimScale(&style) : 1.0;
+    const double h = t.TextHeight(&style) * scale;
+    if (!(h > 0)) return false;
+    ON::TextHorizontalAlignment ha;
+    ON::TextVerticalAlignment va;
+    t.GetAlignment(ha, va);
+    const int h72 = ha == ON::TextHorizontalAlignment::Center ? 1 : ha == ON::TextHorizontalAlignment::Right ? 2 : 0;
+    const int v73 = va == ON::TextVerticalAlignment::Bottom ? 0
+                  : va == ON::TextVerticalAlignment::BottomOfBoundingBox ? 1
+                  : (va == ON::TextVerticalAlignment::Middle || va == ON::TextVerticalAlignment::MiddleOfTop) ? 2 : 3;
+    const double rot = std::atan2(pl.xaxis.y, pl.xaxis.x) * 180 / ON_PI;
+    Head(s, "TEXT", st);
+    Pt(s, 10, pl.origin);
+    s << "40\n" << h << "\n1\n" << text << "\n";
+    if (std::fabs(rot) > 1e-9) s << "50\n" << rot << "\n";
+    if (h72) s << "72\n" << h72 << "\n";
+    if (h72 || v73) Pt(s, 11, pl.origin);
+    if (v73) s << "73\n" << v73 << "\n";
+    return true;
   }
 
   // Nome dello stile di quota DXF con i valori effettivi della quota (stile + sostituzioni).
