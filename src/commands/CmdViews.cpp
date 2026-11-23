@@ -396,4 +396,22 @@ void RegisterViewCommands(Engine& e) {
   reg("Snapshots", "Viste", "Istantanee di vista, livelli e oggetti (Save, Restore, Delete, List)", CmdSnapshots, true);
 }
 
+std::vector<std::string> NamedItems(Engine& e, int kind) {
+  std::vector<std::string> out;
+  ONX_Model& m = e.Model();
+  if (kind == 0)
+    for (int i = 0; i < m.m_settings.m_named_views.Count(); i++) out.push_back(ToUtf8(m.m_settings.m_named_views[i].m_name));
+  else if (kind == 1)
+    for (int i = 0; i < m.m_settings.m_named_cplanes.Count(); i++) out.push_back(ToUtf8(m.m_settings.m_named_cplanes[i].m_name));
+  else {
+    const wchar_t* prefix = kind == 2 ? kSnapPrefix : kind == 3 ? L"Kurva3D.NamedSelection." : L"Kurva3D.LayerState.";
+    ON_ClassArray<ON_UserString> us;
+    m.GetDocumentUserStrings(us);
+    const int pl = (int)wcslen(prefix);
+    for (int i = 0; i < us.Count(); i++)
+      if (us[i].m_key.Left(pl) == prefix && !us[i].m_string_value.IsEmpty()) out.push_back(ToUtf8(us[i].m_key.Mid(pl)));
+  }
+  return out;
+}
+
 }  // namespace cad

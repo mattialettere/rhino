@@ -2,6 +2,7 @@
 // solo openNURBS: InsertKink, SoftEditCrv, SoftEditSrf, SoftMove, Stretch, Maelstrom,
 // MoveUVN, Cage, MeshFromLines, SplitEdge, JoinEdge, UnjoinEdge, RebuildEdges,
 // NamedSelections, LayerStateManager, Alias, CommandHistory.
+#include <cstdlib>
 #include "commands/Deform.h"
 #include "commands/Engine.h"
 #include <algorithm>
@@ -801,6 +802,72 @@ bool CmdLayerStateManager(Engine& e, TokenStream& ts) {
   return true;
 }
 
+// Alias: come la pagina Alias delle Opzioni di Rhino 8, dalla riga di comando.
+//   Alias              elenca gli alias
+//   Alias nome macro   crea o cambia (la macro puo' essere tra virgolette)
+//   Alias Delete nome  elimina
+bool CmdAlias(Engine& e, TokenStream& ts) {
+  auto unq = [](std::string s) {
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') s = s.substr(1, s.size() - 2);
+    return s;
+  };
+  if (ts.AtEnd() || IsEnter(ts.Peek())) {
+    e.SkipEnter(ts);
+    e.Out() << "  Alias: " << e.userAliases.size() << "\n";
+    for (const auto& [k, v] : e.userAliases) e.Out() << "    " << k << " = " << v << "\n";
+    return true;
+  }
+  auto n = e.ReadString(ts, "nome dell'alias (Delete per eliminarne uno)");
+  if (!n) return false;
+  std::string name = unq(*n);
+  if (NormalizeName(name) == "delete" || NormalizeName(name) == "elimina") {
+    auto d = e.ReadString(ts, "alias da eliminare");
+    if (!d) return false;
+    if (!e.userAliases.erase(NormalizeName(unq(*d)))) return e.Fail("alias inesistente: " + unq(*d));
+    if (e.aliasesChanged) e.aliasesChanged();
+    e.Out() << "  Alias \"" << unq(*d) << "\" eliminato\n";
+    return true;
+  }
+  const std::string key = NormalizeName(name);
+  if (key.empty()) return e.Fail("nome dell'alias vuoto");
+  if (e.FindCommand(name)) return e.Fail("\"" + name + "\" e' gia' il nome di un comando");
+  auto m = e.ReadString(ts, "macro (comandi da eseguire)");
+  if (!m) return false;
+  std::string macro = unq(*m);
+  // il resto della riga fa parte della macro (es. Alias ll _Line 0,0,0)
+  while (!ts.AtEnd() && !IsEnter(ts.Peek())) macro += " " + ts.Next();
+  e.userAliases[key] = macro;
+  if (e.aliasesChanged) e.aliasesChanged();
+  e.Out() << "  Alias \"" << name << "\" = " << macro << "\n";
+  return true;
+}
+
+// DocumentProperties (versione da riga di comando): tolleranze del modello.
+bool CmdDocumentProperties(Engine& e, TokenStream& ts) {
+  auto opts = e.ReadOptions(ts);
+  auto& ut = e.Model().m_settings.m_ModelUnitsAndTolerances;
+  bool changed = false;
+  auto num = [&](const char* k, double& dst, double lo) {
+    auto it = opts.find(k);
+    if (it == opts.end()) return true;
+    char* end = nullptr;
+    const double v = std::strtod(it->second.c_str(), &end);
+    if (!end || *end || !(v > lo)) return e.Fail(std::string("valore non valido per ") + k);
+    dst = v;
+    changed = true;
+    return true;
+  };
+  double angDeg = ut.m_angle_tolerance * 180.0 / ON_PI;
+  if (!num("absolutetolerance", ut.m_absolute_tolerance, 0)) return false;
+  if (!num("relativetolerance", ut.m_relative_tolerance, 0)) return false;
+  if (!num("angletolerance", angDeg, 0)) return false;
+  ut.m_angle_tolerance = angDeg * ON_PI / 180.0;
+  e.Out() << "  Tolleranza assoluta " << ut.m_absolute_tolerance << ", relativa " << ut.m_relative_tolerance
+          << ", angolare " << angDeg << " gradi\n";
+  (void)changed;
+  return true;
+}
+
 }  // namespace
 
 #ifndef CAD_WITH_OCCT
@@ -824,6 +891,8 @@ void RegisterMissingCommands(Engine& e) {
   reg("MeshFromLines", "Mesh", "Mesh dalle facce chiuse formate da linee", CmdMeshFromLines);
   reg("UnjoinEdge", "Solidi", "Separa le facce lungo uno spigolo", CmdUnjoinEdge);
   reg("NamedSelections", "Selezione", "Selezioni con nome (Save, Restore, Delete, List)", CmdNamedSelections);
+  reg("Alias", "Strumenti", "Alias dei comandi: nome -> macro (Delete per eliminarne uno)", CmdAlias, false);
+  reg("DocumentProperties", "Proprietà", "Tolleranze del modello (AbsoluteTolerance=, RelativeTolerance=, AngleTolerance=)", CmdDocumentProperties);
   reg("LayerStateManager", "Livelli", "Stati dei livelli con nome (Save, Restore, Delete, List)", CmdLayerStateManager);
 }
 

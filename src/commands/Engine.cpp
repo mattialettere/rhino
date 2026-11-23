@@ -167,11 +167,38 @@ bool Engine::Fail(const std::string& message) {
   return false;
 }
 
-bool Engine::Run(const std::string& script) {
+std::string Engine::ExpandUserAlias(const std::string& script) const {
+  if (userAliases.empty()) return script;
+  size_t b = script.find_first_not_of(" \t");
+  if (b == std::string::npos) return script;
+  size_t e = script.find_first_of(" \t\r\n", b);
+  if (e == std::string::npos) e = script.size();
+  std::string w = script.substr(b, e - b);
+  while (!w.empty() && (w[0] == '_' || w[0] == '-' || w[0] == '!')) w.erase(0, 1);
+  const auto it = userAliases.find(NormalizeName(w));
+  if (it == userAliases.end() || FindCommand(w)) return script;
+  return script.substr(0, b) + it->second + script.substr(e);
+}
+
+bool Engine::Run(const std::string& script0) {
+  const std::string script = ExpandUserAlias(script0);
   TokenStream ts(script);
   while (!ts.AtEnd()) {
     std::string t = ts.Next();
     if (IsEnter(t)) continue;
+    if (!FindCommand(t)) {
+      // alias dell'utente in mezzo a uno script: si esegue la sua macro
+      const auto al = userAliases.find(NormalizeName(t));
+      if (al != userAliases.end()) {
+        static int depth = 0;
+        if (depth > 8) return Fail("alias ricorsivo: " + t);
+        depth++;
+        const bool ok = Run(al->second);
+        depth--;
+        if (!ok) return false;
+        continue;
+      }
+    }
     if (!RunCommand(t, ts)) return false;
   }
   return true;
@@ -201,7 +228,8 @@ bool Engine::Transaction(const std::string& name, const std::function<bool()>& f
   return true;
 }
 
-Engine::Result Engine::RunInteractive(const std::string& script, std::string* pending) {
+Engine::Result Engine::RunInteractive(const std::string& script0, std::string* pending) {
+  const std::string script = ExpandUserAlias(script0);
   TokenStream ts(script, false);
   if (pending) pending->clear();
   while (!ts.AtEnd()) {

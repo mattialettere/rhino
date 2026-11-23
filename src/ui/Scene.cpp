@@ -445,6 +445,12 @@ void Scene::Rebuild() {
     DisplayObject d;
     d.id = id;
     d.color = (a->ColorSource() == ON::color_from_object) ? a->m_color : (layer ? layer->Color() : ON_Color::Black);
+    d.plotColor = (a->PlotColorSource() == ON::plot_color_from_object) ? a->m_plot_color
+                : (a->PlotColorSource() == ON::plot_color_from_display) ? d.color
+                : (layer ? layer->PlotColor() : d.color);
+    if (d.plotColor == ON_Color::UnsetColor) d.plotColor = d.color;
+    d.plotWeight = (a->PlotWeightSource() == ON::plot_weight_from_object) ? a->m_plot_weight_mm
+                 : (layer ? layer->PlotWeight() : 0.0);
     d.locked = a->Mode() == ON::object_mode::locked_object;
     g->GetTightBoundingBox(d.bbox);
     char key[64];
@@ -568,6 +574,12 @@ void Scene::AddWorksession(std::map<std::string, std::shared_ptr<ON_Mesh>>& newC
       DisplayObject d;
       d.id = mgc->Id();
       d.color = (a->ColorSource() == ON::color_from_object) ? a->m_color : (layer ? layer->Color() : ON_Color::Black);
+    d.plotColor = (a->PlotColorSource() == ON::plot_color_from_object) ? a->m_plot_color
+                : (a->PlotColorSource() == ON::plot_color_from_display) ? d.color
+                : (layer ? layer->PlotColor() : d.color);
+    if (d.plotColor == ON_Color::UnsetColor) d.plotColor = d.color;
+    d.plotWeight = (a->PlotWeightSource() == ON::plot_weight_from_object) ? a->m_plot_weight_mm
+                 : (layer ? layer->PlotWeight() : 0.0);
       d.locked = true;
       g->GetTightBoundingBox(d.bbox);
       char key[64];
