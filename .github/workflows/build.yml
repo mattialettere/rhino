@@ -40,11 +40,11 @@ jobs:
           # la cache precedente (solo OpenCASCADE) evita di ricompilarlo: si aggiunge Assimp
           restore-keys: |
             vcpkg-opencascade-win64-v1
-      - name: OpenCASCADE e Assimp (vcpkg)
+      - name: OpenCASCADE (vcpkg)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install opencascade:x64-windows assimp:x64-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install opencascade:x64-windows
       - name: Cache vcpkg (salvataggio)
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -53,6 +53,27 @@ jobs:
           key: vcpkg-win64-v2
 
       # Qt 6 precompilato
+      # Assimp (BSD) per FBX/Collada/3DS/DirectX: compilato dal sorgente con la sua zlib e
+      # il suo zip interni (il port vcpkg dipende da kubazip, il cui archivio GitHub ha
+      # cambiato hash e blocca l'installazione).
+      - name: Cache Assimp
+        id: assimp-cache
+        uses: actions/cache@v4
+        with:
+          path: assimp-install
+          key: assimp-5.4.3-win64-v1
+      - name: Assimp 5.4.3 (sorgente)
+        if: steps.assimp-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          git clone --depth 1 --branch v5.4.3 https://github.com/assimp/assimp.git "$env:RUNNER_TEMP\assimp"
+          cmake -S "$env:RUNNER_TEMP\assimp" -B "$env:RUNNER_TEMP\assimp-build" -G "Visual Studio 17 2022" -A x64 `
+            -DBUILD_SHARED_LIBS=ON -DASSIMP_BUILD_TESTS=OFF -DASSIMP_BUILD_ASSIMP_TOOLS=OFF `
+            -DASSIMP_BUILD_SAMPLES=OFF -DASSIMP_INSTALL_PDB=OFF -DASSIMP_WARNINGS_AS_ERRORS=OFF `
+            -DASSIMP_BUILD_ZLIB=ON -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}\assimp-install"
+          cmake --build "$env:RUNNER_TEMP\assimp-build" --config Release --parallel
+          cmake --install "$env:RUNNER_TEMP\assimp-build" --config Release
+
       - name: Qt 6
         uses: jurplel/install-qt-action@v4
         with:
@@ -73,7 +94,7 @@ jobs:
         run: >
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
-          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR;${{ github.workspace }}/assimp-install"
           -DPython3_ROOT_DIR="$env:pythonLocation" -DPython3_FIND_REGISTRY=NEVER
 
       - name: Compila
@@ -83,6 +104,7 @@ jobs:
         shell: pwsh
         run: |
           $env:KURVA3D_PYTHONHOME = $env:pythonLocation
+          $env:PATH = "${{ github.workspace }}\assimp-install\bin;$env:PATH"
           ctest --test-dir build -C Release --output-on-failure
 
       - name: Prepara lo zip
@@ -93,6 +115,7 @@ jobs:
           Copy-Item build\Release\*.exe dist\ -ErrorAction SilentlyContinue
           Copy-Item build\Release\*.dll dist\ -ErrorAction SilentlyContinue
           Copy-Item "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\*.dll" dist\ -ErrorAction SilentlyContinue
+          Copy-Item assimp-install\bin\*.dll dist\ -ErrorAction SilentlyContinue
           if (Test-Path dist\kurva3d.exe) { windeployqt --release --no-translations dist\kurva3d.exe }
           # runtime di Visual C++ accanto all'exe: parte anche sui PC senza "VC++ Redistributable"
           foreach ($d in 'msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','concrt140.dll') {
