@@ -922,6 +922,12 @@ void Viewport::paintGL() {
       if (!obj.shaded) continue;
       float col[4] = {obj.selected ? 0.95f : 0.82f, obj.selected ? 0.9f : 0.82f, obj.selected ? 0.45f : 0.82f,
                       transparent ? 0.35f : 1.f};
+      if (!rendered && !obj.selected && mode == DisplayMode::Shaded && obj.color != ON_Color::Black) {
+        // Ombreggiato: colore dell'oggetto o del livello, come in Rhino (il nero predefinito resta grigio chiaro)
+        col[0] = 0.15f + 0.85f * (float)obj.color.FractionRed();
+        col[1] = 0.15f + 0.85f * (float)obj.color.FractionGreen();
+        col[2] = 0.15f + 0.85f * (float)obj.color.FractionBlue();
+      }
       if (rendered && !obj.selected) {  // colore del materiale (bianco se non c'e')
         const ON_Color mc = obj.hasMaterial ? obj.material : ON_Color(235, 235, 235);
         col[0] = (float)mc.FractionRed();

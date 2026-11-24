@@ -64,7 +64,9 @@ add_library(cadcore STATIC
   src/commands/Grips.h
   src/ai/Assistant.cpp
   src/ai/Assistant.h
-  src/ai/Hardware.cpp)
+  src/ai/Examples.cpp
+  src/ai/Hardware.cpp
+  src/ai/Plan.cpp)
 target_include_directories(cadcore PUBLIC src)
 
 # Motore geometrico opzionale: OpenCASCADE (booleane, raccordi, offset, ...)

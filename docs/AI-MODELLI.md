@@ -97,3 +97,47 @@ Banco dei 9 oggetti in CI (CPU Windows, grammatica attiva, una richiesta per pro
 - Prossimo passo: tutti i 3000 esempi per 2 giri (GPU a noleggio) con piu' sedie e lampade.
 
 Prova: Actions -> Build -> Run workflow, campo "gguf_url" con il link al file (es. Google Drive).
+
+## Oggetti complessi: lavoro per parti (24/11/2026)
+
+Prima di questo cambiamento l'assistente scriveva tutto lo script in una volta, con 6 esempi
+fissi (tavoli, sedia, lampada, tazza) e solo forme semplici (box, cilindri, tubi): un violino
+richiedeva decine di coordinate coerenti e nessuno dei modelli locali ci riusciva.
+
+Ora, con i modelli non addestrati (Qwen3, Qwen2.5-Coder), l'assistente lavora per parti:
+
+1. **Piano** (`ai::PlanSystemPrompt`, grammatica `ai::PlanGrammar`): il modello scrive un blocco
+   ```plan con una riga `# ...` (misure e orientamento) e una riga per parte:
+   `PART Nome | cosa e' e con quali comandi | x0,y0,z0 x1,y1,z1` (ingombro minimo e massimo).
+2. **Parti**: per ogni parte una richiesta separata ("Part 3 of 7: Fingerboard ... box ..."),
+   risposta in un blocco ```kurva con la grammatica dei comandi. Kurva3D la esegue subito su una
+   copia del documento insieme alle parti gia' fatte (`ai::CheckPart`): se un comando fallisce o se
+   la parte finisce fuori dal suo ingombro (centro spostato o misura molto piu' grande) il modello
+   riceve l'errore con le misure e corregge solo quella parte (al massimo 2 volte). Una parte che
+   non riesce viene lasciata fuori e segnalata; nella conversazione restano solo le risposte giuste.
+   Se nemmeno il piano riesce, si torna allo script in una volta.
+3. **Forme composte** (estensioni per l'AI, diventano comandi normali): `_SymCurve` contorno
+   simmetrico (chitarre, violini, scafi, carrozzerie), `_SectionLoft` sezioni ellittiche (manici,
+   fusoliere, beccucci, pinne), `_Lathe` profili di rivoluzione (vasi, bottiglie, tazze, paralumi),
+   `_Plate` lastre in qualsiasi piano (ali, vele, ponticelli), `_PipeThrough` tubi e corde, e
+   `@Nome` alla fine dei comandi che agiscono sugli oggetti (niente piu' `_SelNone`/`_SelName`).
+4. **Esempi scelti in base alla richiesta** (`ai::Examples`, `ai::SelectExamples`): 11 oggetti
+   completi (piano + parti), nelle istruzioni entrano i 2 piu' vicini alla richiesta (parole
+   italiane e inglesi, senza accenti), altrimenti chitarra e tavolo. Tutti verificati dai test,
+   parte per parte, compreso l'ingombro. `kurva3d-ai-test --examples cartella` li salva in .3dm.
+5. Contesto di llama-server portato a 16384 token con una sola conversazione (`-np 1`): istruzioni
+   e 2 esempi sono circa 16000 caratteri, ma i modelli Qwen contano ogni cifra come un token.
+
+Il modello addestrato su Kurva3D (`finetuned`) continua a scrivere lo script in una volta con
+le istruzioni brevi (`tools/ai-train/system_prompt.txt` invariato): non conosce il formato a parti.
+
+### Prove
+
+- Senza modello: `python3 tools/ai-test/fake_llama_server.py 8099 --break` risponde con gli
+  esempi della libreria e sbaglia apposta la prima risposta di due parti (comando inesistente,
+  parte spostata di 5 metri); `kurva3d-ai-test --bench-complex --port 8099` verifica piano,
+  parti e correzioni. In CI Windows a ogni push.
+- Con i modelli veri: Actions -> Build -> Run workflow con "ai_complessi" (o `[ai-complessi]` nel
+  messaggio del commit): Qwen3 4B e 8B su violino (anche senza l'esempio del violino), violoncello,
+  chitarra elettrica, bicicletta, automobile sportiva, elicottero, teiera; i modelli ottenuti e i
+  loro screenshot sono nell'artifact `kurva3d-ai-complessi`.

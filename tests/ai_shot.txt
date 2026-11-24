@@ -1,0 +1,5 @@
+; vista per gli screenshot dei risultati dell assistente AI (banco degli oggetti complessi)
+_SetDisplayMode Shaded
+_SetActiveViewport Perspective
+_MaxViewport
+_ZoomExtents

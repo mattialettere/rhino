@@ -1416,6 +1416,20 @@ void MainWindow::Submit(const QString& text) {
   }
   const std::string norm = NormalizeName(t);
   if (norm == "zoom" || norm == "zea" || norm == "zoomextents") { ZoomExtentsAll(); return; }
+  // Come Rhino: MaxViewport ingrandisce o ripristina la vista attiva; SetActiveViewport Nome la sceglie
+  if (m_pending.empty() && norm == "maxviewport") { ToggleMaximize(Active()); return; }
+  if (m_pending.empty() && NormalizeName(t.substr(0, t.find(' '))) == "setactiveviewport") {
+    const std::string name = t.find(' ') == std::string::npos ? std::string() : NormalizeName(t.substr(t.find(' ') + 1));
+    for (auto* v : m_views)
+      if (NormalizeName(v->Title().toStdString()) == name) {
+        m_active = v;
+        v->setFocus();
+        Log("Vista attiva: " + v->Title());
+        return;
+      }
+    Log("SetActiveViewport: vista non trovata");
+    return;
+  }
   if (norm == "zoomselected" || norm == "zs") {
     ON_BoundingBox bb;
     for (const auto& obj : m_scene.Objects()) if (obj.selected) bb.Union(obj.bbox);

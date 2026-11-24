@@ -100,6 +100,7 @@ AiPanel::AiPanel(cad::Engine& engine, std::function<void()> afterChange, QWidget
       return;
     }
     ApplyPreview(script);
+    if (!err.isEmpty()) m_status->setText(m_status->text() + " Attenzione: " + err + ".");
     if (m_task) {
       const bool changed = m_previewing;
       Confirm();
@@ -174,7 +175,7 @@ void AiPanel::Generate() {
   if (req.isEmpty()) { m_status->setText("Scrivi prima che cosa vuoi creare."); return; }
   if (m_previewing) Discard();
   SetBusy(true, "Preparazione…");
-  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req, 3, true, QString::fromStdString(ai::SystemPromptFor(ai::FindModel(CurrentModelId().toStdString())))); });
+  EnsureServer([this, req] { m_gen.Start(m_server.Port(), req, ai::FindModel(CurrentModelId().toStdString())); });
 }
 
 void AiPanel::ApplyPreview(const QStringList& script) {
@@ -253,7 +254,7 @@ void AiPanel::StartNextTask() {
   m_request->setPlainText(m_task->text);
   SetBusy(true, "Compito da " + m_task->from + "…");
   const QString req = m_task->text;
-  EnsureServer([this, req] { m_gen.Run(m_server.Port(), req, 3, true, QString::fromStdString(ai::SystemPromptFor(ai::FindModel(CurrentModelId().toStdString())))); }, [this](const QString& err) { FinishTask(err); });
+  EnsureServer([this, req] { m_gen.Start(m_server.Port(), req, ai::FindModel(CurrentModelId().toStdString())); }, [this](const QString& err) { FinishTask(err); });
 }
 
 void AiPanel::FinishTask(const QString& result) {

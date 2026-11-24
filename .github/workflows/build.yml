@@ -13,6 +13,10 @@ on:
         description: "Compila anche per Mac e allega i dmg alla release del file RELEASE"
         type: boolean
         default: false
+      ai_complessi:
+        description: "Banco degli oggetti complessi (violino, bicicletta, elicottero...) con Qwen3 4B e 8B, con gli screenshot dei risultati"
+        type: boolean
+        default: false
       gguf_url:
         description: "Link a un modello GGUF addestrato (es. Google Drive), oppure 'catalogo' per il modello addestrato di Kurva3D: banco dei 9 oggetti"
         type: string
@@ -197,6 +201,56 @@ jobs:
         run: |
           $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
           & dist\kurva3d-ai-test.exe --bench --models qwen3-4b,qwen2.5-coder-7b,qwen3-8b
+
+      # Lavoro per parti (piano + parti + correzioni) con un server di prova che risponde con
+      # gli esempi della libreria, sbagliando apposta la prima risposta di due parti
+      - name: Prova del lavoro per parti dell'assistente AI (server di prova)
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          $srv = Start-Process -FilePath python -ArgumentList "tools/ai-test/fake_llama_server.py", "8099", "--break" -PassThru
+          Start-Sleep -Seconds 2
+          foreach ($k in 0, 7) {
+            & dist\kurva3d-ai-test.exe --bench-complex --port 8099 --case $k
+            if ($LASTEXITCODE -ne 0) { $srv.Kill(); throw "lavoro per parti non riuscito (richiesta $k)" }
+          }
+          & dist\kurva3d-ai-test.exe --examples "$env:RUNNER_TEMP"
+          if ($LASTEXITCODE -ne 0) { $srv.Kill(); throw "esempi dell'assistente non validi" }
+          $srv.Kill()
+
+      # Oggetti complessi con modelli veri (Actions -> Build -> Run workflow "ai_complessi", oppure
+      # [ai-complessi] nel messaggio del commit): lavoro per parti, un processo per richiesta,
+      # risultati salvati e fotografati con kurva3d.exe
+      - name: Banco di prova AI (oggetti complessi)
+        if: contains(github.event.head_commit.message, '[ai-complessi]') || (github.event_name == 'workflow_dispatch' && inputs.ai_complessi)
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 240
+        run: |
+          $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
+          $out = "$env:RUNNER_TEMP\ai-complessi"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          # prima Qwen3 8B (consigliato con 16 GB) su tutto, poi Qwen3 4B su violino, bicicletta ed elicottero
+          $jobs = @(0..7 | ForEach-Object { ,@("qwen3-8b", $_) }) + @(0, 1, 4, 6 | ForEach-Object { ,@("qwen3-4b", $_) })
+          foreach ($j in $jobs) {
+            $m = $j[0]; $k = $j[1]
+            & dist\kurva3d-ai-test.exe --bench-complex --case $k --models $m --save-dir $out
+            if ($LASTEXITCODE -ne 0) { Write-Output "RICHIESTA ${k} ($m): il programma si e' fermato (codice $LASTEXITCODE)" }
+          }
+          foreach ($f in Get-ChildItem "$out\*.3dm") {
+            $png = [IO.Path]::ChangeExtension($f.FullName, ".png")
+            $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList "`"$($f.FullName)`"", '--no-whats-new', '--script', "$PWD\tests\ai_shot.txt", '--screenshot', "`"$png`"", '--wait', '2500' -PassThru
+            if (-not $p.WaitForExit(120000)) { $p.Kill() }
+          }
+          Get-ChildItem $out | Format-Table Name, Length
+
+      - name: Risultati del banco degli oggetti complessi
+        if: contains(github.event.head_commit.message, '[ai-complessi]') || (github.event_name == 'workflow_dispatch' && inputs.ai_complessi)
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-ai-complessi
+          path: ${{ runner.temp }}\ai-complessi
 
       # Modello addestrato (tools/ai-train): stesso banco, istruzioni brevi; poi Qwen3 4B di
       # base con le istruzioni complete, per il confronto

@@ -4,6 +4,7 @@
 // dei modelli (solo licenze Apache 2.0 o MIT), hardware, istruzioni per il
 // modello, lettura della risposta e verifica dei comandi su una copia del documento.
 #pragma once
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -73,12 +74,18 @@ struct CommandSpec {
 };
 const std::vector<CommandSpec>& CommandSpecs();
 const CommandSpec* FindSpec(const std::string& commandName);
+// Il comando agisce sugli oggetti selezionati e accetta le destinazioni "@Nome" alla fine?
+bool AcceptsTargets(const CommandSpec& c);
 // La riga rispetta la forma degli argomenti del suo comando? (comandi fuori tabella: true)
 bool ArgumentsMatch(const std::string& line);
 // Grammatica GBNF di llama.cpp: la risposta puo' essere solo un blocco ```kurva
 // con righe di commento "# ..." e comandi della tabella scritti nella forma giusta.
 std::string Grammar();
 
+// Comando composto per l'AI (forme per oggetti complessi: _SymCurve, _SectionLoft, ...)?
+bool IsShapeHelper(const CommandSpec& c);
+// Regole e comandi del linguaggio (helpers: anche forme composte, @Nome e consigli per oggetti complessi).
+std::string CommandReference(bool helpers);
 // Istruzioni di sistema per il modello (linguaggio dei comandi ed esempi).
 std::string SystemPrompt();
 // Istruzioni senza gli script di esempio: per i modelli addestrati su Kurva3D
@@ -92,8 +99,12 @@ std::vector<std::string> ReferenceExamples();
 // Comandi estratti dalla risposta del modello (blocco ```kurva o righe che
 // iniziano con "_"); toglie il ragionamento <think>...</think>.
 std::vector<std::string> ExtractScript(const std::string& reply);
-// Traduce le estensioni per l'AI in comandi normali: "comando ... => Nome" da'
-// il nome Nome agli oggetti creati dal comando.
+// Traduce le estensioni per l'AI in comandi normali di Kurva3D:
+//  - "comando ... => Nome" da' il nome Nome agli oggetti creati dal comando;
+//  - "comando ... @A @B" seleziona prima gli oggetti chiamati A e B;
+//  - forme composte: _SymCurve (contorno simmetrico chiuso), _SectionLoft (solido per
+//    sezioni ellittiche), _Lathe (solido di rivoluzione da coppie raggio,altezza),
+//    _PipeThrough (tubo lungo una curva per punti).
 std::vector<std::string> ExpandScript(const std::vector<std::string>& lines, std::vector<int>* origin = nullptr);
 
 struct Validation {
@@ -103,10 +114,58 @@ struct Validation {
   int created = 0;      // oggetti presenti alla fine
 };
 // Esegue lo script su una copia del documento dell'engine (il documento vero non cambia).
-Validation Validate(Engine& e, const std::vector<std::string>& lines);
+// after: chiamata con l'engine della copia se lo script e' valido (per misurare il risultato).
+Validation Validate(Engine& e, const std::vector<std::string>& lines, const std::function<void(Engine&)>& after = {});
 // Messaggio per chiedere al modello di correggere lo script.
 std::string RepairRequest(const std::vector<std::string>& lines, const Validation& v);
 // Comandi che l'assistente non puo' usare (file, annulla, ecc.).
 bool CommandAllowed(const std::string& name);
+
+// --- Oggetti complessi: piano in parti ---------------------------------------------------
+// Il modello scrive prima un piano (blocco ```plan con una riga "PART Nome | cosa e come | x0,y0,z0 x1,y1,z1"
+// per parte) e poi i comandi di una parte alla volta; ogni parte viene verificata subito,
+// anche nella posizione (deve stare nel suo ingombro del piano).
+struct PlanPart {
+  std::string name, what;
+  double box[6] = {0, 0, 0, 0, 0, 0};  // minimo x,y,z e massimo x,y,z
+};
+struct Plan {
+  std::string summary;  // riga "# ..." iniziale
+  std::vector<PlanPart> parts;
+};
+// Legge il piano dalla risposta; error spiega cosa non va (in inglese, per il modello).
+bool ParsePlan(const std::string& reply, Plan& plan, std::string* error = nullptr);
+// Grammatica GBNF del piano.
+std::string PlanGrammar();
+// Istruzioni per lavorare per parti, con gli esempi piu' vicini alla richiesta.
+// exclude: id di un esempio da non usare (per le prove di generalizzazione).
+std::string PlanSystemPrompt(const std::string& request, const std::string& exclude = {});
+// Primo messaggio (richiesta + "scrivi il piano") e richiesta dei comandi della parte i.
+std::string PlanRequest(const std::string& request);
+std::string PartRequest(const Plan& plan, int i);
+// Verifica la parte i: lo script delle parti precedenti (gia' valido) seguito da quello
+// della parte. In caso di errore v.line e' la riga dello script della parte.
+Validation CheckPart(Engine& e, const std::vector<std::string>& before, const std::vector<std::string>& part,
+                     const Plan& plan, int i);
+std::string PartRepairRequest(const Plan& plan, int i, const std::vector<std::string>& part, const Validation& v);
+
+// Esempi completi (piano + parti), verificati dai test; scelti in base alla richiesta.
+struct ExamplePart {
+  const char* name;
+  const char* script;
+};
+struct Example {
+  const char* id;        // es. "violino"
+  const char* keywords;  // parole (o inizi di parole) che lo richiamano, separate da spazi
+  const char* request;
+  const char* plan;      // contenuto del blocco ```plan
+  std::vector<ExamplePart> parts;
+};
+const std::vector<Example>& Examples();
+std::vector<const Example*> SelectExamples(const std::string& request, int count, const std::string& exclude = {});
+// Tutte le righe di comando dell'esempio, parte dopo parte.
+std::vector<std::string> ExampleScript(const Example& ex);
+// Testo dell'esempio come appare nelle istruzioni (piano e parti).
+std::string FormatExample(const Example& ex);
 
 }  // namespace cad::ai
