@@ -408,8 +408,12 @@ void Generator::Send() {
 void Generator::OnReply(const QString& content) {
   if (m_phase == Phase::Plan) {
     std::string err;
-    if (ai::ParsePlan(content.toStdString(), m_plan, &err) &&
-        (err = ai::CheckPlan(m_plan, m_request.toStdString(), m_exclude.toStdString())).empty()) {
+    const bool parsed = ai::ParsePlan(content.toStdString(), m_plan, &err);
+    if (parsed) err = ai::CheckPlan(m_plan, m_request.toStdString(), m_exclude.toStdString());
+    // piano valido; oppure leggibile ma con dei difetti dopo tutte le correzioni: si usa comunque
+    // (le parti sono verificate una per una), meglio che rinunciare al lavoro per parti
+    if (parsed && (err.empty() || m_repairs >= m_maxRepairs)) {
+      if (!err.empty()) m_repairLog << "piano usato con questo difetto: " + QString::fromStdString(err);
       m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
       QStringList names;
       for (const auto& p : m_plan.parts) names << QString::fromStdString(p.name);

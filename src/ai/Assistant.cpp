@@ -1007,11 +1007,28 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines, const std:
   return v;
 }
 
+std::string ErrorHint(const std::string& error) {
+  // messaggi di Kurva3D (in italiano) spiegati al modello in inglese
+  static const std::pair<const char*, const char*> hints[] = {
+      {"parallelepipedo degenere",
+       "the box is flat: _Box needs a base corner x0,y0,z0, the opposite base corner x1,y1 that differs in x AND in y, "
+       "then the height as a number"},
+      {"tubo non riuscito", "the pipe failed: use a path whose points are not all in the same place and a smaller radius"},
+      {"nessuna curva selezionata", "no curve was selected: name the curve with => Name and use it with @Name"},
+      {"seleziona prima l'oggetto da cui sottrarre",
+       "_BooleanDifference needs @Body first and then the cutting objects: _BooleanDifference @Body @Cutter => Body"},
+      {"nessun oggetto selezionato", "no object was selected: use @Name with the name of an existing object"},
+  };
+  for (const auto& [it, en] : hints)
+    if (error.find(it) != std::string::npos) return std::string(" (") + en + ")";
+  return {};
+}
+
 std::string RepairRequest(const std::vector<std::string>& lines, const Validation& v) {
   std::ostringstream o;
   o << "Line " << (v.line + 1) << " of your script fails";
   if (v.line >= 0 && v.line < (int)lines.size()) o << " (" << lines[v.line] << ")";
-  o << ": " << v.error << ". Answer again with the whole corrected script in a ```kurva block.";
+  o << ": " << v.error << ErrorHint(v.error) << ". Answer again with the whole corrected script in a ```kurva block.";
   return o.str();
 }
 
