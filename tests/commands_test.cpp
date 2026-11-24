@@ -2356,8 +2356,8 @@ int main(int argc, char** argv) {
       ai::ParsePlan("PART Top | piano | 0,0,710 1200,800,750\nPART Legs | gambe | 40,40,0 1160,760,712", plan);
       const std::vector<std::string> top = {"_Box 0,0,710 1200,800 40 => Top"};
       CHECK(ai::CheckPart(c.e, {}, top, plan, 0).ok);
-      const auto far = ai::CheckPart(c.e, top, {"_Box 40,40,3000 100,100 712 => Legs"}, plan, 1);
-      CHECK(!far.ok && far.line == -1 && far.error.find("along Z") != std::string::npos);
+      const auto away = ai::CheckPart(c.e, top, {"_Box 40,40,3000 100,100 712 => Legs"}, plan, 1);
+      CHECK(!away.ok && away.line == -1 && away.error.find("along Z") != std::string::npos);
       const auto bad = ai::CheckPart(c.e, top, {"_Box 40,40,0 100,100 712 => Legs", "_Volare"}, plan, 1);
       CHECK(!bad.ok && bad.line == 1);
       CHECK(ai::PartRepairRequest(plan, 1, {"_Box 40,40,0 100,100 712 => Legs", "_Volare"}, bad).find("Line 2 of part Legs") == 0);
