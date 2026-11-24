@@ -164,7 +164,11 @@ bool CmdArc(Engine& e, TokenStream& ts) {
 }
 
 // Ellipse: centro, fine del primo asse, fine del secondo asse.
+// Ellipse: centro, fine del primo asse, fine del secondo asse, parallela al piano XY.
+// Opzione Vertical (come in Rhino): il secondo asse e' perpendicolare al piano XY.
 bool CmdEllipse(Engine& e, TokenStream& ts) {
+  bool vertical = false;
+  while (!ts.AtEnd() && NormalizeName(ts.Peek()) == "vertical") { ts.Next(); vertical = true; }
   auto c = e.ReadPoint(ts, "centro dell'ellisse");
   if (!c) return false;
   auto a = e.ReadPoint(ts, "fine del primo asse");
@@ -175,7 +179,7 @@ bool CmdEllipse(Engine& e, TokenStream& ts) {
   x.z = 0;
   const double r1 = x.Length();
   x.Unitize();
-  ON_3dVector y = ON_CrossProduct(ON_3dVector::ZAxis, x);
+  ON_3dVector y = vertical ? ON_3dVector::ZAxis : ON_CrossProduct(ON_3dVector::ZAxis, x);
   const double r2 = std::fabs((*b - *c) * y);
   if (r1 <= e.Tolerance() || r2 <= e.Tolerance()) return e.Fail("ellisse degenere");
   ON_Ellipse ellipse(ON_Plane(*c, x, y), r1, r2);
@@ -218,7 +222,8 @@ bool CmdInterpCrv(Engine& e, TokenStream& ts) {
   auto pts = ReadPointList(e, ts, close, ok);
   if (!ok) return false;
   if (pts.size() < 2) return e.Fail("servono almeno 2 punti");
-  ON_NurbsCurve* c = InterpolateCubic(pts);
+  // Close: curva periodica (chiusa e liscia anche nel punto di chiusura), come in Rhino
+  ON_NurbsCurve* c = close && pts.size() >= 3 ? InterpolateClosedCubic(pts) : InterpolateCubic(pts);
   if (!c) return e.Fail("interpolazione non riuscita");
   return Report(e, e.AddObject(c), "curva interpolata");
 }
@@ -289,6 +294,63 @@ ON_NurbsCurve* InterpolateCubic(const std::vector<ON_3dPoint>& points) {
   }
   for (int i = 0; i < m; i++)
     c->SetCV(i, ON_3dPoint(B[i][0] / A[i][i], B[i][1] / A[i][i], B[i][2] / A[i][i]));
+  if (!c->IsValid()) { delete c; return nullptr; }
+  return c;
+}
+
+// Spline cubica periodica per n punti (chiusa: dopo l'ultimo punto torna al primo).
+// Nodi ai parametri a lunghezza di corda, n punti di controllo indipendenti
+// (piu' 3 ripetuti per la periodicita').
+ON_NurbsCurve* InterpolateClosedCubic(const std::vector<ON_3dPoint>& points) {
+  std::vector<ON_3dPoint> pts;
+  for (const auto& p : points)
+    if (pts.empty() || pts.back().DistanceTo(p) > ON_ZERO_TOLERANCE) pts.push_back(p);
+  while (pts.size() > 1 && pts.back().DistanceTo(pts.front()) <= ON_ZERO_TOLERANCE) pts.pop_back();
+  const int n = static_cast<int>(pts.size());
+  if (n < 3) return nullptr;
+  std::vector<double> t(n + 1, 0.0);
+  for (int i = 1; i <= n; i++) t[i] = t[i - 1] + pts[i % n].DistanceTo(pts[i - 1]);
+  const double T = t[n];
+  const int m = n + 3;  // punti di controllo (gli ultimi 3 uguali ai primi 3)
+  auto* c = new ON_NurbsCurve(3, false, 4, m);
+  int k = 0;
+  c->m_knot[k++] = t[n - 2] - T;
+  c->m_knot[k++] = t[n - 1] - T;
+  for (int i = 0; i <= n; i++) c->m_knot[k++] = t[i];
+  c->m_knot[k++] = t[1] + T;
+  c->m_knot[k++] = t[2] + T;
+  // matrice delle funzioni base (le incognite sono i primi n punti di controllo)
+  std::vector<std::vector<double>> A(n, std::vector<double>(n, 0.0));
+  ON_NurbsCurve basis(1, false, 4, m);
+  for (int i = 0; i < basis.KnotCount(); i++) basis.m_knot[i] = c->m_knot[i];
+  for (int j = 0; j < n; j++) {
+    for (int i = 0; i < m; i++) basis.m_cv[i] = (i % n == j && (i < n || i - n < 3)) ? 1.0 : 0.0;
+    double v[1];
+    for (int i = 0; i < n; i++) {
+      basis.Evaluate(t[i], 0, 1, v, 1);
+      A[i][j] = v[0];
+    }
+  }
+  std::vector<std::vector<double>> B(n, std::vector<double>(3, 0.0));
+  for (int i = 0; i < n; i++) { B[i][0] = pts[i].x; B[i][1] = pts[i].y; B[i][2] = pts[i].z; }
+  for (int col = 0; col < n; col++) {
+    int piv = col;
+    for (int r = col + 1; r < n; r++) if (std::fabs(A[r][col]) > std::fabs(A[piv][col])) piv = r;
+    if (std::fabs(A[piv][col]) < 1e-14) { delete c; return nullptr; }
+    std::swap(A[piv], A[col]);
+    std::swap(B[piv], B[col]);
+    for (int r = 0; r < n; r++) {
+      if (r == col) continue;
+      const double f = A[r][col] / A[col][col];
+      if (f == 0.0) continue;
+      for (int q = col; q < n; q++) A[r][q] -= f * A[col][q];
+      for (int d = 0; d < 3; d++) B[r][d] -= f * B[col][d];
+    }
+  }
+  for (int i = 0; i < m; i++) {
+    const int j = i % n;
+    c->SetCV(i, ON_3dPoint(B[j][0] / A[j][j], B[j][1] / A[j][j], B[j][2] / A[j][j]));
+  }
   if (!c->IsValid()) { delete c; return nullptr; }
   return c;
 }

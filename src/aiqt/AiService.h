@@ -99,10 +99,20 @@ class Generator : public QObject {
   // systemPrompt vuoto: istruzioni complete con gli esempi (ai::SystemPrompt)
   void Run(int port, const QString& request, int maxRepairs = 3, bool useGrammar = true,
            const QString& systemPrompt = {});
+  // Oggetti complessi: prima il piano in parti, poi i comandi di una parte alla volta, ognuna
+  // verificata subito (anche nella posizione) e fatta correggere fino a maxRepairs volte.
+  // Una parte che non riesce viene lasciata fuori (Skipped). exclude: esempio da non usare (prove).
+  void RunParts(int port, const QString& request, int maxRepairs = 2, bool useGrammar = true,
+                const QString& exclude = {});
+  // Scelta automatica: i modelli addestrati su Kurva3D scrivono lo script in una volta
+  // (istruzioni brevi), gli altri lavorano per parti.
+  void Start(int port, const QString& request, const ai::ModelInfo* model);
   void Cancel();
   bool Busy() const { return m_reply != nullptr; }
-  int Attempts() const { return m_repairs + 1; }  // richieste fatte al modello nell'ultima Run
+  int Attempts() const { return m_requests; }  // richieste fatte al modello nell'ultima Run/RunParts
   bool UsedGrammar() const { return m_grammar; }
+  const ai::Plan& LastPlan() const { return m_plan; }
+  QStringList Skipped() const { return m_skipped; }  // parti lasciate fuori
 
  signals:
   void Status(const QString& text);
@@ -110,13 +120,24 @@ class Generator : public QObject {
   void Finished(bool ok, const QStringList& script, const QString& error);
 
  private:
+  enum class Phase { Single, Plan, Part };
   void Send();
+  void OnReply(const QString& content);
+  void StartPart();
+  void FinishParts();
   cad::Engine& m_engine;
   QNetworkAccessManager m_net;
   QPointer<QNetworkReply> m_reply;
   QJsonArray m_messages;
-  int m_port = 0, m_repairs = 0, m_maxRepairs = 3;
+  int m_port = 0, m_repairs = 0, m_maxRepairs = 3, m_requests = 0;
   bool m_grammar = true;
+  Phase m_phase = Phase::Single;
+  QString m_request;
+  ai::Plan m_plan;
+  int m_part = 0;
+  int m_partStart = 0;  // indice in m_messages della richiesta della parte corrente
+  std::vector<std::string> m_done;  // comandi delle parti gia' verificate
+  QStringList m_skipped;
 };
 
 }  // namespace cad::aiqt

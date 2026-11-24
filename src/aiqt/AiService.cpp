@@ -278,7 +278,7 @@ void LlamaServer::Start(const QString& modelPath, int threads) {
   m_log.clear();
   m_polls = 0;
   m_ready = false;
-  QStringList args{"-m", modelPath, "--host", "127.0.0.1", "--port", QString::number(m_port), "-c", "8192",
+  QStringList args{"-m", modelPath, "--host", "127.0.0.1", "--port", QString::number(m_port), "-c", "16384", "-np", "1",
                    "--jinja", "--reasoning", "off", "--no-webui", "-t", QString::number(std::max(1, threads))};
   m_proc.setWorkingDirectory(QFileInfo(exe).absolutePath());
   m_proc.start(exe, args);
@@ -323,12 +323,40 @@ void Generator::Run(int port, const QString& request, int maxRepairs, bool useGr
   Cancel();
   m_port = port;
   m_repairs = 0;
+  m_requests = 0;
   m_maxRepairs = maxRepairs;
   m_grammar = useGrammar;
+  m_phase = Phase::Single;
+  m_plan = {};
+  m_skipped.clear();
   const QString sys = systemPrompt.isEmpty() ? QString::fromStdString(ai::SystemPrompt()) : systemPrompt;
   m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", sys}},
                           QJsonObject{{"role", "user"}, {"content", request}}};
   Send();
+}
+
+void Generator::RunParts(int port, const QString& request, int maxRepairs, bool useGrammar, const QString& exclude) {
+  Cancel();
+  m_port = port;
+  m_repairs = 0;
+  m_requests = 0;
+  m_maxRepairs = maxRepairs;
+  m_grammar = useGrammar;
+  m_phase = Phase::Plan;
+  m_request = request;
+  m_plan = {};
+  m_part = 0;
+  m_done.clear();
+  m_skipped.clear();
+  const std::string sys = ai::PlanSystemPrompt(request.toStdString(), exclude.toStdString());
+  m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", QString::fromStdString(sys)}},
+                          QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString()))}}};
+  Send();
+}
+
+void Generator::Start(int port, const QString& request, const ai::ModelInfo* model) {
+  if (model && model->finetuned) Run(port, request, 3, true, QString::fromStdString(ai::SystemPromptFor(model)));
+  else RunParts(port, request);
 }
 
 void Generator::Cancel() {
@@ -336,14 +364,23 @@ void Generator::Cancel() {
 }
 
 void Generator::Send() {
-  emit Status(m_repairs == 0 ? "Il modello sta scrivendo i comandi…" : QString("Correzione dei comandi (%1)…").arg(m_repairs));
+  if (m_phase == Phase::Plan)
+    emit Status(m_repairs == 0 ? "Il modello sta scomponendo l'oggetto in parti…" : QString("Correzione del piano (%1)…").arg(m_repairs));
+  else if (m_phase == Phase::Part)
+    emit Status(QString("Parte %1 di %2: %3%4…")
+                    .arg(m_part + 1).arg(m_plan.parts.size()).arg(QString::fromStdString(m_plan.parts[m_part].name))
+                    .arg(m_repairs ? QString(" (correzione %1)").arg(m_repairs) : QString()));
+  else
+    emit Status(m_repairs == 0 ? "Il modello sta scrivendo i comandi…" : QString("Correzione dei comandi (%1)…").arg(m_repairs));
+  m_requests++;
   QNetworkRequest rq = Req(QString("http://127.0.0.1:%1/v1/chat/completions").arg(m_port));
   rq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
   rq.setTransferTimeout(10 * 60 * 1000);
   // nei nuovi tentativi un po' piu' di varieta', per non ripetere lo stesso errore
-  QJsonObject body{{"messages", m_messages}, {"temperature", m_repairs == 0 ? 0.2 : 0.4}, {"max_tokens", 2048},
-                   {"chat_template_kwargs", QJsonObject{{"enable_thinking", false}}}};
-  if (m_grammar) body.insert("grammar", QString::fromStdString(ai::Grammar()));
+  QJsonObject body{{"messages", m_messages}, {"temperature", m_repairs == 0 ? 0.2 : 0.5}, {"max_tokens", 2048},
+                   {"cache_prompt", true}, {"chat_template_kwargs", QJsonObject{{"enable_thinking", false}}}};
+  if (m_grammar)
+    body.insert("grammar", QString::fromStdString(m_phase == Phase::Plan ? ai::PlanGrammar() : ai::Grammar()));
   m_reply = m_net.post(rq, QJsonDocument(body).toJson(QJsonDocument::Compact));
   QNetworkReply* r = m_reply;
   connect(r, &QNetworkReply::finished, this, [this, r] {
@@ -354,6 +391,7 @@ void Generator::Send() {
       // un llama-server che non accetta la grammatica: si riprova senza vincolo
       if (m_grammar && r->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 400) {
         m_grammar = false;
+        m_requests--;
         Send();
         return;
       }
@@ -361,21 +399,95 @@ void Generator::Send() {
       return;
     }
     const QJsonObject o = QJsonDocument::fromJson(r->readAll()).object();
-    const QString content = o.value("choices").toArray().at(0).toObject().value("message").toObject().value("content").toString();
-    const auto lines = ai::ExtractScript(content.toStdString());
-    QStringList script;
-    for (const auto& l : lines) script << QString::fromStdString(l);
-    const ai::Validation v = ai::Validate(m_engine, lines);
-    if (v.ok) { emit Finished(true, script, {}); return; }
+    OnReply(o.value("choices").toArray().at(0).toObject().value("message").toObject().value("content").toString());
+  });
+}
+
+void Generator::OnReply(const QString& content) {
+  if (m_phase == Phase::Plan) {
+    std::string err;
+    if (ai::ParsePlan(content.toStdString(), m_plan, &err)) {
+      m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
+      QStringList names;
+      for (const auto& p : m_plan.parts) names << QString::fromStdString(p.name);
+      emit Status(QString("Piano: %1 parti (%2)").arg(m_plan.parts.size()).arg(names.join(", ")));
+      m_phase = Phase::Part;
+      m_part = 0;
+      StartPart();
+      return;
+    }
     if (m_repairs >= m_maxRepairs) {
-      emit Finished(false, script, QString("riga %1: %2").arg(v.line + 1).arg(QString::fromStdString(v.error)));
+      // nessun piano utilizzabile: si prova lo script tutto in una volta
+      emit Status("Piano non riuscito: il modello scrive lo script in una volta…");
+      Run(m_port, m_request, m_maxRepairs, m_grammar, QString::fromStdString(ai::SystemPrompt()));
       return;
     }
     m_repairs++;
     m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
-    m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::RepairRequest(lines, v))}});
+    m_messages.append(QJsonObject{{"role", "user"},
+                                  {"content", QString::fromStdString("The plan is not valid: " + err +
+                                                                     ". Write the whole plan again in one ```plan block.")}});
     Send();
-  });
+    return;
+  }
+  const auto lines = ai::ExtractScript(content.toStdString());
+  if (m_phase == Phase::Part) {
+    const ai::Validation v = ai::CheckPart(m_engine, m_done, lines, m_plan, m_part);
+    if (v.ok) {
+      m_done.insert(m_done.end(), lines.begin(), lines.end());
+      // nella conversazione resta solo la risposta giusta (i tentativi sbagliati occupano spazio)
+      while (m_messages.size() > m_partStart + 1) m_messages.removeLast();
+      m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
+      m_part++;
+      StartPart();
+      return;
+    }
+    if (m_repairs >= m_maxRepairs) {
+      m_skipped << QString("%1 (%2)").arg(QString::fromStdString(m_plan.parts[m_part].name), QString::fromStdString(v.error));
+      while (m_messages.size() > m_partStart) m_messages.removeLast();
+      emit Status(QString("Parte %1 lasciata fuori: %2").arg(QString::fromStdString(m_plan.parts[m_part].name),
+                                                              QString::fromStdString(v.error)));
+      m_part++;
+      StartPart();
+      return;
+    }
+    m_repairs++;
+    m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
+    m_messages.append(QJsonObject{{"role", "user"},
+                                  {"content", QString::fromStdString(ai::PartRepairRequest(m_plan, m_part, lines, v))}});
+    Send();
+    return;
+  }
+  QStringList script;
+  for (const auto& l : lines) script << QString::fromStdString(l);
+  const ai::Validation v = ai::Validate(m_engine, lines);
+  if (v.ok) { emit Finished(true, script, {}); return; }
+  if (m_repairs >= m_maxRepairs) {
+    emit Finished(false, script, QString("riga %1: %2").arg(v.line + 1).arg(QString::fromStdString(v.error)));
+    return;
+  }
+  m_repairs++;
+  m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
+  m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::RepairRequest(lines, v))}});
+  Send();
+}
+
+void Generator::StartPart() {
+  if (m_part >= (int)m_plan.parts.size()) { FinishParts(); return; }
+  m_repairs = 0;
+  m_partStart = m_messages.size();
+  m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PartRequest(m_plan, m_part))}});
+  Send();
+}
+
+void Generator::FinishParts() {
+  QStringList script;
+  for (const auto& l : m_done) script << QString::fromStdString(l);
+  if (script.isEmpty()) {
+    emit Finished(false, {}, "nessuna parte riuscita: " + m_skipped.join("; "));
+    return;
+  }
+  emit Finished(true, script, m_skipped.isEmpty() ? QString() : "parti lasciate fuori: " + m_skipped.join("; "));
 }
 
 }  // namespace cad::aiqt

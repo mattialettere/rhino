@@ -314,6 +314,22 @@ int main(int argc, char** argv) {
     n->Ev2Der(n->Domain()[0], p, d1, d2[0]);
     CHECK(d2[0].Length() < 1e-9);  // estremo naturale
   });
+  Case("InterpCrv_Close", "_InterpCrv 0,10 10,0 0,-10 -10,0 _Close", [](Ctx& c) {
+    // chiusa e periodica (liscia anche nel punto di chiusura), passa per tutti i punti
+    auto* n = ON_NurbsCurve::Cast(c.Last());
+    CHECK(n && n->Degree() == 3 && n->IsClosed() && n->IsPeriodic());
+    if (!n) return;
+    ON_3dPoint pts[] = {ON_3dPoint(0, 10, 0), ON_3dPoint(10, 0, 0), ON_3dPoint(0, -10, 0), ON_3dPoint(-10, 0, 0)};
+    for (int i = 0; i < 4; i++) CHECK(NearPt(n->PointAt(n->m_knot[2 + i]), pts[i], 1e-9));  // nodi = parametri dei punti
+    ON_3dVector a = n->TangentAt(n->Domain()[0]), b = n->TangentAt(n->Domain()[1]);
+    CHECK(NearPt(ON_3dPoint(a), ON_3dPoint(b), 1e-9));
+    ON_BoundingBox bb = c.BBox();  // simmetrica: quasi un cerchio
+    CHECK(Near(bb.m_max.x, -bb.m_min.x, 1e-6) && Near(bb.m_max.y, -bb.m_min.y, 1e-6));
+  });
+  Case("Ellipse_Vertical", "_Ellipse _Vertical 0,0,5 10,0,5 0,0,9", [](Ctx& c) {
+    ON_BoundingBox b = c.BBox();
+    CHECK(NearPt(b.m_min, ON_3dPoint(-10, 0, 1), 1e-6) && NearPt(b.m_max, ON_3dPoint(10, 0, 9), 1e-6));
+  });
   Case("Points", "_Points 0,0 1,1 2,2 _Enter", [](Ctx& c) { CHECK(c.Objects().size() == 3); });
 
   Case("Box", "_Box 0,0,0 10,20 30", [](Ctx& c) {
@@ -2242,6 +2258,111 @@ int main(int argc, char** argv) {
       CHECK(copies.ok);
     }
     CHECK(c.e.AllObjectIds(true).empty());  // la verifica non tocca il documento
+  }
+  {
+    std::printf("AI_forme_composte_e_destinazioni\n");
+    Ctx c;
+    // @Nome: selezione per nome prima del comando; => Nome dopo
+    {
+      std::vector<int> origin;
+      const auto x = ai::ExpandScript({"_Box 0,0,0 10,10 10 => A", "_Move 0,0,0 5,0,0 @A @B => C"}, &origin);
+      CHECK(x.size() == 12 && x[5] == "_SelNone" && x[6] == "_SelName A B" && x[7] == "_Move 0,0,0 5,0,0");
+      CHECK(origin.size() == x.size() && origin[4] == 0 && origin[5] == 1 && origin[11] == 1);
+      CHECK(ai::ArgumentsMatch("_BooleanUnion @Seat @Legs => Chair"));
+      CHECK(ai::ArgumentsMatch("_Copy 0,0,0 0,0,30 _Enter @Outline => Rim"));
+      CHECK(!ai::ArgumentsMatch("_Box 0,0,0 10,10 10 @A"));  // i comandi che creano non hanno destinazioni
+      CHECK(!ai::ArgumentsMatch("_Delete @1abc"));
+    }
+    // ogni forma composta crea un solo oggetto con il nome dato, senza lasciare curve di servizio
+    for (const char* l : {"_SymCurve 0,200 60,180 70,100 40,30 0,0 _Enter => K", "_SectionLoft 0,0,30 40 30 0,80,32 30 24 0,150,34 26 20 _Enter => K",
+                          "_SectionLoft 0,0,0 40 40 0,0,50 30 30 0,0,90 10 10 _Enter => K", "_Lathe 0,0,0 40,0 45,60 30,200 12,240 _Enter => K",
+                          "_PipeThrough 4 0,0,0 0,50,100 0,150,120 _Enter => K", "_PipeThrough 4 0,0,0 100,0,0 _Enter => K",
+                          "_Plate 4 0,0,0 0,300,0 0,150,400 _Close => K", "_Plate 6 0,0,100 50,0,100 50,50,100 _Close => K"}) {
+      int n = 0;
+      ON_BoundingBox box;
+      const auto v = ai::Validate(c.e, {l}, [&](Engine& se) {
+        n = (int)se.AllObjectIds(true).size();
+        for (const auto& id : se.AllObjectIds(true)) {
+          const auto* o = se.Object(id);
+          CHECK(ToUtf8(o->Attributes(nullptr)->m_name) == "K");
+          o->Geometry(nullptr)->GetBoundingBox(box, true);
+        }
+      });
+      if (!v.ok || n != 1) std::printf("  %s -> %s (%d oggetti)\n", l, v.error.c_str(), n);
+      CHECK(v.ok && n == 1);
+    }
+    // la lastra verticale sta nel suo piano (x = 0), spessa 4 attorno al contorno
+    {
+      ON_BoundingBox b;
+      ai::Validate(c.e, {"_Plate 4 0,0,0 0,300,0 0,150,400 _Close => Sail"}, [&](Engine& se) {
+        for (const auto& id : se.AllObjectIds(true)) se.Object(id)->Geometry(nullptr)->GetTightBoundingBox(b);
+      });
+      CHECK(Near(b.m_min.x, -2, 0.05) && Near(b.m_max.x, 2, 0.05) && Near(b.m_max.z, 400, 0.5) && Near(b.m_max.y, 300, 0.5));
+    }
+    // valori impossibili: altezze di _Lathe non crescenti
+    {
+      const auto v = ai::Validate(c.e, {"_Lathe 0,0,0 40,0 45,60 30,50 _Enter => K"});
+      CHECK(!v.ok && v.line == 0 && v.error.find("impossible values for Lathe") != std::string::npos);
+    }
+    // grammatica: destinazioni e sezioni
+    {
+      const std::string g = ai::Grammar();
+      CHECK(g.find("targets ::=") != std::string::npos && g.find("sec ::=") != std::string::npos);
+      CHECK(g.find("\"_SectionLoft\" \" \" sec") != std::string::npos);
+    }
+    CHECK(c.e.AllObjectIds(true).empty());
+  }
+  {
+    std::printf("AI_piano_per_parti\n");
+    Ctx c;
+    ai::Plan p;
+    std::string err;
+    CHECK(ai::ParsePlan("<think>x</think>```plan\n# Tavolo 1200x800\nPART Top | piano: _Box | 0,0,710 1200,800,750\n"
+                        "PART Legs | gambe | 1160,760,712 40,40,0\nPART Top | doppione | 0,0,0 1,1,1\n```", p, &err));
+    CHECK(p.summary == "Tavolo 1200x800" && p.parts.size() == 3 && p.parts[1].box[0] == 40 && p.parts[1].box[5] == 712);
+    CHECK(p.parts[2].name == "Top2");  // nomi resi unici
+    CHECK(!ai::ParsePlan("```plan\n# niente\n```", p, &err) && err.find("no PART") != std::string::npos);
+    CHECK(!ai::ParsePlan("PART Top | piano | 0,0 1,1,1,1", p, &err));
+    CHECK(ai::PlanGrammar().rfind("root ::= \"```plan", 0) == 0);
+    // scelta degli esempi in base alla richiesta (accenti e maiuscole non contano)
+    {
+      auto ids = [](const std::vector<const ai::Example*>& v) { std::string s; for (auto* e : v) s += std::string(e->id) + " "; return s; };
+      CHECK(ids(ai::SelectExamples("Disegna un VIOLINO", 2)) == "violino chitarra ");
+      CHECK(ids(ai::SelectExamples("un violino", 2, "violino")) == "chitarra tavolo ");
+      CHECK(ids(ai::SelectExamples("una caffettiera", 1)) == "teiera ");
+      CHECK(ids(ai::SelectExamples("qualcosa di strano", 2)) == "chitarra tavolo ");
+      const std::string sp = ai::PlanSystemPrompt("un violino");
+      CHECK(sp.find("Example request: \"un violino\"") != std::string::npos && sp.find("_SectionLoft") != std::string::npos);
+      CHECK(sp.size() < 26000);  // istruzioni + 2 esempi: restano nel contesto di llama-server
+    }
+    // ogni esempio della libreria: piano valido e ogni parte dentro il suo ingombro
+    for (const auto& ex : ai::Examples()) {
+      ai::Plan plan;
+      CHECK(ai::ParsePlan(std::string("```plan\n") + ex.plan + "```", plan));
+      CHECK(plan.parts.size() == ex.parts.size());
+      std::vector<std::string> done;
+      for (size_t i = 0; i < ex.parts.size() && i < plan.parts.size(); i++) {
+        CHECK(plan.parts[i].name == ex.parts[i].name);
+        const auto part = ai::ExtractScript(std::string("```kurva\n") + ex.parts[i].script + "\n```");
+        const auto v = ai::CheckPart(c.e, done, part, plan, (int)i);
+        if (!v.ok) std::printf("  esempio %s, parte %s: %s\n", ex.id, ex.parts[i].name, v.error.c_str());
+        CHECK(v.ok);
+        done.insert(done.end(), part.begin(), part.end());
+      }
+    }
+    // una parte fuori posto viene rifiutata con le misure, un errore indica la riga della parte
+    {
+      ai::Plan plan;
+      ai::ParsePlan("PART Top | piano | 0,0,710 1200,800,750\nPART Legs | gambe | 40,40,0 1160,760,712", plan);
+      const std::vector<std::string> top = {"_Box 0,0,710 1200,800 40 => Top"};
+      CHECK(ai::CheckPart(c.e, {}, top, plan, 0).ok);
+      const auto away = ai::CheckPart(c.e, top, {"_Box 40,40,3000 100,100 712 => Legs"}, plan, 1);
+      CHECK(!away.ok && away.line == -1 && away.error.find("along Z") != std::string::npos);
+      const auto bad = ai::CheckPart(c.e, top, {"_Box 40,40,0 100,100 712 => Legs", "_Volare"}, plan, 1);
+      CHECK(!bad.ok && bad.line == 1);
+      CHECK(ai::PartRepairRequest(plan, 1, {"_Box 40,40,0 100,100 712 => Legs", "_Volare"}, bad).find("Line 2 of part Legs") == 0);
+    }
+    CHECK(c.e.AllObjectIds(true).empty());
   }
   {
     std::printf("Scambio_file\n");

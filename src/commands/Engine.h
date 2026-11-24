@@ -347,6 +347,7 @@ void RegisterCommandOptions(Engine& e);
 
 // Utilita' geometriche condivise
 ON_NurbsCurve* InterpolateCubic(const std::vector<ON_3dPoint>& points);
+ON_NurbsCurve* InterpolateClosedCubic(const std::vector<ON_3dPoint>& points);
 ON_NurbsCurve* ControlPointCurve(const std::vector<ON_3dPoint>& points, int degree);
 std::string DescribeObject(const ON_Geometry* g);
 double CurveLengthOf(const ON_Curve& c);

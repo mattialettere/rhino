@@ -369,6 +369,8 @@ bool CmdLoft(Engine& e, TokenStream& ts) {
   BRepOffsetAPI_ThruSections mk(Standard_False, ruled ? Standard_True : Standard_False, e.Tolerance());
   for (auto& w : wires) mk.AddWire(w);
   mk.CheckCompatibility(Standard_True);
+  // come Rhino: superficie cubica nella direzione del loft (con molte curve un grado alto oscilla)
+  mk.SetMaxDegree(3);
   try { mk.Build(); } catch (...) {}
   if (!mk.IsDone()) return e.Fail("loft non riuscito");
   ON_Brep* b = ShapeToBrep(mk.Shape(), e.Tolerance());

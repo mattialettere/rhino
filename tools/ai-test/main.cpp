@@ -10,6 +10,10 @@
 //   kurva3d-ai-test --bench --gguf kurva3d-qwen3-4b.gguf [--compact]
 // Verifica degli esempi di addestramento (tools/ai-train/generate_dataset.py):
 //   kurva3d-ai-test --validate-jsonl train.jsonl [--every 5]   (uno ogni 5 esempi)
+// Esecuzione di uno script scritto nel linguaggio dell'assistente (senza modello):
+//   kurva3d-ai-test --run-script violino.kurva [-o violino.3dm]
+// Verifica degli esempi per parti (ogni parte nel suo ingombro) e salvataggio in una cartella:
+//   kurva3d-ai-test --examples cartella
 #include "aiqt/AiService.h"
 #include "commands/Engine.h"
 #include "core/Document3dm.h"
@@ -20,6 +24,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QTimer>
 #ifdef CAD_WITH_OCCT
 #include "kernel/OcctConvert.h"
@@ -28,6 +33,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <functional>
+#include <map>
 #include <sstream>
 
 namespace {
@@ -49,6 +55,24 @@ const BenchCase kBench[] = {
     {"un tavolino basso quadrato 60x60 cm con quattro gambe cilindriche", 300, 550, 590, 620},
     {"una mensola lunga 80 cm con due staffe sotto", 100, 400, 790, 810},
     {"un vaso cilindrico cavo alto 30 cm", 290, 310, 80, 300},
+};
+// Oggetti complessi (lavoro per parti). Misura: lato maggiore dell'ingombro in qualunque
+// direzione (il modello puo' metterli in piedi o sdraiati) e numero minimo di oggetti.
+struct ComplexCase {
+  const char* prompt;
+  const char* exclude;      // esempio da togliere dalle istruzioni (prova di generalizzazione)
+  double minSize, maxSize;  // lato maggiore plausibile (mm)
+  int minObjects;
+};
+const ComplexCase kComplex[] = {
+    {"un violino", "", 500, 700, 5},
+    {"un violino", "violino", 500, 700, 5},  // senza l'esempio del violino: deve arrangiarsi
+    {"un violoncello", "", 1000, 1500, 5},
+    {"una chitarra elettrica", "", 800, 1200, 4},
+    {"una bicicletta", "", 1400, 2100, 5},
+    {"un'automobile sportiva", "", 3500, 5200, 4},
+    {"un elicottero", "", 6000, 20000, 4},
+    {"una teiera", "", 150, 350, 3},
 };
 struct Outcome {
   bool valid = false, plausible = false;
@@ -78,7 +102,11 @@ void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome
             // misura sulla mesh fine: i vertici stanno sulla superficie vera (il box
             // analitico di OpenCASCADE sui cerchi razionali e' piu' largo)
             const TopoDS_Shape sh = cad::occt::GeometryToShape(*g, 0.001);
-            std::unique_ptr<ON_Mesh> m(sh.IsNull() ? nullptr : cad::occt::MeshShape(sh, 0.05, 0.05, false));
+            // precisione relativa alla grandezza (0.05 mm su un aereo di 38 m darebbe una mesh enorme)
+            ON_BoundingBox loose;
+            g->GetBoundingBox(loose);
+            const double defl = std::max(0.05, 0.0005 * (loose.IsValid() ? loose.Diagonal().Length() : 0.0));
+            std::unique_ptr<ON_Mesh> m(sh.IsNull() ? nullptr : cad::occt::MeshShape(sh, defl, 0.1, false));
             ON_BoundingBox mb;
             if (m && m->VertexCount() > 0 && m->GetTightBoundingBox(mb)) {
               all.Union(mb);
@@ -96,6 +124,22 @@ void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome
   out.width = all.IsValid() ? std::max(all.m_max.x - all.m_min.x, all.m_max.y - all.m_min.y) : 0;
   out.plausible = all.IsValid() && out.height >= bc.minHeight && out.height <= bc.maxHeight &&
                   out.width >= bc.minWidth && out.width <= bc.maxWidth;
+}
+// Oggetto complesso: lato maggiore dell'ingombro e numero di oggetti; con saveAs salva il modello.
+void MeasureComplex(const QStringList& script, const ComplexCase& cc, Outcome& out, const QString& saveAs) {
+  std::vector<std::string> lines;
+  for (const auto& l : script) lines.push_back(l.toStdString());
+  BenchCase any{"", 0, 1e9, 0, 1e9};
+  Measure(lines, any, out);
+  cad::Document3dm doc;
+  std::ostringstream log;
+  cad::Engine e(doc, log);
+  for (const auto& l : cad::ai::ExpandScript(lines)) e.Run(l);
+  const bool nonEmpty = !e.AllObjectIds(true).empty();
+  const double size = nonEmpty ? std::max(out.height, out.width) : 0;
+  out.width = size;
+  out.plausible = size >= cc.minSize && size <= cc.maxSize && out.objects >= cc.minObjects;
+  if (!saveAs.isEmpty()) doc.Save(saveAs.toStdString());
 }
 void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
   std::vector<std::string> lines;
@@ -158,6 +202,92 @@ int ValidateJsonl(const QString& path, int every) {
   std::printf("%d esempi, %d con errori negli script, %d con misure diverse da quelle attese\n", n, bad, measures);
   return bad == 0 && n > 0 && measures * 20 <= n ? 0 : 1;
 }
+// Esegue uno script dell'assistente (verifica come per le risposte del modello), riporta
+// le misure e, con -o, salva il modello.
+int RunScriptFile(const QString& path, const QString& outPath) {
+  QFile f(path);
+  if (!f.open(QIODevice::ReadOnly)) { std::printf("non trovo %s\n", path.toUtf8().constData()); return 2; }
+  const auto lines = cad::ai::ExtractScript("```kurva\n" + f.readAll().toStdString() + "\n```");
+  cad::Document3dm doc;
+  std::ostringstream log;
+  cad::Engine engine(doc, log);
+  const auto v = cad::ai::Validate(engine, lines);
+  if (!v.ok) {
+    std::printf("riga %d (%s): %s\n", v.line + 1, v.line >= 0 && v.line < (int)lines.size() ? lines[v.line].c_str() : "",
+                v.error.c_str());
+    return 1;
+  }
+  Outcome o;
+  BenchCase any{"", 0, 1e9, 0, 1e9};
+  Measure(lines, any, o);
+  std::printf("script valido: %d righe, %d oggetti, altezza %.1f mm, lato maggiore in pianta %.1f mm\n", (int)lines.size(),
+              o.objects, o.height, o.width);
+  {  // ingombro di ogni oggetto, per nome
+    std::ostringstream log2;
+    cad::Document3dm d2;
+    cad::Engine e2(d2, log2);
+    for (const auto& l : cad::ai::ExpandScript(lines)) e2.Run(l);
+    std::map<std::string, ON_BoundingBox> boxes;
+    for (const auto& id : e2.AllObjectIds(true))
+      if (const auto* ob = e2.Object(id))
+        if (const ON_Geometry* g = ob->Geometry(nullptr)) {
+          const ON_3dmObjectAttributes* at = ob->Attributes(nullptr);
+          const std::string n = at && !at->m_name.IsEmpty() ? cad::ToUtf8(at->m_name) : std::string("(senza nome)");
+          ON_BoundingBox b;
+          if (g->GetTightBoundingBox(b)) boxes[n].Union(b);
+        }
+    for (const auto& [n, b] : boxes)
+      std::printf("  %-14s %8.1f,%8.1f,%8.1f   %8.1f,%8.1f,%8.1f\n", n.c_str(), b.m_min.x, b.m_min.y, b.m_min.z, b.m_max.x,
+                  b.m_max.y, b.m_max.z);
+  }
+  if (!outPath.isEmpty()) {
+    std::ostringstream log2;
+    cad::Engine e2(doc, log2);
+    for (const auto& l : cad::ai::ExpandScript(lines))
+      if (!e2.Run(l)) { std::printf("errore: %s\n%s\n", l.c_str(), log2.str().c_str()); return 1; }
+    if (!doc.Save(outPath.toStdString())) { std::printf("salvataggio non riuscito\n"); return 1; }
+    std::printf("salvato %s\n", outPath.toUtf8().constData());
+  }
+  return 0;
+}
+// Ogni esempio della libreria, parte per parte, come se fosse la risposta del modello.
+int CheckExamples(const QString& dir) {
+  int bad = 0;
+  for (const auto& ex : cad::ai::Examples()) {
+    cad::Document3dm doc;
+    std::ostringstream log;
+    cad::Engine engine(doc, log);
+    cad::ai::Plan plan;
+    std::string err;
+    if (!cad::ai::ParsePlan(std::string("```plan\n") + ex.plan + "```", plan, &err)) {
+      std::printf("%s: piano non valido: %s\n", ex.id, err.c_str());
+      bad++;
+      continue;
+    }
+    std::vector<std::string> done;
+    bool ok = plan.parts.size() == ex.parts.size();
+    if (!ok) std::printf("%s: %d parti nel piano, %d negli script\n", ex.id, (int)plan.parts.size(), (int)ex.parts.size());
+    for (size_t i = 0; ok && i < ex.parts.size(); i++) {
+      const auto part = cad::ai::ExtractScript(std::string("```kurva\n") + ex.parts[i].script + "\n```");
+      const auto v = cad::ai::CheckPart(engine, done, part, plan, (int)i);
+      if (!v.ok) {
+        std::printf("%s, parte %s: %s\n", ex.id, ex.parts[i].name, cad::ai::PartRepairRequest(plan, (int)i, part, v).c_str());
+        ok = false;
+      }
+      done.insert(done.end(), part.begin(), part.end());
+    }
+    if (ok && !dir.isEmpty()) {
+      cad::Document3dm d2;
+      std::ostringstream l2;
+      cad::Engine e2(d2, l2);
+      for (const auto& l : cad::ai::ExpandScript(done)) e2.Run(l);
+      d2.Save((dir + "/" + ex.id + ".3dm").toStdString());
+    }
+    std::printf("%-12s %s (%d parti, %d righe)\n", ex.id, ok ? "ok" : "ERRORE", (int)plan.parts.size(), (int)done.size());
+    bad += !ok;
+  }
+  return bad ? 1 : 0;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -166,23 +296,43 @@ int main(int argc, char** argv) {
   QCoreApplication::setApplicationName("Kurva3D");
   QString modelId = "qwen3-0.6b", prompt = "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro";
   QStringList models;
-  QString gguf, jsonl;
+  QString gguf, jsonl, runScript, outPath;
   int every = 1;
   int onlyCase = -1;  // --case k: solo la richiesta k del banco (un processo per richiesta)
-  bool bench = false, grammar = true, both = false, compact = false;
+  bool bench = false, grammar = true, both = false, compact = false, examples = false, complex = false;
+  int extPort = 0;      // --port: llama-server (o server di prova) gia' avviato
+  QString saveDir;      // --save-dir: risultati del banco complesso come .3dm
   const QStringList a = app.arguments();
   for (int i = 1; i < a.size(); i++) {
     if (a[i] == "--bench") bench = true;
+    else if (a[i] == "--bench-complex") { bench = true; complex = true; }
+    else if (i + 1 < a.size() && a[i] == "--port") extPort = a[++i].toInt();
+    else if (i + 1 < a.size() && a[i] == "--save-dir") saveDir = a[++i];
     else if (a[i] == "--no-grammar") grammar = false;
     else if (a[i] == "--both") both = true;
     else if (a[i] == "--compact") compact = true;
     else if (i + 1 < a.size() && a[i] == "--case") onlyCase = a[++i].toInt();
     else if (i + 1 < a.size() && a[i] == "--gguf") gguf = a[++i];
     else if (i + 1 < a.size() && a[i] == "--validate-jsonl") jsonl = a[++i];
+    else if (i + 1 < a.size() && a[i] == "--run-script") runScript = a[++i];
+    else if (i + 1 < a.size() && a[i] == "--examples") { examples = true; outPath = a[++i]; }
+    else if (i + 1 < a.size() && a[i] == "-o") outPath = a[++i];
     else if (i + 1 < a.size() && a[i] == "--every") every = std::max(1, a[++i].toInt());
     else if (i + 1 < a.size() && a[i] == "--model") modelId = a[++i];
     else if (i + 1 < a.size() && a[i] == "--models") models = a[++i].split(',', Qt::SkipEmptyParts);
     else if (i + 1 < a.size() && a[i] == "--prompt") prompt = a[++i];
+  }
+  if (examples) {
+    cad::InitLibrary();
+    const int r = CheckExamples(outPath);
+    cad::ShutdownLibrary();
+    return r;
+  }
+  if (!runScript.isEmpty()) {
+    cad::InitLibrary();
+    const int r = RunScriptFile(runScript, outPath);
+    cad::ShutdownLibrary();
+    return r;
   }
   if (!jsonl.isEmpty()) {
     cad::InitLibrary();
@@ -194,9 +344,9 @@ int main(int argc, char** argv) {
     if (!QFileInfo::exists(gguf)) { std::printf("non trovo %s\n", gguf.toUtf8().constData()); return 2; }
     models = QStringList{"gguf:" + QFileInfo(gguf).fileName()};
   }
-  if (models.isEmpty()) models << modelId;
+  if (models.isEmpty()) models << (extPort ? QString("server:%1").arg(extPort) : modelId);
   for (const auto& id : models)
-    if (gguf.isEmpty() && !cad::ai::FindModel(id.toStdString())) { std::printf("modello sconosciuto: %s\n", id.toUtf8().constData()); return 2; }
+    if (gguf.isEmpty() && !extPort && !cad::ai::FindModel(id.toStdString())) { std::printf("modello sconosciuto: %s\n", id.toUtf8().constData()); return 2; }
   const auto hw = cad::ai::DetectHardware();
   std::printf("%s\nConsigliato: %s\n", cad::ai::DescribeHardware(hw).c_str(),
               cad::ai::Catalog()[cad::ai::RecommendModel(hw)].label.c_str());
@@ -226,8 +376,9 @@ int main(int argc, char** argv) {
   };
   std::vector<Job> jobs;
   for (const auto& m : models) {
-    const int n = bench ? int(std::size(kBench)) : 1;
-    for (int k = 0; k < n; k++) {
+    const int n = bench ? int(std::size(kBench)) : 1;  // senza --bench: una richiesta (--prompt)
+    const int nb = complex ? int(std::size(kComplex)) : n;
+    for (int k = 0; k < nb; k++) {
       if (onlyCase >= 0 && k != onlyCase) continue;
       if (both) { jobs.push_back({m, bench ? k : -1, true}); jobs.push_back({m, bench ? k : -1, false}); }
       else jobs.push_back({m, bench ? k : -1, grammar});
@@ -240,11 +391,21 @@ int main(int argc, char** argv) {
   QString loaded;
 
   std::function<void()> next;
+  auto promptOf = [&](const Job& j) {
+    if (j.bench < 0) return prompt;
+    return QString::fromUtf8(complex ? kComplex[j.bench].prompt : kBench[j.bench].prompt);
+  };
   auto runJob = [&] {
     const Job& j = jobs[cur];
-    say(QString("\n=== %1 | %2 | grammatica %3 ===")
-            .arg(j.model, j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, j.grammar ? "si" : "no"));
+    const QString ex = complex && j.bench >= 0 && *kComplex[j.bench].exclude
+                           ? QString(" (senza l'esempio %1)").arg(kComplex[j.bench].exclude) : QString();
+    say(QString("\n=== %1 | %2%3 | grammatica %4 ===").arg(j.model, promptOf(j), ex, j.grammar ? "si" : "no"));
     clock.start();
+    if (complex) {
+      gen.RunParts(extPort ? extPort : server.Port(), promptOf(j), 2, j.grammar,
+                   j.bench >= 0 ? QString::fromUtf8(kComplex[j.bench].exclude) : QString());
+      return;
+    }
     gen.Run(server.Port(), j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, 3, j.grammar,
             compact ? QString::fromStdString(cad::ai::CompactSystemPrompt())
                     : QString::fromStdString(cad::ai::SystemPromptFor(cad::ai::FindModel(j.model.toStdString()))));
@@ -252,6 +413,7 @@ int main(int argc, char** argv) {
   auto startServer = [&](const QString& path) { server.Start(path, hw.threads); };
   next = [&] {
     if (cur >= jobs.size()) { result = 0; app.exit(0); return; }
+    if (extPort) { runJob(); return; }
     const QString m = jobs[cur].model;
     if (m == loaded && server.Ready()) { runJob(); return; }
     loaded = m;
@@ -277,12 +439,33 @@ int main(int argc, char** argv) {
     o.seconds = clock.elapsed() / 1000.0;
     o.attempts = gen.Attempts();
     o.valid = ok;
+    if (complex) {
+      const auto& plan = gen.LastPlan();
+      QString pl = QString::fromStdString(plan.summary);
+      for (const auto& p : plan.parts)
+        pl += QString("\n  PART %1 | %2").arg(QString::fromStdString(p.name), QString::fromStdString(p.what));
+      say("Piano: " + pl);
+      if (!gen.Skipped().isEmpty()) say("Parti lasciate fuori: " + gen.Skipped().join("; "));
+    }
     say("Script:\n" + script.join("\n"));
     if (!bench && script.isEmpty() && !err.isEmpty()) { say("ERRORE risposta: " + err); app.exit(1); return; }
     // la pipeline funziona se il modello risponde con dei comandi; un modello minimo
     // puo' sbagliarli, quindi l'esito della verifica e' solo riportato
     say(ok ? "Verifica: script valido" : "Verifica: script non valido (" + err + ")");
-    if (ok && j.bench >= 0) {
+    if (ok && j.bench >= 0 && complex) {
+      QString save;
+      if (!saveDir.isEmpty()) {
+        QString base = QString::fromUtf8(kComplex[j.bench].prompt).replace(QRegularExpression("[^A-Za-z0-9]+"), "_");
+        if (*kComplex[j.bench].exclude) base += "_senza_esempio";
+        QString mod = j.model;
+        save = saveDir + "/" + base + "-" + mod.replace(QRegularExpression("[^A-Za-z0-9.]+"), "_") + ".3dm";
+      }
+      MeasureComplex(script, kComplex[j.bench], o, save);
+      say(QString("Risultato: %1 oggetti, lato maggiore %2 mm, %3 parti su %4 (%5)%6")
+              .arg(o.objects).arg(o.width, 0, 'f', 1).arg(gen.LastPlan().parts.size() - gen.Skipped().size())
+              .arg(gen.LastPlan().parts.size()).arg(o.plausible ? "plausibile" : "NON plausibile")
+              .arg(save.isEmpty() ? QString() : " -> " + save));
+    } else if (ok && j.bench >= 0) {
       Measure(script, kBench[j.bench], o);
       say(QString("Risultato: %1 oggetti, altezza %2 mm, lato in pianta %3 mm (%4)")
               .arg(o.objects).arg(o.height, 0, 'f', 1).arg(o.width, 0, 'f', 1).arg(o.plausible ? "plausibile" : "NON plausibile"));
@@ -295,13 +478,15 @@ int main(int argc, char** argv) {
   server.Stop();
 
   if (bench) {
-    std::printf("\n%-20s %-5s %-60s %-6s %-5s %-6s %s\n", "modello", "gramm", "richiesta", "valido", "tent.", "secondi", "forma");
+    std::printf("\n%-20s %-5s %-60s %-6s %-5s %-6s %s\n", "modello", "gramm", "richiesta", "valido", "rich.", "secondi", "forma");
     for (size_t i = 0; i < jobs.size() && i < cur; i++) {
       const auto& j = jobs[i];
       const auto& o = results[i];
       std::printf("%-20s %-5s %-60.60s %-6s %-5d %-7.0f %s\n", j.model.toUtf8().constData(), j.grammar ? "si" : "no",
-                  kBench[j.bench].prompt, o.valid ? "si" : "no", o.attempts, o.seconds,
+                  (promptOf(j) + (complex && *kComplex[j.bench].exclude ? " (senza esempio)" : "")).toUtf8().constData(),
+                  o.valid ? "si" : "no", o.attempts, o.seconds,
                   !o.valid ? "-" : o.plausible ? "plausibile"
+                  : complex ? QString("lato %1, %2 oggetti").arg(o.width, 0, 'f', 0).arg(o.objects).toUtf8().constData()
                   : QString("altezza %1, pianta %2").arg(o.height, 0, 'f', 0).arg(o.width, 0, 'f', 0).toUtf8().constData());
     }
     // riassunto per modello e grammatica

@@ -6,7 +6,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
+#include <memory>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -117,6 +119,23 @@ const std::vector<CommandSpec>& CommandSpecs() {
       {"Ellipsoid", "P N N N", true, true, "_Ellipsoid 0,0,0 30 20 10", "ellipsoid: centre, radius x, radius y, radius z"},
       {"Wedge", "P P N", true, true, "_Wedge 0,0,0 40,20 15", "wedge: base corner, opposite base corner, height"},
       {"Text", "P S Height=N", true, true, "_Text 0,0,0 \"Kurva3D\" Height=10", "text: insertion point, text, height"},
+      // forme composte (estensioni per l'AI: diventano comandi normali di Kurva3D, vedi ExpandScript)
+      {"SymCurve", "P P P+ _Enter", true, true, "_SymCurve 0,200 60,180 70,100 40,30 0,0 _Enter",
+       "closed smooth outline, symmetric left/right: give only the right half, from the top point ON the axis to the "
+       "bottom point ON the axis (same x as the first point); the left half is mirrored. Then extrude it"},
+      {"SectionLoft", "X X X+ _Enter", true, true, "_SectionLoft 0,0,30 40 30 0,80,32 30 24 0,150,34 26 20 _Enter",
+       "smooth solid through elliptical cross-sections in order along the object: centre, width, height of each "
+       "(necks, handles, fuselages, bottles, horns, legs). Sections along a horizontal line are vertical ellipses; "
+       "sections stacked in Z are horizontal (width along X, height along Y)"},
+      {"Lathe", "P P P+ _Enter", true, true, "_Lathe 0,0,0 40,0 45,60 30,200 12,240 12,280 _Enter",
+       "round solid turned around the vertical axis through the first point: then radius,height pairs from bottom to "
+       "top, heights always increasing (vases, bottles, cups, knobs, turned legs, columns, lamp shades)"},
+      {"Plate", "N P P P+ _Close", true, true, "_Plate 4 0,0,0 0,300,0 0,150,400 _Close",
+       "flat part of the given thickness, centred on a closed outline of corner points lying in one plane of ANY "
+       "orientation (sails, fins, panels, brackets, blades, signs, the bridge of a violin)"},
+      {"PipeThrough", "N P P+ _Enter", true, true, "_PipeThrough 4 0,0,0 0,50,100 0,150,120 _Enter",
+       "round rod of the given radius along a smooth path through 3D points (strings, handles, bent tubes, wires, "
+       "spokes; with 2 points it is straight)"},
       // selezione
       {"SelNone", "", false, false, "_SelNone", "clear the selection"},
       {"SelName", "W+", false, false, "_SelName Body Hole", "select objects by name (in this order)"},
@@ -130,11 +149,11 @@ const std::vector<CommandSpec>& CommandSpecs() {
       {"FilletEdge", "N", false, false, "_FilletEdge 2", "round all edges of the selected solid with radius 2"},
       {"ChamferEdge", "N", false, false, "_ChamferEdge 1", "bevel all edges of the selected solid"},
       {"Move", "P P", false, false, "_Move 0,0,0 10,0,0", "move from point to point"},
-      {"Copy", "P P+ _Enter", false, false, "_Copy 0,0,0 50,0,0 100,0,0 _Enter", "copies (one per destination point)"},
+      {"Copy", "P P+ _Enter", true, false, "_Copy 0,0,0 50,0,0 100,0,0 _Enter", "copies (one per destination point)"},
       {"Rotate", "P N", false, false, "_Rotate 0,0,0 45", "rotate around the vertical axis through the point (degrees)"},
       {"Rotate3D", "P P N", false, false, "_Rotate3D 0,0,0 1,0,0 90", "rotate around the axis from point to point"},
       {"Scale", "P N", false, false, "_Scale 0,0,0 2", "scale from the point"},
-      {"Mirror", "P P", false, false, "_Mirror 0,0,0 0,10,0",
+      {"Mirror", "P P", true, false, "_Mirror 0,0,0 0,10,0",
        "mirror across the vertical plane through the two points (makes a copy)"},
       {"ArrayPolar", "P I", false, false, "_ArrayPolar 0,0,0 6", "6 copies around the vertical axis through the point"},
       {"ArrayLinear", "I P P", false, false, "_ArrayLinear 4 0,0,0 30,0,0",
@@ -143,6 +162,7 @@ const std::vector<CommandSpec>& CommandSpecs() {
        "extrude the selected closed curve into a solid 20 high"},
       {"Revolve", "P P", true, false, "_Revolve 0,0,0 0,0,1", "revolve the selected curve 360 degrees around the axis"},
       {"Loft", "", true, false, "_Loft", "surface through the selected curves (in order)"},
+      {"Cap", "", false, false, "_Cap", "close the open planar ends of the selected loft or extrusion into a solid"},
       {"Pipe", "N", true, false, "_Pipe 2", "pipe of radius 2 around the selected curve"},
       {"SetObjectColor", "C", false, false, "_SetObjectColor 200,30,30", "colour as r,g,b"},
       {"Delete", "", false, false, "_Delete", "delete the selected objects"},
@@ -196,6 +216,9 @@ std::string ArgPattern(const std::string& code, bool gbnf) {
     return o + ")";
   };
   if (code == "P") return gbnf ? "pt" : "(" + PointRe() + ")";
+  if (code == "X") return gbnf ? "sec" : "(" + PointRe() + " " + kNumRe + " " + kNumRe + ")";
+  if (code == "X+")
+    return gbnf ? "sec (\" \" sec)*" : "(" + PointRe() + " " + kNumRe + " " + kNumRe + ")( " + PointRe() + " " + kNumRe + " " + kNumRe + ")*";
   if (code == "P+") return gbnf ? "pt (\" \" pt)*" : "(" + PointRe() + ")( " + PointRe() + ")*";
   if (code == "N") return gbnf ? "num" : std::string("(") + kNumRe + ")";
   if (code == "I") return gbnf ? "int" : std::string("(") + kIntRe + ")";
@@ -223,6 +246,8 @@ std::string ArgsPattern(const CommandSpec& c, bool gbnf) {
 }
 }  // namespace
 
+bool AcceptsTargets(const CommandSpec& c) { return !c.creates && std::string(c.name).rfind("Sel", 0) != 0; }
+
 const CommandSpec* FindSpec(const std::string& commandName) {
   std::string n = LowerAscii(commandName);
   n.erase(0, n.find_first_not_of("_-!"));
@@ -235,10 +260,16 @@ bool ArgumentsMatch(const std::string& lineIn) {
   std::string line = lineIn;
   const size_t arrow = line.find("=>");
   if (arrow != std::string::npos) line = line.substr(0, arrow);
-  const auto w = Words(line);  // spazi multipli ridotti a uno
+  auto w = Words(line);  // spazi multipli ridotti a uno
   if (w.empty()) return false;
   const CommandSpec* c = FindSpec(w[0]);
   if (!c) return true;
+  // destinazioni "@Nome" alla fine dei comandi che agiscono sugli oggetti
+  if (AcceptsTargets(*c))
+    while (w.size() > 1 && w.back().size() > 1 && w.back()[0] == '@') {
+      if (!std::regex_match(w.back().substr(1), std::regex(kNameRe))) return false;
+      w.pop_back();
+    }
   std::string norm;
   for (size_t i = 1; i < w.size(); i++) norm += " " + w[i];
   static std::map<std::string, std::regex> cache;
@@ -259,10 +290,13 @@ std::string Grammar() {
   o << "\n";
   for (size_t i = 0; i < s.size(); i++) {
     o << "cmd" << i << " ::= " << QuoteGbnf(std::string("_") + s[i].name) << ArgsPattern(s[i], true);
+    if (AcceptsTargets(s[i])) o << " targets?";
     if (s[i].named) o << " named?";
     o << "\n";
   }
   o << "named ::= \" => \" name\n";
+  o << "targets ::= (\" @\" name){1,12}\n";
+  o << "sec ::= pt \" \" num \" \" num\n";
   o << "name ::= [A-Za-z] [A-Za-z0-9_]{0,31}\n";
   o << "num ::= \"-\"? [0-9]{1,6} (\".\" [0-9]{1,3})?\n";
   o << "int ::= [0-9]{1,4}\n";
@@ -287,13 +321,17 @@ std::string CompactSystemPrompt() {
 
 std::string SystemPromptFor(const ModelInfo* m) { return m && m->finetuned ? CompactSystemPrompt() : SystemPrompt(); }
 
-std::string SystemPrompt() {
-  std::ostringstream o;
-  o << R"(You are the modelling assistant of Kurva3D, a NURBS CAD program similar to Rhino 8.
-The user describes an object (often in Italian). You answer ONLY with a script of Kurva3D commands
-inside one code block that starts with ```kurva and ends with ```. No explanations outside the block.
+bool IsShapeHelper(const CommandSpec& c) {
+  static const std::set<std::string> h = {"SymCurve", "SectionLoft", "Lathe", "Plate", "PipeThrough", "Cap"};
+  return h.count(c.name) > 0;
+}
 
-Rules of the command language:
+// Regole e comandi del linguaggio. helpers: anche le forme composte, le destinazioni @Nome
+// e i consigli per gli oggetti complessi (le istruzioni classiche restano uguali a quelle
+// usate per addestrare il modello Kurva3D).
+std::string CommandReference(bool helpers) {
+  std::ostringstream o;
+  o << R"(Rules of the command language:
 - One command per line. Units are millimetres. Points are x,y,z (x,y means z=0). Z is up.
 - Numbers use a dot for decimals. Text with spaces goes in double quotes.
 - Lines starting with "# " are comments: use a few of them first to plan the parts.
@@ -301,18 +339,28 @@ Rules of the command language:
 )";
   auto pad = [](const std::string& s, size_t w) { return s.size() >= w ? s + "  " : s + std::string(w - s.size(), ' '); };
   for (const auto& c : CommandSpecs())
-    if (c.creates) o << "  " << pad(c.example, 40) << "(" << c.note << ")\n";
+    if (c.creates && !IsShapeHelper(c)) o << "  " << pad(c.example, 40) << "(" << c.note << ")\n";
+  if (helpers) {
+    o << "- Shape commands for complex and organic objects (they create one solid each):\n";
+    for (const auto& c : CommandSpecs())
+      if (c.creates && IsShapeHelper(c)) o << "  " << c.example << "\n      " << c.note << "\n";
+  }
   o << R"(- Naming: add " => Name" (one word, no spaces) at the end of a creating command to name what it creates, e.g.
   _Box 0,0,0 100,50 30 => Body
 - Commands that act on objects need a selection first:
 )";
   bool acting = false;
   for (const auto& c : CommandSpecs()) {
-    if (c.creates) continue;
+    if (c.creates || (!helpers && IsShapeHelper(c))) continue;
     const bool sel = std::string(c.name).rfind("Sel", 0) == 0;
     if (!sel && !acting) { o << "  then one of:\n"; acting = true; }
     o << "  " << pad(c.example, 40) << c.note << "\n";
   }
+  if (helpers)
+    o << R"(- Shortcut: end an acting command with @Name for each object it works on; it selects them first
+  (same as _SelNone then _SelName). Examples: _BooleanUnion @Seat @Legs => Chair   _Delete @Path
+  _Mirror 0,0,0 0,1,0 @WingR => WingL   _Copy 0,0,0 0,0,30 _Enter @Outline => Rim   _SetObjectColor 120,70,30 @Neck
+)";
   o << R"(- Never use commands for files, undo, layers or settings.
 - Build solids from simple primitives, then combine them with the boolean commands.
 - Place parts so that solids to be joined overlap a little (at least 0.5 mm).
@@ -332,7 +380,37 @@ Rules of the command language:
   diameter 900-1200, coffee table height 400, chair seat height 450 and backrest top 850-900, desk 1400x700,
   shelf thickness 20, table leg 40-60 wide, central column diameter 80-120 with a base diameter 400-600,
   desk lamp height 400-550 with a base diameter 150-250.
+)";
+  if (helpers)
+    o << R"(  More sizes: violin 595 long (body 356 long, 208 wide, ribs 32 high), cello 1250, acoustic guitar 1000 long
+  (body 490x380x100), electric guitar 980, wine bottle 300 high and 75 wide, mug 95 high and 80 wide, teapot 200
+  high, glass 120 high, bicycle 1750 long and 1000 high (wheels diameter 700), car 4300x1800x1450 (wheels
+  diameter 660), sofa 2000x900x850 (seat 450), bed 2000x1600 (mattress top 550), sailboat 8000 long (mast
+  10000), airliner 38000 long (wingspan 34000), helicopter 12000, house door 2100x900, person 1750.
+- How to build complex objects: split them into parts with real proportions and build each part with the
+  command that fits its shape:
+  curvy outline seen from above (guitar or violin body, boat deck, car body, leaf): _SymCurve, then
+    _ExtrudeCrv _Solid=_Yes height @Outline (for a domed top: _Copy the outline up, _Scale it smaller,
+    _Loft @Low @High, _Cap, _BooleanUnion with the body);
+  long rounded parts (necks, handles, fuselages, horns, arms, legs, tails): _SectionLoft;
+  round turned parts standing on their axis (vases, bottles, glasses, lamp shades, knobs, columns): _Lathe;
+  thin flat parts in any orientation (wings, fins, sails, blades, panels, bridges): _Plate;
+  rods, strings, wires, tubes and frames: _PipeThrough;
+  holes and slots: make a cutting solid, then _BooleanDifference @Body @Cutter => Body;
+  symmetric pairs (wings, wheels, legs, eyes): make one, then _Mirror 0,0,0 0,1,0 @Part => Part
+    (mirror across the plane x = 0);
+  colours make the parts readable: _SetObjectColor r,g,b @Part.
+)";
+  return o.str();
+}
 
+std::string SystemPrompt() {
+  std::ostringstream o;
+  o << R"(You are the modelling assistant of Kurva3D, a NURBS CAD program similar to Rhino 8.
+The user describes an object (often in Italian). You answer ONLY with a script of Kurva3D commands
+inside one code block that starts with ```kurva and ends with ```. No explanations outside the block.
+
+)" << CommandReference(false) << R"(
 Example: "un tavolo 120x80 alto 75 cm" (cm -> mm)
 ```kurva
 # Top 1200x800, z 710-750. Four legs 60x60, z 0-710, at the corners
@@ -496,24 +574,259 @@ std::vector<std::string> ExtractScript(const std::string& replyIn) {
   return out;
 }
 
+namespace {
+std::string Fmt(double v) {
+  if (std::fabs(v) < 5e-7) v = 0;
+  char b[48];
+  std::snprintf(b, sizeof b, "%.6g", v);
+  return b;
+}
+std::string Pt(const ON_3dPoint& p) { return Fmt(p.x) + "," + Fmt(p.y) + "," + Fmt(p.z); }
+// Legge "x,y[,z]"
+bool ParsePt(const std::string& s, ON_3dPoint& p) {
+  double v[3] = {0, 0, 0};
+  int n = 0;
+  std::istringstream in(s);
+  for (std::string t; std::getline(in, t, ',') && n < 3;) {
+    char* e = nullptr;
+    v[n++] = std::strtod(t.c_str(), &e);
+    if (e == t.c_str() || *e) return false;
+  }
+  if (n < 2 || !in.eof()) return false;
+  p = ON_3dPoint(v[0], v[1], v[2]);
+  return true;
+}
+bool ParseNum(const std::string& s, double& v) {
+  char* e = nullptr;
+  v = std::strtod(s.c_str(), &e);
+  return e != s.c_str() && !*e;
+}
+bool IsEnterWord(const std::string& w) { const std::string l = LowerAscii(w); return l == "_enter" || l == "enter"; }
+
+// Comandi normali per una forma composta. tmp: prefisso dei nomi provvisori.
+// name: nome del risultato (vuoto: nessuno). Restituisce false se gli argomenti non vanno.
+bool ExpandShape(const std::string& cmd, const std::vector<std::string>& args, const std::string& tmp,
+                 const std::string& name, std::vector<std::string>& out) {
+  std::vector<std::string> a;
+  for (const auto& w : args) if (!IsEnterWord(w)) a.push_back(w);
+  auto nameLast = [&](const std::string& n) {
+    out.push_back("_SelNone");
+    out.push_back("_SelLast");
+    out.push_back("_SetObjectName \"" + n + "\"");
+    out.push_back("_SelNone");
+  };
+  auto deleteNamed = [&](const std::string& names) {
+    out.push_back("_SelNone");
+    out.push_back("_SelName " + names);
+    out.push_back("_Delete");
+  };
+  const std::string res = name.empty() ? tmp + "R" : name;
+  if (cmd == "symcurve") {
+    std::vector<ON_3dPoint> p(a.size());
+    for (size_t i = 0; i < a.size(); i++) if (!ParsePt(a[i], p[i])) return false;
+    if (p.size() < 3) return false;
+    const double ax = p[0].x;
+    std::string l = "_InterpCrv";
+    for (const auto& q : p) l += " " + Pt(q);
+    for (size_t i = p.size() - 1; i >= 1; i--)
+      if (std::fabs(p[i].x - ax) > 1e-6) l += " " + Pt(ON_3dPoint(2 * ax - p[i].x, p[i].y, p[i].z));
+    out.push_back(l + " _Close");
+    if (!name.empty()) nameLast(name);
+    return true;
+  }
+  if (cmd == "plate") {
+    double t;
+    if (a.size() < 4 || !ParseNum(a[0], t) || t <= 0) return false;
+    std::vector<ON_3dPoint> p;
+    for (size_t i = 1; i < a.size(); i++) {
+      if (LowerAscii(a[i]) == "_close" || LowerAscii(a[i]) == "close") continue;
+      ON_3dPoint q;
+      if (!ParsePt(a[i], q)) return false;
+      p.push_back(q);
+    }
+    if (p.size() < 3) return false;
+    ON_3dVector n(0, 0, 0);  // normale (metodo di Newell)
+    for (size_t i = 0; i < p.size(); i++) {
+      const ON_3dPoint& u = p[i];
+      const ON_3dPoint& v = p[(i + 1) % p.size()];
+      n.x += (u.y - v.y) * (u.z + v.z);
+      n.y += (u.z - v.z) * (u.x + v.x);
+      n.z += (u.x - v.x) * (u.y + v.y);
+    }
+    if (!n.Unitize()) return false;
+    if (n.z < 0) n = -n;
+    const ON_3dPoint o = p[0];
+    ON_3dVector axis = ON_CrossProduct(n, ON_3dVector::ZAxis);
+    const bool flat = axis.Length() < 1e-6;
+    const double ang = std::acos(std::max(-1.0, std::min(1.0, n.z))) * 180.0 / ON_PI;
+    std::string l = "_Polyline";
+    for (const auto& q : p) l += " " + Pt(flat ? q - ON_3dVector(0, 0, t / 2) : q);
+    out.push_back(l + " _Close");
+    nameLast(tmp + "P");
+    out.push_back("_SelName " + tmp + "P");
+    if (!flat) {
+      axis.Unitize();
+      // il contorno ruotato in orizzontale attorno a un asse per il primo punto, poi abbassato
+      out.push_back("_Rotate3D " + Pt(o) + " " + Pt(o + axis) + " " + Fmt(ang));
+      out.push_back("_Move 0,0,0 0,0," + Fmt(-t / 2));
+    }
+    out.push_back("_ExtrudeCrv _Solid=_Yes " + Fmt(t));
+    if (!flat) {
+      out.push_back("_SelNone");
+      out.push_back("_SelLast");
+      out.push_back("_Rotate3D " + Pt(o) + " " + Pt(o + axis) + " " + Fmt(-ang));
+    }
+    nameLast(res);
+    deleteNamed(tmp + "P");
+    return true;
+  }
+  if (cmd == "pipethrough") {
+    double r;
+    if (a.size() < 3 || !ParseNum(a[0], r)) return false;
+    std::vector<ON_3dPoint> p(a.size() - 1);
+    for (size_t i = 1; i < a.size(); i++) if (!ParsePt(a[i], p[i - 1])) return false;
+    std::string l = p.size() == 2 ? "_Line" : "_InterpCrv";
+    for (const auto& q : p) l += " " + Pt(q);
+    out.push_back(p.size() == 2 ? l : l + " _Enter");
+    nameLast(tmp + "P");
+    out.push_back("_SelName " + tmp + "P");
+    out.push_back("_Pipe " + Fmt(r));
+    nameLast(res);
+    deleteNamed(tmp + "P");
+    return true;
+  }
+  if (cmd == "lathe") {
+    // sezioni circolari impilate in Z e loft (solido di OpenCASCADE: le booleane funzionano)
+    ON_3dPoint c;
+    if (a.size() < 3 || !ParsePt(a[0], c)) return false;
+    std::vector<std::string> sec;
+    double lastH = -1e300, maxR = 0;
+    std::vector<ON_3dPoint> rh;
+    for (size_t i = 1; i < a.size(); i++) {
+      ON_3dPoint q;
+      if (!ParsePt(a[i], q) || q.y <= lastH + 1e-6) return false;  // altezze crescenti
+      lastH = q.y;
+      maxR = std::max(maxR, std::fabs(q.x));
+      rh.push_back(q);
+    }
+    if (maxR <= 0) return false;
+    // profilo liscio (curva interpolata raggio/altezza) campionato fitto: il loft segue il profilo
+    if (rh.size() >= 3) {
+      std::vector<ON_3dPoint> pr;
+      for (const auto& q : rh) pr.push_back(ON_3dPoint(std::fabs(q.x), q.y, 0));
+      std::unique_ptr<ON_NurbsCurve> nc(InterpolateCubic(pr));
+      if (nc) {
+        const int n = std::min(48, 4 * ((int)rh.size() - 1) + 1);
+        std::vector<ON_3dPoint> dense;
+        bool mono = true;
+        for (int i = 0; i < n; i++) {
+          const ON_3dPoint q = nc->PointAt(nc->Domain().ParameterAt(double(i) / (n - 1)));
+          if (!dense.empty() && q.y <= dense.back().y + 1e-6) { mono = false; break; }
+          dense.push_back(ON_3dPoint(std::max(0.0, q.x), q.y, 0));
+        }
+        if (mono) rh = dense;
+      }
+    }
+    std::vector<std::string> args;
+    for (const auto& q : rh) {
+      const double d = 2 * std::max(std::fabs(q.x), maxR * 0.01);
+      args.push_back(Pt(c + ON_3dVector(0, 0, q.y)));
+      args.push_back(Fmt(d));
+      args.push_back(Fmt(d));
+    }
+    return ExpandShape("sectionloft", args, tmp, name, out);
+  }
+  if (cmd == "sectionloft") {
+    if (a.size() < 6 || a.size() % 3) return false;
+    struct Sec { ON_3dPoint c; double w, h; };
+    std::vector<Sec> sec(a.size() / 3);
+    for (size_t i = 0; i < sec.size(); i++)
+      if (!ParsePt(a[3 * i], sec[i].c) || !ParseNum(a[3 * i + 1], sec[i].w) || !ParseNum(a[3 * i + 2], sec[i].h) ||
+          sec[i].w <= 0 || sec[i].h <= 0)
+        return false;
+    std::string names;
+    for (size_t i = 0; i < sec.size(); i++) {
+      ON_3dVector d = sec[std::min(i + 1, sec.size() - 1)].c - sec[i > 0 ? i - 1 : 0].c;
+      if (!d.Unitize()) return false;
+      const ON_3dPoint& c = sec[i].c;
+      std::string l;
+      if (std::fabs(d.z) > 0.7) {  // sezioni una sopra l'altra: ellissi orizzontali
+        l = "_Ellipse " + Pt(c) + " " + Pt(c + ON_3dVector(sec[i].w / 2, 0, 0)) + " " + Pt(c + ON_3dVector(0, sec[i].h / 2, 0));
+      } else {  // sezioni lungo una linea orizzontale: ellissi verticali
+        ON_3dVector u = ON_CrossProduct(ON_3dVector::ZAxis, ON_3dVector(d.x, d.y, 0));
+        if (!u.Unitize()) return false;
+        l = "_Ellipse _Vertical " + Pt(c) + " " + Pt(c + u * (sec[i].w / 2)) + " " + Pt(c + ON_3dVector(0, 0, sec[i].h / 2));
+      }
+      out.push_back(l);
+      const std::string sn = tmp + "S" + std::to_string(i + 1);
+      nameLast(sn);
+      names += (names.empty() ? "" : " ") + sn;
+    }
+    out.push_back("_SelName " + names);
+    out.push_back("_Loft");
+    out.push_back("_SelNone");
+    out.push_back("_SelLast");
+    out.push_back("_Cap");
+    nameLast(res);
+    deleteNamed(names);
+    return true;
+  }
+  return false;
+}
+}  // namespace
+
 std::vector<std::string> ExpandScript(const std::vector<std::string>& lines, std::vector<int>* origin) {
   std::vector<std::string> out;
   if (origin) origin->clear();
-  auto push = [&](const std::string& s, int k) { out.push_back(s); if (origin) origin->push_back(k); };
   for (int k = 0; k < (int)lines.size(); k++) {
+    const size_t before = out.size();
     std::string l = lines[k];
+    std::string name;
     const size_t arrow = l.find("=>");
-    if (arrow == std::string::npos) { push(l, k); continue; }
-    std::string name = Trim(l.substr(arrow + 2));
-    if (name.size() >= 2 && name.front() == '"' && name.back() == '"') name = name.substr(1, name.size() - 2);
-    // un nome e' una parola sola (SelName separa i nomi con gli spazi)
-    name.erase(std::remove_if(name.begin(), name.end(), [](unsigned char c) { return std::isspace(c); }), name.end());
-    push(Trim(l.substr(0, arrow)), k);
-    if (name.empty()) continue;
-    push("_SelNone", k);
-    push("_SelLast", k);
-    push("_SetObjectName \"" + name + "\"", k);
-    push("_SelNone", k);
+    if (arrow != std::string::npos) {
+      name = Trim(l.substr(arrow + 2));
+      if (name.size() >= 2 && name.front() == '"' && name.back() == '"') name = name.substr(1, name.size() - 2);
+      // un nome e' una parola sola (SelName separa i nomi con gli spazi)
+      name.erase(std::remove_if(name.begin(), name.end(), [](unsigned char c) { return std::isspace(c) || c == '"'; }),
+                 name.end());
+      l = Trim(l.substr(0, arrow));
+    }
+    auto w = Words(l);
+    // destinazioni "@A @B" alla fine: selezione per nome prima del comando
+    std::vector<std::string> targets;
+    while (w.size() > 1 && w.back().size() > 1 && w.back()[0] == '@') {
+      targets.insert(targets.begin(), w.back().substr(1));
+      w.pop_back();
+    }
+    if (!targets.empty()) {
+      std::string sel = "_SelName";
+      for (const auto& t : targets) sel += " " + t;
+      out.push_back("_SelNone");
+      out.push_back(sel);
+      l.clear();
+      for (const auto& x : w) l += (l.empty() ? "" : " ") + x;
+    }
+    const std::string cmd = w.empty() ? std::string() : CommandName(w[0]);
+    bool done = false;
+    if (cmd == "symcurve" || cmd == "pipethrough" || cmd == "lathe" || cmd == "sectionloft" || cmd == "plate") {
+      std::vector<std::string> args(w.begin() + 1, w.end());
+      std::vector<std::string> ex;
+      if (ExpandShape(cmd, args, "zzK" + std::to_string(k + 1), name, ex)) {
+        out.insert(out.end(), ex.begin(), ex.end());
+        done = true;
+      }
+      // argomenti sbagliati: la riga resta com'e' e Kurva3D la rifiuta con un errore
+    }
+    if (!done) {
+      out.push_back(l);
+      if (!name.empty()) {
+        out.push_back("_SelNone");
+        out.push_back("_SelLast");
+        out.push_back("_SetObjectName \"" + name + "\"");
+        out.push_back("_SelNone");
+      }
+    }
+    if (origin) origin->insert(origin->end(), out.size() - before, k);
   }
   return out;
 }
@@ -527,9 +840,28 @@ bool CommandAllowed(const std::string& raw) {
   return true;
 }
 
-Validation Validate(Engine& e, const std::vector<std::string>& lines) {
+Validation Validate(Engine& e, const std::vector<std::string>& lines, const std::function<void(Engine&)>& after) {
   Validation v;
   if (lines.empty()) { v.error = "nessun comando nella risposta"; return v; }
+  // prima la forma di ogni riga scritta dal modello (comandi della tabella)
+  for (size_t k = 0; k < lines.size(); k++) {
+    const auto w = Words(lines[k]);
+    const CommandSpec* spec = w.empty() ? nullptr : FindSpec(w[0]);
+    if (spec && !ArgumentsMatch(lines[k])) {
+      v.line = (int)k;
+      v.error = std::string("wrong arguments for ") + spec->name + ": write it like " + spec->example + " (" + spec->note + ")";
+      return v;
+    }
+    // forma composta con valori impossibili (es. altezze di _Lathe non crescenti)
+    if (spec && IsShapeHelper(*spec) && std::string(spec->name) != "Cap") {
+      const auto x = ExpandScript({lines[k]});
+      if (!x.empty() && LowerAscii(CommandName(x[0])) == LowerAscii(spec->name)) {
+        v.line = (int)k;
+        v.error = std::string("impossible values for ") + spec->name + " (" + spec->note + "); example: " + spec->example;
+        return v;
+      }
+    }
+  }
   std::vector<int> origin;
   const auto expanded = ExpandScript(lines, &origin);
   Document3dm scratch;
@@ -568,12 +900,6 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
           }
     }
     const auto idsBefore = se.AllObjectIds(true);
-    if (const CommandSpec* spec = FindSpec(name); spec && (i == 0 || origin[i] != origin[i - 1]) &&
-                                                  !ArgumentsMatch(lines[origin[i]])) {
-      v.line = origin[i];
-      v.error = std::string("wrong arguments for ") + spec->name + ": write it like " + spec->example + " (" + spec->note + ")";
-      return v;
-    }
     if (!se.Commands().count(name)) {
       v.line = origin[i];
       v.error = "unknown command " + name + ": use only the commands listed in the reference";
@@ -607,6 +933,7 @@ Validation Validate(Engine& e, const std::vector<std::string>& lines) {
     return v;
   }
   v.ok = true;
+  if (after) after(se);
   return v;
 }
 
