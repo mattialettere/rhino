@@ -451,6 +451,7 @@ int main(int argc, char** argv) {
     say(QString("\n=== %1 | %2%3 | grammatica %4 ===").arg(j.model, promptOf(j), ex, j.grammar ? "si" : "no"));
     clock.start();
     if (complex) {
+      gen.SetTimeoutMinutes(60);  // senza GPU i modelli grandi impiegano molti minuti per il piano
       gen.RunParts(extPort ? extPort : server.Port(), promptOf(j), 2, j.grammar,
                    j.bench >= 0 ? QString::fromUtf8(kComplex[j.bench].exclude) : QString());
       return;
@@ -495,6 +496,7 @@ int main(int argc, char** argv) {
         pl += QString("\n  PART %1 | %2").arg(QString::fromStdString(p.name), QString::fromStdString(p.what));
       say("Piano: " + pl);
       if (!gen.Skipped().isEmpty()) say("Parti lasciate fuori: " + gen.Skipped().join("; "));
+      for (const auto& r : gen.RepairLog()) say("Correzione chiesta: " + r);
     }
     say("Script:\n" + script.join("\n"));
     if (!bench && script.isEmpty() && !err.isEmpty()) { say("ERRORE risposta: " + err); app.exit(1); return; }

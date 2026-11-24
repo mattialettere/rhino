@@ -113,6 +113,10 @@ class Generator : public QObject {
   bool UsedGrammar() const { return m_grammar; }
   const ai::Plan& LastPlan() const { return m_plan; }
   QStringList Skipped() const { return m_skipped; }  // parti lasciate fuori
+  // Errori che hanno fatto chiedere una correzione al modello (piano e parti), in ordine.
+  QStringList RepairLog() const { return m_repairLog; }
+  // Tempo massimo per una risposta del modello (senza GPU i modelli grandi sono lenti).
+  void SetTimeoutMinutes(int minutes) { m_timeoutMin = minutes; }
 
  signals:
   void Status(const QString& text);
@@ -137,7 +141,8 @@ class Generator : public QObject {
   int m_part = 0;
   int m_partStart = 0;  // indice in m_messages della richiesta della parte corrente
   std::vector<std::string> m_done;  // comandi delle parti gia' verificate
-  QStringList m_skipped;
+  QStringList m_skipped, m_repairLog;
+  int m_timeoutMin = 20;
 };
 
 }  // namespace cad::aiqt

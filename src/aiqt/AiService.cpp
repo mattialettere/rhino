@@ -349,6 +349,7 @@ void Generator::RunParts(int port, const QString& request, int maxRepairs, bool 
   m_part = 0;
   m_done.clear();
   m_skipped.clear();
+  m_repairLog.clear();
   const std::string sys = ai::PlanSystemPrompt(request.toStdString(), exclude.toStdString());
   m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", QString::fromStdString(sys)}},
                           QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString(), exclude.toStdString()))}}};
@@ -376,7 +377,7 @@ void Generator::Send() {
   m_requests++;
   QNetworkRequest rq = Req(QString("http://127.0.0.1:%1/v1/chat/completions").arg(m_port));
   rq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-  rq.setTransferTimeout(10 * 60 * 1000);
+  rq.setTransferTimeout(m_timeoutMin * 60 * 1000);
   // nei nuovi tentativi un po' piu' di varieta', per non ripetere lo stesso errore
   QJsonObject body{{"messages", m_messages}, {"temperature", m_repairs == 0 ? 0.2 : 0.5}, {"max_tokens", 2048},
                    {"cache_prompt", true}, {"chat_template_kwargs", QJsonObject{{"enable_thinking", false}}}};
@@ -425,6 +426,7 @@ void Generator::OnReply(const QString& content) {
       return;
     }
     m_repairs++;
+    m_repairLog << "piano: " + QString::fromStdString(err);
     m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
     m_messages.append(QJsonObject{{"role", "user"},
                                   {"content", QString::fromStdString("The plan is not valid: " + err +
@@ -454,6 +456,7 @@ void Generator::OnReply(const QString& content) {
       return;
     }
     m_repairs++;
+    m_repairLog << QString::fromStdString(m_plan.parts[m_part].name + ": " + ai::PartRepairRequest(m_plan, m_part, lines, v));
     m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
     m_messages.append(QJsonObject{{"role", "user"},
                                   {"content", QString::fromStdString(ai::PartRepairRequest(m_plan, m_part, lines, v))}});
