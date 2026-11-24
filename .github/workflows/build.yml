@@ -219,38 +219,15 @@ jobs:
           $srv.Kill()
 
       # Oggetti complessi con modelli veri (Actions -> Build -> Run workflow "ai_complessi", oppure
-      # [ai-complessi] nel messaggio del commit): lavoro per parti, un processo per richiesta,
-      # risultati salvati e fotografati con kurva3d.exe
-      - name: Banco di prova AI (oggetti complessi)
+      # [ai-complessi] nel messaggio del commit): la cartella dist passa al job "ai-complessi",
+      # che prova piu' modelli in parallelo
+      - name: Distribuzione per il banco degli oggetti complessi
         if: contains(github.event.head_commit.message, '[ai-complessi]') || (github.event_name == 'workflow_dispatch' && inputs.ai_complessi)
-        continue-on-error: true
-        shell: pwsh
-        timeout-minutes: 240
-        run: |
-          $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
-          $out = "$env:RUNNER_TEMP\ai-complessi"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          # prima Qwen3 8B (consigliato con 16 GB) su tutto, poi Qwen3 4B su violino, bicicletta ed elicottero
-          $jobs = @(0..7 | ForEach-Object { ,@("qwen3-8b", $_) }) + @(0, 1, 4, 6 | ForEach-Object { ,@("qwen3-4b", $_) })
-          foreach ($j in $jobs) {
-            $m = $j[0]; $k = $j[1]
-            & dist\kurva3d-ai-test.exe --bench-complex --case $k --models $m --save-dir $out
-            if ($LASTEXITCODE -ne 0) { Write-Output "RICHIESTA ${k} ($m): il programma si e' fermato (codice $LASTEXITCODE)" }
-          }
-          foreach ($f in Get-ChildItem "$out\*.3dm") {
-            $png = [IO.Path]::ChangeExtension($f.FullName, ".png")
-            $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList "`"$($f.FullName)`"", '--no-whats-new', '--script', "$PWD\tests\ai_shot.txt", '--screenshot', "`"$png`"", '--wait', '2500' -PassThru
-            if (-not $p.WaitForExit(120000)) { $p.Kill() }
-          }
-          Get-ChildItem $out | Format-Table Name, Length
-
-      - name: Risultati del banco degli oggetti complessi
-        if: contains(github.event.head_commit.message, '[ai-complessi]') || (github.event_name == 'workflow_dispatch' && inputs.ai_complessi)
-        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: kurva3d-ai-complessi
-          path: ${{ runner.temp }}\ai-complessi
+          name: kurva3d-ai-bench-dist
+          path: dist
+          retention-days: 3
 
       # Modello addestrato (tools/ai-train): stesso banco, istruzioni brevi; poi Qwen3 4B di
       # base con le istruzioni complete, per il confronto
@@ -341,6 +318,61 @@ jobs:
         with:
           name: kurva3d-windows-x64
           path: dist
+
+  # Banco degli oggetti complessi: un job per modello, in parallelo. Lavoro per parti, un processo
+  # per richiesta; i risultati sono salvati in .3dm e fotografati con kurva3d.exe.
+  ai-complessi:
+    needs: windows
+    if: contains(github.event.head_commit.message, '[ai-complessi]') || (github.event_name == 'workflow_dispatch' && inputs.ai_complessi)
+    runs-on: windows-2022
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: qwen3-8b     # consigliato con 16 GB: tutte le richieste
+            cases: "0,1,2,3,4,5,6,7,8,9"
+          - model: qwen3-14b    # 32 GB: le richieste senza esempio
+            cases: "1,2,4,6,8"
+          - model: qwen3-4b     # 8 GB
+            cases: "1,4,6"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tests
+      - uses: actions/download-artifact@v4
+        with:
+          name: kurva3d-ai-bench-dist
+          path: dist
+      - name: Cache del modello
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Kurva3D\models
+          key: kurva3d-ai-model-${{ matrix.model }}-v1
+      - name: Banco di prova AI (oggetti complessi, ${{ matrix.model }})
+        continue-on-error: true
+        shell: pwsh
+        timeout-minutes: 320
+        run: |
+          $env:KURVA3D_LLAMA_SERVER = "$PWD\dist\llama\llama-server.exe"
+          $out = "$env:RUNNER_TEMP\ai-complessi"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          foreach ($k in "${{ matrix.cases }}".Split(",")) {
+            & dist\kurva3d-ai-test.exe --bench-complex --case $k --models ${{ matrix.model }} --save-dir $out
+            if ($LASTEXITCODE -ne 0) { Write-Output "RICHIESTA ${k}: il programma si e' fermato (codice $LASTEXITCODE)" }
+          }
+          foreach ($f in Get-ChildItem "$out\*.3dm") {
+            $png = [IO.Path]::ChangeExtension($f.FullName, ".png")
+            $p = Start-Process -FilePath dist\kurva3d.exe -ArgumentList "`"$($f.FullName)`"", '--no-whats-new', '--script', "$PWD\tests\ai_shot.txt", '--screenshot', "`"$png`"", '--wait', '2500' -PassThru
+            if (-not $p.WaitForExit(120000)) { $p.Kill() }
+          }
+          Get-ChildItem $out | Format-Table Name, Length
+      - name: Risultati
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kurva3d-ai-complessi-${{ matrix.model }}
+          path: ${{ runner.temp }}\ai-complessi
 
   macos:
     if: (github.event_name == 'workflow_dispatch' && inputs.mac) || contains(github.event.head_commit.message, '[mac]')

@@ -2331,9 +2331,76 @@ int main(int argc, char** argv) {
       CHECK(ids(ai::SelectExamples("un violino", 2, "violino")) == "chitarra tavolo ");
       CHECK(ids(ai::SelectExamples("una caffettiera", 1)) == "teiera ");
       CHECK(ids(ai::SelectExamples("qualcosa di strano", 2)) == "chitarra tavolo ");
+      // istruzioni uguali per ogni richiesta (restano in memoria in llama-server); i piani d'esempio
+      // vanno nella richiesta, con l'avviso quando sono di un altro oggetto
       const std::string sp = ai::PlanSystemPrompt("un violino");
-      CHECK(sp.find("Example request: \"un violino\"") != std::string::npos && sp.find("_SectionLoft") != std::string::npos);
-      CHECK(sp.size() < 26000);  // istruzioni + 2 esempi: restano nel contesto di llama-server
+      CHECK(sp == ai::PlanSystemPrompt("una bicicletta") && sp.find("_SectionLoft") != std::string::npos);
+      CHECK(sp.find("_Wheel") != std::string::npos && sp.find("_Blades") != std::string::npos && sp.size() < 16000);
+      const std::string pr = ai::PlanRequest("un violino");
+      CHECK(pr.find("Plan of the same kind of object") != std::string::npos && pr.find("# Distinctive:") != std::string::npos);
+      const std::string pc = ai::PlanRequest("un violoncello");
+      CHECK(pc.find("Plan of a DIFFERENT object (\"un violino\")") != std::string::npos);
+      CHECK(pc.find("Plan of the same kind") == std::string::npos);
+      CHECK(ai::PlanRequest("un violino", "violino").find("Violin lying") == std::string::npos);
+    }
+    // stesso oggetto o oggetto diverso (le copie sono ammesse solo per lo stesso oggetto)
+    CHECK(ai::SameObject("Disegna un VIOLINO", "violino") && ai::SameObject("two violins", "violino"));
+    CHECK(!ai::SameObject("un violoncello", "violino") && !ai::SameObject("una viola", "violino"));
+    CHECK(ai::SameObject("una chitarra acustica", "chitarra") && !ai::SameObject("una chitarra elettrica", "chitarra"));
+    CHECK(!ai::SameObject("un'automobile sportiva", "automobile") && ai::SameObject("una macchina", "automobile"));
+    CHECK(!ai::SameObject("una carriola", "automobile") && ai::SameObject("una carriola", "carriola"));
+    {
+      const ai::Example* gtr = nullptr;
+      const ai::Example* vln = nullptr;
+      for (const auto& ex : ai::Examples()) {
+        if (std::string(ex.id) == "chitarra") gtr = &ex;
+        if (std::string(ex.id) == "violino") vln = &ex;
+      }
+      CHECK(gtr && vln);
+      ai::Plan gp;
+      CHECK(ai::ParsePlan(std::string("```plan\n") + gtr->plan + "```", gp) && !gp.features.empty());
+      // il piano della chitarra va bene per una chitarra, non per un violoncello
+      CHECK(ai::CheckPlan(gp, "una chitarra").empty());
+      CHECK(ai::CheckPlan(gp, "un violoncello").find("copies the example \"una chitarra acustica\"") != std::string::npos);
+      CHECK(ai::CheckPlan(gp, "un violoncello", "chitarra").empty());  // esempio tolto: non poteva copiarlo
+      // parte sospesa nel vuoto
+      ai::Plan fl;
+      ai::ParsePlan("PART Body | corpo | 0,0,0 100,100,100\nPART Moon | luna | 5000,5000,5000 5100,5100,5100", fl);
+      CHECK(ai::CheckPlan(fl, "qualcosa").find("does not touch any other part") != std::string::npos);
+      // righe copiate dagli esempi di altri oggetti
+      const auto gs = ai::ExampleScript(*gtr);
+      int n = 0;
+      CHECK(ai::CopiedExample(gs, "un violoncello", {}, &n) == "chitarra" && n >= 2);
+      CHECK(ai::CopiedExample(gs, "una chitarra").empty());
+      CHECK(ai::CopiedExample({"_Box 0,0,0 10,10 10", "_Sphere 0,0,0 5"}, "un violoncello").empty());
+      // tecniche per le parti: dallo stesso oggetto (da seguire) o da altri (da adattare)
+      ai::Plan vp;
+      ai::ParsePlan(std::string("```plan\n") + vln->plan + "```", vp);
+      int si = 0;
+      while (si < (int)vp.parts.size() && vp.parts[si].name != "Strings") si++;
+      CHECK(si < (int)vp.parts.size());
+      CHECK(ai::PartRequest(vp, si, "un violino").find("The same part in the example of this object") == 0);
+      const std::string other = ai::PartRequest(vp, si, "un violoncello");
+      CHECK(other.find("Technique from part Strings of ANOTHER object (\"un violino\"") == 0);
+      CHECK(ai::PartRequest(vp, si).find("Part ") == 0);  // senza richiesta: nessuna tecnica
+    }
+    // ruote e pale (forme per l'AI)
+    {
+      auto count = [&](const std::vector<std::string>& lines, const char* name) {
+        int n = -1;
+        const auto v = ai::Validate(c.e, lines, [&](cad::Engine& se) {
+          n = 0;
+          for (const auto& id : se.AllObjectIds(true))
+            if (const auto* o = se.Object(id))
+              if (const auto* a = o->Attributes(nullptr); a && cad::ToUtf8(a->m_name) == name) n++;
+        });
+        return v.ok ? n : -1;
+      };
+      CHECK(count({"_Wheel 0,800,330 330 60 x 16 => W"}, "W") == 18);  // copertone, mozzo, 16 raggi
+      CHECK(count({"_Wheel 0,800,330 330 220 y 0 => W"}, "W") == 1);   // ruota piena
+      CHECK(count({"_Blades 0,0,3000 z 4 5000 300 40 => R"}, "R") == 5);  // mozzo e 4 pale
+      CHECK(!ai::Validate(c.e, {"_Wheel 0,0,0 -5 10 x 3"}).ok);
+      CHECK(!ai::Validate(c.e, {"_Blades 0,0,0 z 40 100 10 2"}).ok);
     }
     // ogni esempio della libreria: piano valido e ogni parte dentro il suo ingombro
     for (const auto& ex : ai::Examples()) {
@@ -2361,6 +2428,19 @@ int main(int argc, char** argv) {
       const auto bad = ai::CheckPart(c.e, top, {"_Box 40,40,0 100,100 712 => Legs", "_Volare"}, plan, 1);
       CHECK(!bad.ok && bad.line == 1);
       CHECK(ai::PartRepairRequest(plan, 1, {"_Box 40,40,0 100,100 712 => Legs", "_Volare"}, bad).find("Line 2 of part Legs") == 0);
+      // troppo piccola per il suo box
+      const auto tiny = ai::CheckPart(c.e, top, {"_Box 40,40,0 100,100 100 => Legs"}, plan, 1);
+      CHECK(!tiny.ok && tiny.error.find("make the part fill its box") != std::string::npos);
+      // comandi copiati da un esempio di un altro oggetto
+      ai::Plan bp;
+      ai::ParsePlan("PART Wheels | ruote | -920,470,0 920,3830,660", bp);
+      const std::vector<std::string> copy = {"_PipeThrough 330 -920,800,330 -700,800,330 _Enter => Wheels",
+                                             "_PipeThrough 330 700,800,330 920,800,330 _Enter => Wheels",
+                                             "_PipeThrough 330 -920,3500,330 -700,3500,330 _Enter => Wheels",
+                                             "_PipeThrough 330 700,3500,330 920,3500,330 _Enter => Wheels"};
+      const auto cp = ai::CheckPart(c.e, {}, copy, bp, 0, "un camion dei pompieri");
+      CHECK(!cp.ok && cp.error.find("copied from the example \"un'automobile\"") != std::string::npos);
+      CHECK(ai::CheckPart(c.e, {}, copy, bp, 0, "un'automobile").ok);  // stesso oggetto: si puo' seguire l'esempio
     }
     CHECK(c.e.AllObjectIds(true).empty());
   }

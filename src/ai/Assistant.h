@@ -104,7 +104,7 @@ std::vector<std::string> ExtractScript(const std::string& reply);
 //  - "comando ... @A @B" seleziona prima gli oggetti chiamati A e B;
 //  - forme composte: _SymCurve (contorno simmetrico chiuso), _SectionLoft (solido per
 //    sezioni ellittiche), _Lathe (solido di rivoluzione da coppie raggio,altezza),
-//    _PipeThrough (tubo lungo una curva per punti).
+//    _PipeThrough (tubo lungo una curva per punti), _Wheel (ruota), _Blades (pale).
 std::vector<std::string> ExpandScript(const std::vector<std::string>& lines, std::vector<int>* origin = nullptr);
 
 struct Validation {
@@ -130,7 +130,8 @@ struct PlanPart {
   double box[6] = {0, 0, 0, 0, 0, 0};  // minimo x,y,z e massimo x,y,z
 };
 struct Plan {
-  std::string summary;  // riga "# ..." iniziale
+  std::string summary;   // riga "# ..." iniziale
+  std::string features;  // riga "# Distinctive: ..." (cio' che distingue l'oggetto da quelli simili)
   std::vector<PlanPart> parts;
 };
 // Legge il piano dalla risposta; error spiega cosa non va (in inglese, per il modello).
@@ -140,13 +141,25 @@ std::string PlanGrammar();
 // Istruzioni per lavorare per parti, con gli esempi piu' vicini alla richiesta.
 // exclude: id di un esempio da non usare (per le prove di generalizzazione).
 std::string PlanSystemPrompt(const std::string& request, const std::string& exclude = {});
-// Primo messaggio (richiesta + "scrivi il piano") e richiesta dei comandi della parte i.
-std::string PlanRequest(const std::string& request);
-std::string PartRequest(const Plan& plan, int i);
+// Primo messaggio (richiesta + piani d'esempio + "scrivi il piano") e richiesta dei comandi
+// della parte i (con le tecniche delle parti simili degli esempi).
+std::string PlanRequest(const std::string& request, const std::string& exclude = {});
+std::string PartRequest(const Plan& plan, int i, const std::string& request = {}, const std::string& exclude = {});
+// Controlli del piano oltre alla forma: non deve copiare il piano di un altro oggetto della
+// libreria e ogni parte deve toccarne un'altra. Vuoto se va bene, altrimenti il motivo (per il modello).
+std::string CheckPlan(const Plan& plan, const std::string& request, const std::string& exclude = {});
+// L'esempio descrive lo stesso oggetto della richiesta ("un violino" e l'esempio violino:
+// si puo' seguire; "un violoncello" o "una chitarra elettrica" no).
+bool SameObject(const std::string& request, const char* exampleId);
+// Righe che creano geometria copiate da un esempio di un altro oggetto: id dell'esempio
+// copiato (almeno meta' delle righe uguali), altrimenti vuoto.
+std::string CopiedExample(const std::vector<std::string>& lines, const std::string& request,
+                          const std::string& exclude = {}, int* copied = nullptr);
 // Verifica la parte i: lo script delle parti precedenti (gia' valido) seguito da quello
 // della parte. In caso di errore v.line e' la riga dello script della parte.
+// Con request: rifiuta anche le parti copiate da un esempio di un altro oggetto.
 Validation CheckPart(Engine& e, const std::vector<std::string>& before, const std::vector<std::string>& part,
-                     const Plan& plan, int i);
+                     const Plan& plan, int i, const std::string& request = {}, const std::string& exclude = {});
 std::string PartRepairRequest(const Plan& plan, int i, const std::vector<std::string>& part, const Validation& v);
 
 // Esempi completi (piano + parti), verificati dai test; scelti in base alla richiesta.

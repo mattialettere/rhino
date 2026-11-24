@@ -344,13 +344,14 @@ void Generator::RunParts(int port, const QString& request, int maxRepairs, bool 
   m_grammar = useGrammar;
   m_phase = Phase::Plan;
   m_request = request;
+  m_exclude = exclude;
   m_plan = {};
   m_part = 0;
   m_done.clear();
   m_skipped.clear();
   const std::string sys = ai::PlanSystemPrompt(request.toStdString(), exclude.toStdString());
   m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", QString::fromStdString(sys)}},
-                          QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString()))}}};
+                          QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString(), exclude.toStdString()))}}};
   Send();
 }
 
@@ -406,7 +407,8 @@ void Generator::Send() {
 void Generator::OnReply(const QString& content) {
   if (m_phase == Phase::Plan) {
     std::string err;
-    if (ai::ParsePlan(content.toStdString(), m_plan, &err)) {
+    if (ai::ParsePlan(content.toStdString(), m_plan, &err) &&
+        (err = ai::CheckPlan(m_plan, m_request.toStdString(), m_exclude.toStdString())).empty()) {
       m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
       QStringList names;
       for (const auto& p : m_plan.parts) names << QString::fromStdString(p.name);
@@ -432,7 +434,7 @@ void Generator::OnReply(const QString& content) {
   }
   const auto lines = ai::ExtractScript(content.toStdString());
   if (m_phase == Phase::Part) {
-    const ai::Validation v = ai::CheckPart(m_engine, m_done, lines, m_plan, m_part);
+    const ai::Validation v = ai::CheckPart(m_engine, m_done, lines, m_plan, m_part, m_request.toStdString(), m_exclude.toStdString());
     if (v.ok) {
       m_done.insert(m_done.end(), lines.begin(), lines.end());
       // nella conversazione resta solo la risposta giusta (i tentativi sbagliati occupano spazio)
@@ -476,7 +478,7 @@ void Generator::StartPart() {
   if (m_part >= (int)m_plan.parts.size()) { FinishParts(); return; }
   m_repairs = 0;
   m_partStart = m_messages.size();
-  m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PartRequest(m_plan, m_part))}});
+  m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PartRequest(m_plan, m_part, m_request.toStdString(), m_exclude.toStdString()))}});
   Send();
 }
 

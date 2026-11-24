@@ -10,6 +10,7 @@ const std::vector<Example>& Examples() {
       {"tavolo", "tavol table scrivani desk banco",
        "un tavolo 120x80 alto 75 cm",
        R"(# Table 1200x800, 750 high (cm -> mm): a top on four legs at the corners, standing on z = 0
+# Distinctive: a plain rectangular top, four straight legs inset from the corners
 PART Top | flat top 1200x800, 40 thick: _Box | 0,0,710 1200,800,750
 PART Legs | four square legs 60x60 under the corners: _Box, then _Copy | 40,40,0 1160,760,712
 )",
@@ -22,6 +23,7 @@ _SetObjectColor 150,100,60 @Legs)"}}},
       {"sedia", "sedi chair sgabell stool poltron",
        "una sedia",
        R"(# Chair 450x450: seat at 450, four legs, backrest up to 900 along the back edge (y = 450)
+# Distinctive: seat at chair height, four legs, tall backrest only on the back edge
 PART Seat | seat board 450x450, 30 thick: _Box | 0,0,420 450,450,450
 PART Legs | four legs 40x40 under the corners: _Box, then _Copy | 0,0,0 450,450,425
 PART Backrest | two rear posts up to 900 and a back panel between them: _Box | 0,410,445 450,450,900
@@ -36,6 +38,7 @@ _Box 40,420,650 410,445 250 => Backrest)"}}},
       {"lampada", "lampad lamp abat lume luce",
        "una lampada da tavolo ad arco",
        R"(# Arc desk lamp about 450 high: heavy base disc, bent stem rising forward (+Y), shade hanging at its end
+# Distinctive: heavy round base, curved stem bending forward, cone shade facing down
 PART Base | disc 220 wide, 20 thick: _Cylinder | -110,-110,0 110,110,20
 PART Stem | bent tube along a smooth path: _PipeThrough | -8,-8,10 8,308,448
 PART Shade | cone-shaped shade at the end of the stem: _Lathe | -90,210,330 90,390,450
@@ -49,6 +52,7 @@ _SetObjectColor 230,200,60 @Shade)"}}},
       {"tazza", "tazz mug cup bicchier glass caraff",
        "una tazza",
        R"(# Mug 84 wide and 95 high, standing on z = 0, handle on the +X side
+# Distinctive: hollow cylinder open at the top, one loop handle on the side
 PART Body | hollow round cup: _Lathe outside, _Lathe inside, _BooleanDifference | -42,-42,0 42,42,95
 PART Handle | curved handle on the side: _PipeThrough | 32,-6,14 74,6,81
 )",
@@ -62,6 +66,7 @@ _SetObjectColor 220,90,60 @Handle)"}}},
       {"bottiglia", "bottigli bottle vino wine birra beer flacon ampoll vaso vase",
        "una bottiglia di vino",
        R"(# Wine bottle 75 wide and 300 high, standing on z = 0, turned around the vertical axis
+# Distinctive: tall round body, sloping shoulder, long thin neck, small cap
 PART Bottle | glass bottle: radius,height profile turned with _Lathe | -37.5,-37.5,0 37.5,37.5,300
 PART Cork | cork in the neck: _Cylinder | -10,-10,290 10,10,315
 PART Label | paper label around the body: _Tube | -38.5,-38.5,60 38.5,38.5,160
@@ -76,6 +81,7 @@ _SetObjectColor 240,235,215 @Label)"}}},
       {"chitarra", "chitarr guitar basso bass ukulel mandolin liuto strument corde string",
        "una chitarra acustica",
        R"(# Acoustic guitar lying on its back, length along Y (970), body 490 long and 380 wide, 100 deep, top at z = 100
+# Distinctive: figure-of-eight body with a round sound hole, long neck, flat headstock with six pegs, six strings
 PART Body | body: symmetric outline with _SymCurve, _ExtrudeCrv 100, round sound hole cut into the top | -190,0,0 190,490,100
 PART Neck | rounded neck along Y: _SectionLoft | -28,470,64 28,790,100
 PART Fingerboard | dark tapered board on the neck, reaching the sound hole: _Plate | -28,400,100 28,790,106
@@ -111,6 +117,7 @@ _SetObjectColor 215,215,205 @Strings)"}}},
       {"violino", "violin viola violoncell cello contrabbass arco bow",
        "un violino",
        R"(# Violin lying on its back, length along Y (595): body 356 long and 208 wide, ribs 32 high, arched top up to z = 46
+# Distinctive: small hourglass body with two f-holes and an arched top, short neck ending in a scroll, four strings over a tall bridge, black fingerboard and tailpiece
 PART Body | symmetric outline (_SymCurve) extruded 32 for the ribs, arched top lofted to a smaller copy, f-holes cut | -104,0,0 104,356,46
 PART Neck | neck and pegbox along Y (_SectionLoft), scroll at the end (_Torus turned upright, _Sphere) | -23,345,25 23,586,71
 PART Fingerboard | black tapered board above the neck and the top: _Plate | -21,210,49 21,482,55
@@ -171,6 +178,7 @@ _SetObjectColor 215,215,205 @Strings)"}}},
       {"aereo", "aere aeroplan airplan plane jet velivol avion elicotter aliant",
        "un aereo di linea",
        R"(# Airliner, length along Y (38000), wingspan 34000, fuselage 4000 high from z = 1000 (landing gear not modelled)
+# Distinctive: long round fuselage, two swept wings with engines below, tall tail fin and small tail wings
 PART Fuselage | long rounded body from the nose (y = 0) to the raised tail: _SectionLoft along Y | -1950,0,1000 1950,38000,5000
 PART Wings | swept wings: _Plate for the right wing, then _Mirror | -17000,13000,1800 17000,21500,2600
 PART Engines | two engines under the wings: _SectionLoft, then _Mirror | -7600,11500,200 7600,16000,2400
@@ -194,6 +202,7 @@ _SetObjectColor 40,70,160 @Stabilizers)"}}},
       {"automobile", "auto macchin car automobil vettur camion truck furgon",
        "un'automobile",
        R"(# Car 4300 long (along Y, front at y = 4300), 1800 wide, 1400 high, wheels standing on z = 0
+# Distinctive: low body with rounded outline, glass cabin in the middle, four wheels at the corners, headlights at the front
 PART Body | lower body with a rounded outline seen from above: _SymCurve, _ExtrudeCrv 650 at z 300 | -900,0,300 900,4300,950
 PART Cabin | rounded cabin with the windows on top of the body: _SectionLoft along Y | -760,1250,500 760,3300,1400
 PART Wheels | four wheels: short thick rods along X with _PipeThrough | -920,470,0 920,3830,660
@@ -217,6 +226,7 @@ _SetObjectColor 250,240,170 @Lights)"}}},
       {"teiera", "teier teapot caffettier bollitor kettle brocc jug",
        "una teiera",
        R"(# Teapot about 200 high standing on z = 0: round body, lid with knob, spout on the -Y side, handle on the +Y side
+# Distinctive: round belly, lid with a knob, spout rising on one side and a loop handle on the other
 PART Body | round belly turned around the vertical axis: _Lathe | -100,-100,0 100,100,150
 PART Lid | lid and knob on top: _Lathe | -55,-55,148 55,55,196
 PART Spout | spout rising from the side: _SectionLoft | -20,-165,40 20,-80,160
@@ -234,6 +244,7 @@ _SetObjectColor 240,240,235 @Handle)"}}},
       {"barca", "barca boat nave ship vela sail yacht gommon canoa canoe kayak",
        "una barca a vela",
        R"(# Sailboat 8000 long (along Y, bow at y = 8000), 2600 wide: hull up to the deck at z = 1200, keel below z = 0, mast and sail
+# Distinctive: pointed hull narrowing at the bow, fin keel below, tall mast with a triangular sail
 PART Hull | deck outline (_SymCurve) at z 1200 lofted to a smaller copy at z 0 (_Copy, _Scale, _Loft, _Cap) | -1300,0,0 1300,8000,1200
 PART Keel | fin keel under the hull: _Plate in the plane x = 0 | -100,3500,-1400 100,5000,50
 PART Mast | tall mast: _PipeThrough | -80,4720,1150 80,4880,11000
@@ -252,6 +263,51 @@ _SetObjectColor 60,60,70 @Keel)"},
 _SetObjectColor 180,180,190 @Mast)"},
         {"Sail", R"(_Plate 40 0,4700,1600 0,4700,10800 0,1800,1600 _Close => Sail
 _SetObjectColor 250,250,245 @Sail)"}}},
+      {"carriola", "carriol wheelbarrow carrett cart",
+       "una carriola",
+       R"(# Wheelbarrow 1550 long (along Y, wheel at the front y = 1200), 660 wide, tub top at z = 650, standing on z = 0
+# Distinctive: one spoked wheel at the front, a deep tub, two long handles going back, two short legs under the back
+PART Wheel | spoked wheel at the front, axle along X: _Wheel | -40,1000,0 40,1400,400
+PART Tub | tub: _SymCurve top outline at z 650, copied down, scaled smaller, _Loft and _Cap | -330,250,380 330,1100,650
+PART Handles | two handles from the axle back to the grips: _PipeThrough, then _Mirror | -330,-160,180 330,1215,720
+PART Legs | two short legs under the back of the tub: _PipeThrough, then _Mirror | -250,330,0 250,470,500
+)",
+       {{"Wheel", R"(_Wheel 0,1200,200 200 80 x 12 => Wheel
+_SetObjectColor 40,40,40 @Wheel)"},
+        {"Tub", R"(_SymCurve 0,1100,650 250,1050,650 330,800,650 320,450,650 250,250,650 0,250,650 _Enter => Top
+_Copy 0,0,0 0,0,-270 _Enter @Top => Bottom
+_Scale 0,675,380 0.65 @Bottom
+_Loft @Top @Bottom => Tub
+_Cap @Tub
+_Delete @Top @Bottom
+_SetObjectColor 40,120,60 @Tub)"},
+        {"Handles", R"(_PipeThrough 15 60,1200,200 200,800,420 270,300,560 310,-150,700 _Enter => Handles
+_Mirror 0,0,0 0,1,0 @Handles => Handles
+_SetObjectColor 150,100,60 @Handles)"},
+        {"Legs", R"(_PipeThrough 12 230,450,0 230,400,480 _Enter => Legs
+_Mirror 0,0,0 0,1,0 @Legs => Legs
+_SetObjectColor 150,100,60 @Legs)"}}},
+
+      {"ventilatore", "ventilator fan pala pale blade elica propell mulin windmill turbin",
+       "un ventilatore a piantana",
+       R"(# Standing fan 1410 high on z = 0: round base, vertical pole, motor on top facing +Y, blades and guard in front
+# Distinctive: heavy round base, thin tall pole, three wide blades turning around a horizontal axis, round wire guard
+PART Base | heavy round base: _Lathe | -200,-200,0 200,200,60
+PART Pole | thin vertical pole: _PipeThrough | -15,-15,40 15,15,1100
+PART Motor | motor housing along Y on top of the pole: _SectionLoft | -80,-150,1070 80,20,1230
+PART Blades | three blades in front of the motor, axis along Y: _Blades | -230,50,920 230,70,1380
+PART Guard | round guard around the blades: _Wheel with many thin spokes, axle along Y | -260,30,890 260,90,1410
+)",
+       {{"Base", R"(_Lathe 0,0,0 200,0 190,30 60,60 _Enter => Base
+_SetObjectColor 60,60,60 @Base)"},
+        {"Pole", R"(_PipeThrough 15 0,0,40 0,0,1100 _Enter => Pole
+_SetObjectColor 200,200,200 @Pole)"},
+        {"Motor", R"(_SectionLoft 0,-150,1150 140 140 0,-60,1150 160 160 0,20,1150 100 100 _Enter => Motor
+_SetObjectColor 230,230,230 @Motor)"},
+        {"Blades", R"(_Blades 0,60,1150 y 3 220 130 8 => Blades
+_SetObjectColor 120,170,220 @Blades)"},
+        {"Guard", R"(_Wheel 0,60,1150 250 60 y 24 => Guard
+_SetObjectColor 200,200,200 @Guard)"}}},
   };
   return ex;
 }

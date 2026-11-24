@@ -63,19 +63,26 @@ struct ComplexCase {
   const char* exclude;      // esempio da togliere dalle istruzioni (prova di generalizzazione)
   double minSize, maxSize;  // lato maggiore plausibile (mm)
   int minObjects;
+  // parti che rendono riconoscibile l'oggetto: gruppi separati da ";", alternative da "|"
+  // (inizi di parola, cercati nei nomi e nelle descrizioni delle parti costruite)
+  const char* needs;
 };
 const ComplexCase kComplex[] = {
-    {"un violino", "", 500, 700, 5},
-    {"un violino", "violino", 500, 700, 5},  // senza l'esempio del violino: deve arrangiarsi
-    {"un violoncello", "", 1000, 1500, 5},
-    {"una chitarra elettrica", "", 800, 1200, 4},
-    {"una bicicletta", "", 1400, 2100, 5},
-    {"un'automobile sportiva", "", 3500, 5200, 4},
-    {"un elicottero", "", 6000, 20000, 4},
-    {"una teiera", "", 150, 350, 3},
+    {"un violino", "", 500, 700, 5, "string|cord; neck|manic; bridge|ponticel; scroll|riccio|head|pegbox|peg"},
+    {"un violino", "violino", 500, 700, 5, "string|cord; neck|manic; bridge|ponticel; scroll|riccio|head|pegbox|peg"},
+    {"un violoncello", "", 1000, 1500, 5, "string|cord; neck|manic; bridge|ponticel; scroll|riccio|head|pegbox|peg"},
+    {"una chitarra elettrica", "", 800, 1200, 4, "pickup|magnet; string|cord; neck|manic; head|peg|tuner|meccanic"},
+    {"una bicicletta", "", 1400, 2100, 5, "wheel|ruot; frame|telai|tube; handle|manubr; pedal|crank|pedivel; saddle|seat|sell"},
+    {"un'automobile sportiva", "", 3500, 5200, 4, "wheel|ruot; body|carrozz; cabin|window|glass|roof|cockpit|abitac"},
+    {"un elicottero", "", 6000, 20000, 4, "rotor|blade|pale|elic; tail|coda; skid|landing|patt|gear|carrell; cabin|cockpit|fuselag|body"},
+    {"una teiera", "", 150, 350, 3, "spout|beccucc; handle|manic; lid|coperch; body|corpo"},
+    // oggetti senza un esempio nella libreria
+    {"un drone quadricottero", "", 200, 1500, 5, "rotor|blade|propel|elic|pale; arm|bracc; body|corpo|frame|telai|hub"},
+    {"un trattore agricolo", "", 2500, 6500, 5, "wheel|ruot; cabin|cab|abitac; engine|hood|motor|cofan|bonnet"},
 };
 struct Outcome {
   bool valid = false, plausible = false;
+  std::string why;  // perche' non e' plausibile
   int attempts = 0, objects = 0;
   double seconds = 0, height = 0, width = 0;
 };
@@ -125,8 +132,16 @@ void Measure(const std::vector<std::string>& lines, const BenchCase& bc, Outcome
   out.plausible = all.IsValid() && out.height >= bc.minHeight && out.height <= bc.maxHeight &&
                   out.width >= bc.minWidth && out.width <= bc.maxWidth;
 }
-// Oggetto complesso: lato maggiore dell'ingombro e numero di oggetti; con saveAs salva il modello.
-void MeasureComplex(const QStringList& script, const ComplexCase& cc, Outcome& out, const QString& saveAs) {
+// Oggetto complesso: lato maggiore dell'ingombro, numero di oggetti, parti costruite, parti che
+// lo rendono riconoscibile e copie di esempi di altri oggetti; con saveAs salva il modello.
+void MeasureComplex(const QStringList& script, const ComplexCase& cc, const cad::ai::Plan& plan,
+                    const QStringList& skippedParts, Outcome& out, const QString& saveAs) {
+  auto isSkipped = [&](const std::string& name) {
+    for (const auto& s : skippedParts)
+      if (s.startsWith(QString::fromStdString(name) + " (")) return true;
+    return false;
+  };
+  const int skipped = (int)skippedParts.size();
   std::vector<std::string> lines;
   for (const auto& l : script) lines.push_back(l.toStdString());
   BenchCase any{"", 0, 1e9, 0, 1e9};
@@ -138,7 +153,36 @@ void MeasureComplex(const QStringList& script, const ComplexCase& cc, Outcome& o
   const bool nonEmpty = !e.AllObjectIds(true).empty();
   const double size = nonEmpty ? std::max(out.height, out.width) : 0;
   out.width = size;
-  out.plausible = size >= cc.minSize && size <= cc.maxSize && out.objects >= cc.minObjects;
+  std::vector<std::string> why;
+  if (size < cc.minSize || size > cc.maxSize) why.push_back("lato " + std::to_string((int)size));
+  if (out.objects < cc.minObjects) why.push_back(std::to_string(out.objects) + " oggetti");
+  const int parts = (int)plan.parts.size(), built = parts - skipped;
+  if (parts > 0 && built * 5 < parts * 4) why.push_back(std::to_string(built) + "/" + std::to_string(parts) + " parti");
+  // parti riconoscibili: nei nomi e nelle descrizioni delle parti costruite
+  std::string text;
+  for (const auto& p : plan.parts)
+    if (!isSkipped(p.name)) text += " " + p.name + " " + p.what;
+  for (auto& c : text) c = std::isalnum((unsigned char)c) ? (char)std::tolower((unsigned char)c) : ' ';
+  text = " " + text;
+  std::istringstream groups(cc.needs);
+  for (std::string g; std::getline(groups, g, ';');) {
+    bool found = false;
+    std::istringstream alts(g);
+    for (std::string a; std::getline(alts, a, '|');) {
+      a.erase(std::remove(a.begin(), a.end(), ' '), a.end());
+      if (!a.empty() && text.find(" " + a) != std::string::npos) found = true;
+    }
+    if (!found) {
+      g.erase(0, g.find_first_not_of(' '));
+      why.push_back("manca " + g.substr(0, g.find('|')));
+    }
+  }
+  int copied = 0;
+  const std::string from = cad::ai::CopiedExample(lines, cc.prompt, cc.exclude, &copied);
+  if (!from.empty()) why.push_back("copia di " + from + " (" + std::to_string(copied) + " righe)");
+  out.plausible = nonEmpty && why.empty();
+  out.why.clear();
+  for (const auto& w : why) out.why += (out.why.empty() ? "" : ", ") + w;
   if (!saveAs.isEmpty()) doc.Save(saveAs.toStdString());
 }
 void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
@@ -267,9 +311,14 @@ int CheckExamples(const QString& dir) {
     std::vector<std::string> done;
     bool ok = plan.parts.size() == ex.parts.size();
     if (!ok) std::printf("%s: %d parti nel piano, %d negli script\n", ex.id, (int)plan.parts.size(), (int)ex.parts.size());
+    if (plan.features.empty()) { std::printf("%s: manca la riga # Distinctive\n", ex.id); ok = false; }
+    if (const std::string pe = cad::ai::CheckPlan(plan, ex.request); !pe.empty()) {
+      std::printf("%s: piano rifiutato: %s\n", ex.id, pe.c_str());
+      ok = false;
+    }
     for (size_t i = 0; ok && i < ex.parts.size(); i++) {
       const auto part = cad::ai::ExtractScript(std::string("```kurva\n") + ex.parts[i].script + "\n```");
-      const auto v = cad::ai::CheckPart(engine, done, part, plan, (int)i);
+      const auto v = cad::ai::CheckPart(engine, done, part, plan, (int)i, ex.request);
       if (!v.ok) {
         std::printf("%s, parte %s: %s\n", ex.id, ex.parts[i].name, cad::ai::PartRepairRequest(plan, (int)i, part, v).c_str());
         ok = false;
@@ -441,7 +490,7 @@ int main(int argc, char** argv) {
     o.valid = ok;
     if (complex) {
       const auto& plan = gen.LastPlan();
-      QString pl = QString::fromStdString(plan.summary);
+      QString pl = QString::fromStdString(plan.summary) + "\n  Distinctive: " + QString::fromStdString(plan.features);
       for (const auto& p : plan.parts)
         pl += QString("\n  PART %1 | %2").arg(QString::fromStdString(p.name), QString::fromStdString(p.what));
       say("Piano: " + pl);
@@ -460,10 +509,10 @@ int main(int argc, char** argv) {
         QString mod = j.model;
         save = saveDir + "/" + base + "-" + mod.replace(QRegularExpression("[^A-Za-z0-9.]+"), "_") + ".3dm";
       }
-      MeasureComplex(script, kComplex[j.bench], o, save);
+      MeasureComplex(script, kComplex[j.bench], gen.LastPlan(), gen.Skipped(), o, save);
       say(QString("Risultato: %1 oggetti, lato maggiore %2 mm, %3 parti su %4 (%5)%6")
               .arg(o.objects).arg(o.width, 0, 'f', 1).arg(gen.LastPlan().parts.size() - gen.Skipped().size())
-              .arg(gen.LastPlan().parts.size()).arg(o.plausible ? "plausibile" : "NON plausibile")
+              .arg(gen.LastPlan().parts.size()).arg(o.plausible ? "plausibile" : "NON plausibile: " + QString::fromStdString(o.why))
               .arg(save.isEmpty() ? QString() : " -> " + save));
     } else if (ok && j.bench >= 0) {
       Measure(script, kBench[j.bench], o);
@@ -486,7 +535,7 @@ int main(int argc, char** argv) {
                   (promptOf(j) + (complex && *kComplex[j.bench].exclude ? " (senza esempio)" : "")).toUtf8().constData(),
                   o.valid ? "si" : "no", o.attempts, o.seconds,
                   !o.valid ? "-" : o.plausible ? "plausibile"
-                  : complex ? QString("lato %1, %2 oggetti").arg(o.width, 0, 'f', 0).arg(o.objects).toUtf8().constData()
+                  : complex ? QString::fromStdString(o.why).toUtf8().constData()
                   : QString("altezza %1, pianta %2").arg(o.height, 0, 'f', 0).arg(o.width, 0, 'f', 0).toUtf8().constData());
     }
     // riassunto per modello e grammatica
