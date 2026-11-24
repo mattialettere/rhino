@@ -141,3 +141,37 @@ le istruzioni brevi (`tools/ai-train/system_prompt.txt` invariato): non conosce 
   messaggio del commit): Qwen3 4B e 8B su violino (anche senza l'esempio del violino), violoncello,
   chitarra elettrica, bicicletta, automobile sportiva, elicottero, teiera; i modelli ottenuti e i
   loro screenshot sono nell'artifact `kurva3d-ai-complessi`.
+
+### Primo banco con Qwen3 veri (24/11/2026) e correzioni
+
+Il metodo a parti funzionava (piani validi, parti corrette), ma i modelli **copiavano l'esempio
+piu' vicino**: violino e teiera identici agli esempi; violoncello, chitarra elettrica e violino
+senza il suo esempio uscivano come la chitarra acustica; bicicletta ed elicottero (senza esempio)
+non riuscivano. Il controllo "plausibile" (solo misura e numero di oggetti) non se ne accorgeva.
+
+Cambiamenti:
+
+- **Istruzioni fisse** (`ai::PlanSystemPrompt`): uguali per ogni richiesta, senza esempi interi;
+  llama-server le tiene in memoria tra una richiesta e l'altra.
+- **Piani d'esempio nella richiesta** (`ai::PlanRequest`): solo il piano, con l'avviso "stesso
+  oggetto, seguilo" (`ai::SameObject`: "un violino" e l'esempio violino) oppure "oggetto
+  DIVERSO, solo per il formato". Nel piano c'e' la riga obbligatoria `# Distinctive: ...` (cio'
+  che rende riconoscibile l'oggetto rispetto a quelli simili).
+- **Tecniche per parte** (`ai::PartRequest`): per ogni parte, le 2 parti degli esempi piu' simili
+  per nome e descrizione (anche di altri oggetti), con le loro misure e l'avviso di ricalcolare le
+  coordinate dal proprio ingombro.
+- **Copie rifiutate**: `ai::CheckPlan` rifiuta un piano che ripete parti (descrizione o
+  ingombro) di un esempio di un altro oggetto e i piani con parti che non toccano nessun'altra
+  parte; `ai::CheckPart` rifiuta i comandi copiati da un esempio di un altro oggetto
+  (`ai::CopiedExample`: almeno meta' delle righe che creano geometria) e le parti molto piu'
+  piccole del loro ingombro (meno di un quarto lungo le misure principali).
+- **Nuove forme**: `_Wheel` (ruota piena o con copertone, mozzo e raggi, asse x/y/z) e
+  `_Blades` (pale attorno a un mozzo: rotori, eliche, ventilatori); nuovi esempi carriola e
+  ventilatore a piantana (13 in tutto).
+- **Banco piu' severo**: per ogni richiesta, le parti che rendono riconoscibile l'oggetto (per
+  esempio corde, manico, ponticello e riccio per gli archi; ruote, telaio, manubrio, pedali e
+  sella per la bicicletta), almeno l'80% delle parti costruite e nessuna copia di un esempio di
+  un altro oggetto. Nuove richieste senza esempio: drone e trattore.
+- **Modelli piu' grandi**: il banco gira in parallelo (job `ai-complessi`, uno per modello):
+  Qwen3 8B su tutte le 10 richieste, Qwen3 14B (32 GB) sulle richieste senza esempio, Qwen3 4B
+  su tre. Artifact `kurva3d-ai-complessi-<modello>`.

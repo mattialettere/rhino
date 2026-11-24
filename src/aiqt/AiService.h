@@ -132,7 +132,7 @@ class Generator : public QObject {
   int m_port = 0, m_repairs = 0, m_maxRepairs = 3, m_requests = 0;
   bool m_grammar = true;
   Phase m_phase = Phase::Single;
-  QString m_request;
+  QString m_request, m_exclude;
   ai::Plan m_plan;
   int m_part = 0;
   int m_partStart = 0;  // indice in m_messages della richiesta della parte corrente

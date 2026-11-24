@@ -136,6 +136,12 @@ const std::vector<CommandSpec>& CommandSpecs() {
       {"PipeThrough", "N P P+ _Enter", true, true, "_PipeThrough 4 0,0,0 0,50,100 0,150,120 _Enter",
        "round rod of the given radius along a smooth path through 3D points (strings, handles, bent tubes, wires, "
        "spokes; with 2 points it is straight)"},
+      {"Wheel", "P N N x|y|z I", true, true, "_Wheel 0,0,330 330 60 x 16",
+       "wheel standing on its axle: centre, radius, width, axle direction (x, y or z), number of spokes "
+       "(0 = solid wheel like a car wheel; with spokes: tyre, hub and spokes, like a bicycle wheel)"},
+      {"Blades", "P x|y|z I N N N", true, true, "_Blades 0,0,3000 z 4 5000 300 40",
+       "blades radiating from a hub, flat in the plane perpendicular to the axis: centre, axis (x, y or z), number "
+       "of blades, length of each blade, width, thickness (helicopter rotors, propellers, fans, windmills)"},
       // selezione
       {"SelNone", "", false, false, "_SelNone", "clear the selection"},
       {"SelName", "W+", false, false, "_SelName Body Hole", "select objects by name (in this order)"},
@@ -322,7 +328,7 @@ std::string CompactSystemPrompt() {
 std::string SystemPromptFor(const ModelInfo* m) { return m && m->finetuned ? CompactSystemPrompt() : SystemPrompt(); }
 
 bool IsShapeHelper(const CommandSpec& c) {
-  static const std::set<std::string> h = {"SymCurve", "SectionLoft", "Lathe", "Plate", "PipeThrough", "Cap"};
+  static const std::set<std::string> h = {"SymCurve", "SectionLoft", "Lathe", "Plate", "PipeThrough", "Wheel", "Blades", "Cap"};
   return h.count(c.name) > 0;
 }
 
@@ -396,6 +402,7 @@ std::string CommandReference(bool helpers) {
   round turned parts standing on their axis (vases, bottles, glasses, lamp shades, knobs, columns): _Lathe;
   thin flat parts in any orientation (wings, fins, sails, blades, panels, bridges): _Plate;
   rods, strings, wires, tubes and frames: _PipeThrough;
+  wheels (cars, bicycles, carts, trains): _Wheel; rotors, propellers, fans: _Blades;
   holes and slots: make a cutting solid, then _BooleanDifference @Body @Cutter => Body;
   symmetric pairs (wings, wheels, legs, eyes): make one, then _Mirror 0,0,0 0,1,0 @Part => Part
     (mirror across the plane x = 0);
@@ -695,6 +702,68 @@ bool ExpandShape(const std::string& cmd, const std::vector<std::string>& args, c
     deleteNamed(tmp + "P");
     return true;
   }
+  // assi per _Wheel e _Blades: direzione dell'asse e due direzioni perpendicolari
+  auto axisOf = [](const std::string& w, ON_3dVector& ax, ON_3dVector& u, ON_3dVector& v) {
+    const std::string l = LowerAscii(w);
+    if (l == "x") { ax = ON_3dVector(1, 0, 0); u = ON_3dVector(0, 1, 0); v = ON_3dVector(0, 0, 1); return true; }
+    if (l == "y") { ax = ON_3dVector(0, 1, 0); u = ON_3dVector(1, 0, 0); v = ON_3dVector(0, 0, 1); return true; }
+    if (l == "z") { ax = ON_3dVector(0, 0, 1); u = ON_3dVector(1, 0, 0); v = ON_3dVector(0, 1, 0); return true; }
+    return false;
+  };
+  if (cmd == "wheel") {
+    ON_3dPoint c;
+    ON_3dVector ax, u, v;
+    double r, w, nd;
+    if (a.size() != 5 || !ParsePt(a[0], c) || !ParseNum(a[1], r) || !ParseNum(a[2], w) || !axisOf(a[3], ax, u, v) ||
+        !ParseNum(a[4], nd) || r <= 0 || w <= 0 || nd < 0 || nd > 64)
+      return false;
+    const int n = (int)nd;
+    if (n == 0)  // ruota piena: cilindro sull'asse
+      return ExpandShape("pipethrough", {Fmt(r), Pt(c - ax * (w / 2)), Pt(c + ax * (w / 2))}, tmp + "w", res, out);
+    // copertone (toro attorno all'asse), mozzo e raggi
+    const double t = std::min(w / 2, r * 0.12);
+    out.push_back("_Torus " + Pt(c) + " " + Fmt(r - t) + " " + Fmt(t));
+    if (std::fabs(ax.z) < 0.5) {
+      out.push_back("_SelNone");
+      out.push_back("_SelLast");
+      const ON_3dVector rot = ax.x > 0.5 ? ON_3dVector(0, 1, 0) : ON_3dVector(1, 0, 0);
+      out.push_back("_Rotate3D " + Pt(c) + " " + Pt(c + rot) + " 90");
+    }
+    nameLast(res);
+    const double hub = std::max(r * 0.07, t);
+    if (!ExpandShape("pipethrough", {Fmt(hub), Pt(c - ax * (w / 2)), Pt(c + ax * (w / 2))}, tmp + "h", res, out))
+      return false;
+    const double sr = std::max(r * 0.008, 0.5);
+    for (int i = 0; i < n; i++) {
+      const double ang = 2 * ON_PI * i / n;
+      const ON_3dVector d = u * std::cos(ang) + v * std::sin(ang);
+      if (!ExpandShape("pipethrough", {Fmt(sr), Pt(c + d * (hub * 0.8)), Pt(c + d * (r - t))}, tmp + "s", res, out))
+        return false;
+    }
+    return true;
+  }
+  if (cmd == "blades") {
+    ON_3dPoint c;
+    ON_3dVector ax, u, v;
+    double nd, len, chord, th;
+    if (a.size() != 6 || !ParsePt(a[0], c) || !axisOf(a[1], ax, u, v) || !ParseNum(a[2], nd) || !ParseNum(a[3], len) ||
+        !ParseNum(a[4], chord) || !ParseNum(a[5], th) || nd < 1 || nd > 16 || len <= 0 || chord <= 0 || th <= 0)
+      return false;
+    const int n = (int)nd;
+    const double hub = std::min(chord * 0.6, len * 0.3);
+    if (!ExpandShape("pipethrough", {Fmt(hub), Pt(c - ax * (th * 1.5)), Pt(c + ax * (th * 1.5))}, tmp + "h", res, out))
+      return false;
+    const double r0 = std::min(chord * 0.5, len * 0.15);
+    for (int i = 0; i < n; i++) {
+      const double ang = 2 * ON_PI * i / n;
+      const ON_3dVector d = u * std::cos(ang) + v * std::sin(ang);
+      const ON_3dVector s = ON_CrossProduct(ax, d);
+      const std::vector<std::string> pa = {Fmt(th), Pt(c + d * r0 - s * (chord * 0.3)), Pt(c + d * len - s * (chord / 2)),
+                                           Pt(c + d * len + s * (chord / 2)), Pt(c + d * r0 + s * (chord * 0.3))};
+      if (!ExpandShape("plate", pa, tmp + "b" + std::to_string(i), res, out)) return false;
+    }
+    return true;
+  }
   if (cmd == "lathe") {
     // sezioni circolari impilate in Z e loft (solido di OpenCASCADE: le booleane funzionano)
     ON_3dPoint c;
@@ -808,7 +877,8 @@ std::vector<std::string> ExpandScript(const std::vector<std::string>& lines, std
     }
     const std::string cmd = w.empty() ? std::string() : CommandName(w[0]);
     bool done = false;
-    if (cmd == "symcurve" || cmd == "pipethrough" || cmd == "lathe" || cmd == "sectionloft" || cmd == "plate") {
+    if (cmd == "symcurve" || cmd == "pipethrough" || cmd == "lathe" || cmd == "sectionloft" || cmd == "plate" ||
+        cmd == "wheel" || cmd == "blades") {
       std::vector<std::string> args(w.begin() + 1, w.end());
       std::vector<std::string> ex;
       if (ExpandShape(cmd, args, "zzK" + std::to_string(k + 1), name, ex)) {

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Server di prova al posto di llama-server, per provare senza modello il lavoro per parti
-dell'assistente (piano, parti, correzioni). Risponde con l'esempio della libreria che
-compare nelle istruzioni per la richiesta: e' la risposta "ideale" di un modello.
+dell'assistente (piano, parti, correzioni). Risponde con il piano d'esempio dello stesso
+oggetto mostrato nella richiesta e, per ogni parte, con la stessa parte dell'esempio
+mostrata nella richiesta della parte: e' la risposta "ideale" di un modello.
 
   python3 fake_llama_server.py 8099 [--break]
 
@@ -19,45 +20,47 @@ BREAK = "--break" in sys.argv
 attempts = {}
 
 
-def example_blocks(system, request):
-    """Piano e parti dell'esempio con quella richiesta, dal testo delle istruzioni."""
-    start = system.find('Example request: "%s"' % request)
-    if start < 0:
-        start = system.find("Example request:")
-    end = system.find("Example request:", start + 1)
-    chunk = system[start:end if end > 0 else len(system)]
-    plan = re.search(r"```plan\n(.*?)```", chunk, re.S)
-    parts = dict(re.findall(r"Part (\w+):\n```kurva\n(.*?)```", chunk, re.S))
-    return (plan.group(1) if plan else ""), parts
+def same_plan(first_user):
+    """Piano dell'esempio dello stesso oggetto, dalla prima richiesta."""
+    i = first_user.find("Plan of the same kind of object")
+    m = re.search(r"```plan\n(.*?)```", first_user[i:], re.S) if i >= 0 else None
+    return m.group(1) if m else ""
+
+
+def same_part(text):
+    """Comandi della stessa parte dell'esempio, dalla richiesta della parte."""
+    i = text.find("The same part in the example of this object")
+    m = re.search(r"```kurva\n(.*?)```", text[i:], re.S) if i >= 0 else None
+    return m.group(1) if m else None
 
 
 def answer(body):
     msgs = body["messages"]
-    system = msgs[0]["content"]
     first_user = next(m["content"] for m in msgs if m["role"] == "user")
-    request = first_user.split("\n\nStep 1")[0].strip()
+    m = re.search(r"Request: (.*?)\n\nStep 1", first_user, re.S)
+    request = m.group(1).strip() if m else first_user
     last = msgs[-1]["content"]
-    plan, parts = example_blocks(system, request)
     grammar = body.get("grammar", "")
     if grammar.startswith('root ::= "```plan') or "Step 1" in last or "plan is not valid" in last:
-        return "```plan\n" + plan + "```"
+        return "```plan\n" + same_plan(first_user) + "```"
     m = re.search(r"Part (\d+) of \d+: (\w+)", last)
+    part_msg = last
     if not m:  # correzione: la parte e' quella dell'ultima richiesta di parte
         for msg in reversed(msgs):
             m = re.search(r"Part (\d+) of \d+: (\w+)", msg["content"]) if msg["role"] == "user" else None
             if m:
+                part_msg = msg["content"]
                 break
     if not m:
         return "```kurva\n_Box 0,0,0 10,10 10\n```"
     k, name = int(m.group(1)), m.group(2)
     attempts[(request, k)] = attempts.get((request, k), 0) + 1
-    script = parts.get(name, "_Box 0,0,0 10,10 10 => %s\n" % name)
+    script = same_part(part_msg) or "_Box 0,0,0 10,10 10 => %s\n" % name
     if BREAK and attempts[(request, k)] == 1:
         if k == 2:
             return "```kurva\n_Volare 1,2,3\n```"
         if k == 3:  # tutto spostato di 5 metri lungo X
-            moved = re.sub(r"(?m)^(_\w+)", r"\1", script)
-            return "```kurva\n" + moved + "_Move 0,0,0 5000,0,0 @%s\n```" % name
+            return "```kurva\n" + script + "_Move 0,0,0 5000,0,0 @%s\n```" % name
     return "```kurva\n" + script + "```"
 
 
