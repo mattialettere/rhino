@@ -233,6 +233,31 @@ bool CmdSetMaterial(Engine& e, TokenStream& ts) {
     if (!ParseColor(it->second, c)) return e.Fail("emissione: r,g,b");
     m.SetEmission(c);
   }
+  // PBR=Yes: materiale fisico (come i materiali "Physically Based" di Rhino 8)
+  if (opts.count("pbr") && (opts["pbr"] == "yes" || opts["pbr"] == "si" || opts["pbr"] == "true")) {
+    m.ToPhysicallyBased();
+    auto pb = m.PhysicallyBased();
+    if (!pb) return e.Fail("materiale PBR non disponibile");
+    ON_Color base = m.Diffuse();
+    if (auto it = opts.find("basecolor"); it != opts.end() && !ParseColor(it->second, base)) return e.Fail("colore base: r,g,b");
+    pb->SetBaseColor(ON_4fColor(base));
+    auto num = [&](const char* k, double def, double lo, double hi) {
+      return opts.count(k) ? std::clamp(std::atof(opts[k].c_str()), lo, hi) : def;
+    };
+    pb->SetMetallic(num("metallic", 0.0, 0, 1));
+    pb->SetRoughness(num("roughness", 0.5, 0, 1));
+    pb->SetSpecular(num("specular", 0.5, 0, 1));
+    pb->SetClearcoat(num("clearcoat", 0.0, 0, 1));
+    pb->SetClearcoatRoughness(num("clearcoatroughness", 0.0, 0, 1));
+    pb->SetSheen(num("sheen", 0.0, 0, 1));
+    pb->SetOpacity(num("opacity", 1.0, 0, 1));
+    pb->SetOpacityIOR(num("ior", 1.5, 1, 4));
+    if (auto it = opts.find("emission"); it != opts.end()) {
+      ON_Color c;
+      if (!ParseColor(it->second, c)) return e.Fail("emissione: r,g,b");
+      pb->SetEmission(ON_4fColor(c));
+    }
+  }
   std::string name = opts.count("name") ? Unq(opts["name"]) : "";
   ONX_Model& model = e.Model();
   if (name.empty())
@@ -342,7 +367,7 @@ void RegisterRenderCommands(Engine& e) {
   reg("Skylight", "Luce del cielo On/Off", CmdSkylight, true);
   reg("GroundPlane", "Piano di terra On/Off, Altitude, ShadowOnly", CmdGroundPlane, true);
   reg("SetDisplayMode", "Modalita' di visualizzazione della vista attiva", CmdSetDisplayMode, false);
-  reg("SetMaterial", "Materiale degli oggetti selezionati (Color, Gloss, Reflectivity, Transparency, IOR)", CmdSetMaterial, true);
+  reg("SetMaterial", "Materiale degli oggetti selezionati (Color, Gloss, Reflectivity, Transparency, IOR; PBR=Yes con BaseColor, Metallic, Roughness, Specular, Clearcoat, Sheen, Opacity, Emission)", CmdSetMaterial, true);
 }
 
 }  // namespace cad

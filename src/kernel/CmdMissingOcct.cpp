@@ -5,6 +5,7 @@
 #include <BOPAlgo_MakerVolume.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepAlgoAPI_Section.hxx>
+#include <gp_Pln.hxx>
 #include <BRepAlgoAPI_Splitter.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -14,11 +15,17 @@
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
+#include <GeomAPI_PointsToBSplineSurface.hxx>
+#include <TColgp_Array2OfPnt.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <ShapeFix_Solid.hxx>
+#include "core/SubDLimit.h"
 #include <TColgp_Array1OfPnt.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
+#include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
@@ -38,6 +45,55 @@ namespace cad {
 
 // Curve 3D degli spigoli ricalcolate dalla superficie e dalla curva di taglio del primo trim
 // (dopo che la superficie e' cambiata, i tagli in parametri restano validi).
+// SubD -> NURBS (ToNURBS): una superficie bicubica per ogni quad della prima suddivisione,
+// approssimata dai punti della superficie limite (griglia 9x9) entro la tolleranza, poi
+// le superfici si cuciono in una polisuperficie (chiusa -> solido). In Rhino 8 le superfici
+// sono esatte (B-spline del limite); qui la deviazione dal limite resta entro la tolleranza.
+ON_Brep* SubDToNurbsBrep(const ON_SubD& sd, double tol) {
+  const auto grids = BuildSubDPatchGrids(sd, 3);
+  if (grids.empty()) return nullptr;
+  BRepBuilderAPI_Sewing sew(std::max(tol * 10, 1e-4));
+  int faces = 0;
+  for (const auto& g : grids) {
+    const int N = g.n;
+    TColgp_Array2OfPnt pts(1, N + 1, 1, N + 1);
+    bool ok = true;
+    for (int j = 0; j <= N && ok; j++)
+      for (int i = 0; i <= N; i++) {
+        const ON_3dPoint& p = g.grid[size_t(j) * (N + 1) + i];
+        if (!p.IsValid()) { ok = false; break; }
+        pts.SetValue(i + 1, j + 1, gp_Pnt(p.x, p.y, p.z));
+      }
+    if (!ok) continue;
+    try {
+      GeomAPI_PointsToBSplineSurface fit(pts, 3, 3, GeomAbs_C2, tol * 0.5);
+      if (!fit.IsDone()) continue;
+      BRepBuilderAPI_MakeFace mf(fit.Surface(), tol);
+      if (!mf.IsDone()) continue;
+      sew.Add(mf.Face());
+      faces++;
+    } catch (const Standard_Failure&) {
+    }
+  }
+  if (!faces) return nullptr;
+  try {
+    sew.Perform();
+    TopoDS_Shape sh = sew.SewedShape();
+    if (sh.ShapeType() == TopAbs_SHELL && BRep_Tool::IsClosed(sh)) {
+      BRepBuilderAPI_MakeSolid ms(TopoDS::Shell(sh));
+      if (ms.IsDone()) {
+        ShapeFix_Solid fix;
+        fix.Init(ms.Solid());
+        fix.Perform();
+        sh = fix.Solid();
+      }
+    }
+    return occt::ShapeToBrep(sh, tol);
+  } catch (const Standard_Failure&) {
+    return nullptr;
+  }
+}
+
 void RebuildBrepEdges(ON_Brep& b) {
   for (int ei = 0; ei < b.m_E.Count(); ei++) {
     ON_BrepEdge& E = b.m_E[ei];
@@ -553,6 +609,194 @@ bool CmdRebuildEdges(Engine& e, TokenStream&) {
   return true;
 }
 
+// --- SectionStyle e ClippingDrawings ----------------------------------------------------
+// Stile di sezione (come le proprieta' "Sezione" di Rhino 8) salvato negli oggetti o nel
+// piano di sezione: Fill=Solid|Hatch|None, Pattern=nome, Color=r,g,b (vuoto = colore
+// dell'oggetto). ClippingDrawings crea il disegno di sezione: curve di taglio e riempimenti.
+const wchar_t* kSectionStyle = L"Kurva3D.SectionStyle";
+
+struct SectionStyle { std::string fill = "solid", pattern = "Solid"; bool hasColor = false; ON_Color color; };
+
+SectionStyle ReadSectionStyle(Engine& e, const ON_UUID& id, const SectionStyle& def) {
+  const auto* o = e.Object(id);
+  ON_wString v;
+  if (!o || !o->Attributes(nullptr) || !o->Attributes(nullptr)->GetUserString(kSectionStyle, v) || v.IsEmpty()) return def;
+  SectionStyle st;
+  std::string t = ToUtf8(v);
+  std::vector<std::string> p;
+  for (size_t a = 0;;) {
+    const size_t b = t.find('|', a);
+    p.push_back(t.substr(a, b == std::string::npos ? std::string::npos : b - a));
+    if (b == std::string::npos) break;
+    a = b + 1;
+  }
+  if (p.size() > 0 && !p[0].empty()) st.fill = p[0];
+  if (p.size() > 1 && !p[1].empty()) st.pattern = p[1];
+  int r, g, b;
+  if (p.size() > 2 && std::sscanf(p[2].c_str(), "%d,%d,%d", &r, &g, &b) == 3) { st.hasColor = true; st.color = ON_Color(r, g, b); }
+  return st;
+}
+
+bool CmdSectionStyle(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("SectionStyle", "seleziona oggetti o piani di sezione, poi Invio");
+  if (sel.empty()) return false;
+  auto o = e.ReadOptions(ts);
+  std::string fill = o.count("fill") ? o["fill"] : "solid";
+  if (fill != "solid" && fill != "hatch" && fill != "none") return e.Fail("Fill: Solid, Hatch o None");
+  std::string pattern = o.count("pattern") ? o["pattern"] : (fill == "hatch" ? "Hatch1" : "Solid");
+  if (pattern.size() >= 2 && pattern.front() == '"') pattern = pattern.substr(1, pattern.size() - 2);
+  std::string color = o.count("color") ? o["color"] : "";
+  const std::string v = fill + "|" + pattern + "|" + color;
+  for (const auto& id : sel)
+    if (auto* a = e.EditableAttributes(id)) a->SetUserString(kSectionStyle, ON_wString(v.c_str()));
+  e.Out() << "  Stile di sezione (" << fill << ") su " << sel.size() << " oggetti\n";
+  return true;
+}
+
+int HatchPatternIndex(Engine& e, const std::string& want) {
+  ONX_ModelComponentIterator hit(e.Model(), ON_ModelComponent::Type::HatchPattern);
+  for (const ON_ModelComponent* c = hit.FirstComponent(); c; c = hit.NextComponent())
+    if (ON_wString(want.c_str()).CompareNoCase(c->Name()) == 0) return c->Index();
+  ON_HatchPattern hp(ON_wString(want.c_str()).CompareNoCase(L"Solid") == 0 ? ON_HatchPattern::Solid : ON_HatchPattern::Hatch1);
+  hp.ClearId();
+  hp.ClearIndex();
+  hp.SetName(ON_wString(want.c_str()));
+  ON_ModelComponentReference ref = e.Model().AddModelComponent(hp);
+  return ref.ModelComponent() ? ref.ModelComponent()->Index() : -1;
+}
+
+// punto dentro un poligono chiuso (coordinate del piano)
+bool InsidePoly(const std::vector<ON_2dPoint>& poly, const ON_2dPoint& p) {
+  bool in = false;
+  for (size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++)
+    if (((poly[i].y > p.y) != (poly[j].y > p.y)) &&
+        (p.x < (poly[j].x - poly[i].x) * (p.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x))
+      in = !in;
+  return in;
+}
+
+bool CmdClippingDrawings(Engine& e, TokenStream& ts) {
+  auto sel = e.RequireSelection("ClippingDrawings", "seleziona il piano di sezione, poi Invio");
+  if (sel.empty()) return false;
+  auto o = e.ReadOptions(ts);
+  const std::string target = o.count("target") ? o["target"] : "worldtop";
+  if (target != "worldtop" && target != "inplace") return e.Fail("Target: WorldTop o InPlace");
+  const bool fillOpt = !o.count("fill") || (o["fill"] != "no" && o["fill"] != "none");
+  const double tol = e.Tolerance();
+  // ingombro del modello: il disegno su Top va alla sua destra
+  ON_BoundingBox model;
+  for (const auto& id : e.AllObjectIds(false))
+    if (const auto* ob = e.Object(id); ob && ob->Geometry(nullptr) && !ON_ClippingPlaneSurface::Cast(ob->Geometry(nullptr))) {
+      ON_BoundingBox b;
+      if (ob->Geometry(nullptr)->GetTightBoundingBox(b)) model.Union(b);
+    }
+  int planes = 0, made = 0;
+  double shiftX = model.IsValid() ? model.m_max.x + 0.25 * model.Diagonal().Length() : 0;
+  for (const auto& cid : sel) {
+    const auto* cob = e.Object(cid);
+    const auto* cps = cob ? ON_ClippingPlaneSurface::Cast(cob->Geometry(nullptr)) : nullptr;
+    if (!cps) continue;
+    planes++;
+    const ON_Plane pl = cps->m_clipping_plane.m_plane;
+    const SectionStyle planeStyle = ReadSectionStyle(e, cid, SectionStyle());
+    ON_Xform toTop = ON_Xform::IdentityTransformation;
+    if (target == "worldtop") toTop.Rotation(pl, ON_Plane::World_xy);
+    std::vector<std::pair<ON_Curve*, ON_UUID>> closedCrvs;
+    std::vector<std::pair<ON_Curve*, ON_3dmObjectAttributes>> outCrvs;
+    const gp_Pln gpl(gp_Pnt(pl.origin.x, pl.origin.y, pl.origin.z), gp_Dir(pl.zaxis.x, pl.zaxis.y, pl.zaxis.z));
+    double drawingWidth = 0;
+    for (const auto& id : e.AllObjectIds(false)) {
+      const auto* ob = e.Object(id);
+      const ON_Geometry* g = ob ? ob->Geometry(nullptr) : nullptr;
+      if (!g || ON_Curve::Cast(g) || ON_ClippingPlaneSurface::Cast(g) || ON_Annotation::Cast(g) || ON_Hatch::Cast(g) ||
+          ON_Point::Cast(g) || ON_TextDot::Cast(g) || ON_Light::Cast(g) || ON_InstanceRef::Cast(g))
+        continue;
+      TopoDS_Shape sh = occt::GeometryToShape(*g, tol);
+      if (sh.IsNull()) continue;
+      BRepAlgoAPI_Section sec(sh, gpl, Standard_False);
+      sec.Approximation(Standard_True);
+      sec.Build();
+      if (!sec.IsDone()) continue;
+      std::vector<ON_Curve*> crvs = occt::ShapeToCurves(sec.Shape(), tol);
+      if (crvs.empty()) continue;
+      ON_SimpleArray<const ON_Curve*> in;
+      for (auto* c : crvs) in.Append(c);
+      ON_SimpleArray<ON_Curve*> joined;
+      ON_JoinCurves(in, joined, tol * 10, false, nullptr);
+      for (auto* c : crvs) delete c;
+      ON_3dmObjectAttributes at = ob->Attributes(nullptr) ? *ob->Attributes(nullptr) : ON_3dmObjectAttributes();
+      at.m_uuid = id;  // sorgente (per lo stile); tolto prima di aggiungere la curva
+      for (int i = 0; i < joined.Count(); i++) {
+        joined[i]->Transform(toTop);
+        outCrvs.push_back({joined[i], at});
+      }
+      (void)id;
+    }
+    // su Top il disegno va a destra del modello, allineato al suo lato inferiore
+    if (target == "worldtop" && !outCrvs.empty()) {
+      ON_BoundingBox db;
+      for (auto& oc : outCrvs) db.Union(oc.first->BoundingBox());
+      drawingWidth = db.m_max.x - db.m_min.x;
+      const ON_Xform mv = ON_Xform::TranslationTransformation(
+          ON_3dVector(shiftX - db.m_min.x, (model.IsValid() ? model.m_min.y : 0) - db.m_min.y, -db.m_min.z));
+      for (auto& oc : outCrvs) oc.first->Transform(mv);
+    }
+    for (auto& [c, at] : outCrvs) {
+      if (c->IsClosed()) closedCrvs.push_back({c->DuplicateCurve(), at.m_uuid});
+      at.m_uuid = ON_nil_uuid;
+      e.AddObject(c, &at);
+      made++;
+    }
+    // riempimenti: un tratteggio per ogni regione esterna con i suoi fori
+    if (fillOpt && !closedCrvs.empty()) {
+      const ON_Plane hp = target == "worldtop" ? ON_Plane::World_xy : pl;
+      ON_Xform toLocal;
+      toLocal.Rotation(hp, ON_xy_plane);
+      std::vector<std::vector<ON_2dPoint>> polys;
+      for (auto& [c, id] : closedCrvs) {
+        std::vector<ON_2dPoint> poly;
+        const ON_Interval d = c->Domain();
+        for (int k = 0; k < 120; k++) {
+          ON_3dPoint q = c->PointAt(d.ParameterAt(k / 120.0));
+          q.Transform(toLocal);
+          poly.push_back(ON_2dPoint(q.x, q.y));
+        }
+        polys.push_back(std::move(poly));
+      }
+      std::vector<int> depth(closedCrvs.size(), 0);
+      for (size_t a = 0; a < closedCrvs.size(); a++)
+        for (size_t b = 0; b < closedCrvs.size(); b++)
+          if (a != b && InsidePoly(polys[b], polys[a][0])) depth[a]++;
+      for (size_t a = 0; a < closedCrvs.size(); a++) {
+        if (depth[a] % 2) continue;  // foro
+        const SectionStyle st = ReadSectionStyle(e, closedCrvs[a].second, planeStyle);
+        if (st.fill == "none") continue;
+        std::vector<std::unique_ptr<ON_Curve>> local;
+        ON_SimpleArray<const ON_Curve*> loops;
+        local.emplace_back(closedCrvs[a].first->DuplicateCurve());
+        for (size_t b = 0; b < closedCrvs.size(); b++)
+          if (depth[b] == depth[a] + 1 && InsidePoly(polys[a], polys[b][0])) local.emplace_back(closedCrvs[b].first->DuplicateCurve());
+        for (auto& c : local) { c->Transform(toLocal); loops.Append(c.get()); }
+        const int pat = HatchPatternIndex(e, st.fill == "solid" ? std::string("Solid") : st.pattern);
+        auto* h = new ON_Hatch();
+        if (pat < 0 || !h->Create(hp, loops, pat, 0.0, 1.0)) { delete h; continue; }
+        const auto* src = e.Object(closedCrvs[a].second);
+        ON_3dmObjectAttributes at = src && src->Attributes(nullptr) ? *src->Attributes(nullptr) : ON_3dmObjectAttributes();
+        at.m_uuid = ON_nil_uuid;
+        if (st.hasColor) { at.SetColorSource(ON::color_from_object); at.m_color = st.color; }
+        e.AddObject(h, &at);
+        made++;
+      }
+    }
+    for (auto& [c, id] : closedCrvs) delete c;
+    if (target == "worldtop") shiftX += drawingWidth + 0.1 * (model.IsValid() ? model.Diagonal().Length() : 10.0);
+  }
+  if (!planes) return e.Fail("nessun piano di sezione selezionato");
+  if (!made) return e.Fail("il piano di sezione non taglia nessun oggetto");
+  e.Out() << "  Disegno di sezione: " << made << " oggetti\n";
+  return true;
+}
+
 }  // namespace
 
 void RegisterMissingOcctCommands(Engine& e) {
@@ -563,6 +807,8 @@ void RegisterMissingOcctCommands(Engine& e) {
   reg("CreateSolid", "Solidi", "Solido dalle superfici che racchiudono un volume (Cells=Yes per celle separate)", CmdCreateSolid);
   reg("IntersectTwoSets", "Curve", "Intersezioni tra due gruppi di oggetti", CmdIntersectTwoSets);
   reg("MeshSplit", "Mesh", "Divide le mesh con altri oggetti", CmdMeshSplit);
+  reg("SectionStyle", "Viste", "Stile di sezione per i piani di sezione (Fill=Solid|Hatch|None, Pattern=, Color=)", CmdSectionStyle);
+  reg("ClippingDrawings", "Viste", "Disegno di sezione da un piano di sezione (Target=WorldTop|InPlace, Fill=)", CmdClippingDrawings);
   reg("MeshTrim", "Mesh", "Taglia la parte di mesh scelta con gli oggetti di taglio", CmdMeshTrim);
 }
 

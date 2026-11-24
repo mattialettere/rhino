@@ -27,17 +27,17 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Modifica | 35 / 35 |
 | Selezione | 20 / 20 |
 | Blocchi | 6 / 6 |
-| Livelli e proprieta' | 20 / 20 |
+| Livelli e proprieta' | 26 / 26 |
 | Annotazioni | 17 / 17 |
 | Analisi | 20 / 20 |
 | File | 9 / 9 |
 | Rendering (texture) | 5 / 5 |
-| Rendering (luci e immagini) | 9 / 9 |
-| Viste e sezioni | 7 / 7 |
+| Rendering (luci e immagini) | 13 / 13 |
+| Viste e sezioni | 9 / 9 |
 | Tavole e stampa | 5 / 5 |
 | Script | 3 / 3 |
 | Storia | 7 / 7 |
-| **Totale** | **389 / 389** |
+| **Totale** | **401 / 401** |
 
 ## Punti
 
@@ -105,9 +105,9 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | CurveThroughPt | ✔ |
 | Blend | ✔ |
 | BlendCrv | ✔ |
-| Fillet | ✔ |
+| Fillet | ✔ (linee, archi e curve NURBS complanari) |
 | FilletCorners | ✔ |
-| Chamfer | ✔ |
+| Chamfer | ✔ (linee, archi e curve NURBS complanari) |
 | Offset | ✔ |
 | OffsetCrvOnSrf | ✔ |
 | Rebuild | ✔ |
@@ -223,7 +223,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SubDPlane | ✔ |
 | SubDFromMesh | ✔ |
 | ToSubD | ✔ |
-| ToNURBS | ✔ |
+| ToNURBS | ✔ (anche SubD: superfici approssimate entro la tolleranza, D-051) |
 | SubDLoft | ✔ |
 | SubDSweep | ✔ |
 | SubDExtrude | ✔ |
@@ -378,7 +378,7 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SelVisible | ✔ |
 | Invert | ✔ |
 | SelectionFilter | ✔ |
-| NamedSelections | ✔ (da riga di comando: Save, Restore, Delete, List) |
+| NamedSelections | ✔ (riga di comando e pannello Selezioni con nome) |
 
 ## Blocchi
 
@@ -414,7 +414,13 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | SetObjectPrintColor | ✔ (estensione: in Rhino si usa il pannello Proprietà) |
 | SetDocumentUserText | ✔ |
 | GetDocumentUserText | ✔ |
-| LayerStateManager | ✔ (da riga di comando, salvato nel testo del documento, D-076) |
+| LayerStateManager | ✔ (riga di comando e pannello Stati dei livelli, salvato nel testo del documento, D-076) |
+| DocumentProperties | ✔ (finestra Opzioni; -DocumentProperties con le tolleranze) |
+| Options | ✔ (unità, tolleranze, griglia, osnap, alias, aspetto, D-080) |
+| Alias | ✔ (D-080) |
+| CommandHistory | ✔ (F2) |
+| PrintDisplay | ✔ (colore e spessore di stampa nelle viste) |
+| SmartTrack | ✔ (D-080) |
 
 ## Annotazioni
 
@@ -458,8 +464,8 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | CurvatureAnalysis | ✔ (0.12) |
 | EMap | ✔ (0.12) |
 | GCon | ✔ (0.12) |
-| EdgeContinuity | ✔ (0.12) |
-| PointDeviation | ✔ (0.12) |
+| EdgeContinuity | ✔ (0.12; grafico a pettine nelle viste) |
+| PointDeviation | ✔ (0.12; punti colorati e linee nelle viste) |
 | Check | ✔ |
 | SelBadObjects | ✔ |
 
@@ -500,20 +506,26 @@ I comandi si usano dalla riga di comando della finestra `kurva3d` (come in Rhino
 | Skylight | ✔ |
 | GroundPlane | ✔ |
 | SetDisplayMode | ✔ (Wireframe, Shaded, Ghosted, XRay, Rendered, Raytraced) |
+| Displacement | ✔ (mesh di rendering, D-078) |
+| EdgeSoftening | ✔ (normali ammorbidite, smusso con Chamfer=Yes, D-078) |
+| Shutlining | ✔ (profilo tondo o quadrato, D-078) |
+| Decal | ✔ (solo proiezione planare, D-078) |
 
-Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale semplice sugli oggetti selezionati: colore, lucentezza, riflessione, trasparenza, IOR; in Rhino si fa dal pannello Materiali), **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture), **RemoveTexture** e **Collaborate** (lavoro in piu' persone sullo stesso progetto in rete locale, con chat e compiti per l'AI di ogni computer: D-067).
+Comandi in più di Kurva3D (non sono di Rhino 8): **SetMaterial** (materiale sugli oggetti selezionati: colore, lucentezza, riflessione, trasparenza, IOR, oppure PBR=Yes con i parametri Physically Based; in Rhino si fa dal pannello Materiali, qui anche da Render > Materiale PBR), **ApplyTexture** (materiale con un'immagine sugli oggetti, usato dal pannello Texture), **RemoveTexture** e **Collaborate** (lavoro in piu' persone sullo stesso progetto in rete locale, con chat e compiti per l'AI di ogni computer: D-067).
 
 ## Viste e sezioni
 
 | Comando | Stato |
 |---|---|
 | CPlane | ✔ (World, Origin, Elevation, 3Point, Reset) |
-| NamedView | ✔ (riga di comando, senza pannello) |
-| NamedCPlane | ✔ (riga di comando, senza pannello) |
+| NamedView | ✔ (riga di comando e pannello Viste con nome) |
+| NamedCPlane | ✔ (riga di comando e pannello CPlane con nome) |
 | ClippingPlane | ✔ |
 | EnableClippingPlane | ✔ |
 | DisableClippingPlane | ✔ |
 | Snapshots | ✔ (formato non compatibile con Rhino, D-061) |
+| SectionStyle | ✔ (Fill, Pattern, Color: usati da ClippingDrawings, D-079) |
+| ClippingDrawings | ✔ (D-079) |
 
 ## Tavole e stampa
 

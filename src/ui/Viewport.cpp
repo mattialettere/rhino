@@ -965,6 +965,33 @@ void Viewport::paintGL() {
     if (rendered) DrawGroundShadows();
   }
   DrawAnalysis();
+  {  // segni delle analisi (EdgeContinuity, PointDeviation): sopra tutto
+    const auto& M = m_scene.AnalysisMarks();
+    if (!M.Empty()) {
+      gl->glDisable(GL_DEPTH_TEST);
+      gl->glDisable(GL_LIGHTING);
+      gl->glLineWidth(1.5f);
+      gl->glBegin(GL_LINES);
+      for (size_t i = 0; i < M.lines.size(); i++) {
+        const ON_Color c = i < M.lineColors.size() ? M.lineColors[i] : ON_Color(255, 0, 0);
+        gl->glColor3ub(c.Red(), c.Green(), c.Blue());
+        gl->glVertex3d(M.lines[i].from.x, M.lines[i].from.y, M.lines[i].from.z);
+        gl->glVertex3d(M.lines[i].to.x, M.lines[i].to.y, M.lines[i].to.z);
+      }
+      gl->glEnd();
+      gl->glPointSize(7.0f);
+      gl->glBegin(GL_POINTS);
+      for (size_t i = 0; i < M.points.size(); i++) {
+        const ON_Color c = i < M.pointColors.size() ? M.pointColors[i] : ON_Color(255, 0, 0);
+        gl->glColor3ub(c.Red(), c.Green(), c.Blue());
+        gl->glVertex3d(M.points[i].x, M.points[i].y, M.points[i].z);
+      }
+      gl->glEnd();
+      gl->glPointSize(1.0f);
+      gl->glLineWidth(1.0f);
+      gl->glEnable(GL_DEPTH_TEST);
+    }
+  }
   if (mode == DisplayMode::XRay) gl->glDisable(GL_DEPTH_TEST);
 
   // Wireframe, punti

@@ -630,7 +630,7 @@ void MainWindow::BuildMenus() {
         {{"Salva piano", "_NamedCPlane Save"}, {"Ripristina piano", "_NamedCPlane Restore"},
          {"Elimina piano", "_NamedCPlane Delete"}, {"Elenco", "_NamedCPlane List"}});
     sub(view->addMenu("Piani di sezione"),
-        {{"Nuovo piano di sezione", "_ClippingPlane"}, {"Attiva nella vista", "_EnableClippingPlane"},
+        {{"Nuovo piano di sezione", "_ClippingPlane"}, {"Stile di sezione", "_SectionStyle"}, {"Disegno di sezione (ClippingDrawings)", "_ClippingDrawings"}, {"Attiva nella vista", "_EnableClippingPlane"},
          {"Attiva in tutte le viste", "_EnableClippingPlane All"}, {"Disattiva nella vista", "_DisableClippingPlane"},
          {"Disattiva in tutte le viste", "_DisableClippingPlane All"}});
     {
@@ -717,6 +717,27 @@ void MainWindow::BuildMenus() {
         if (d->objectName() == "textureDock") { d->show(); d->raise(); }
     });
     render->addAction("Togli texture", this, [this] { Submit("_RemoveTexture"); });
+    render->addAction("Materiale PBR...", this, [this] { ShowPbrEditor(); });
+    {
+      auto* mods = render->addMenu("Modificatori mesh");
+      mods->addAction("Displacement...", this, [this] {
+        const QString f = QFileDialog::getOpenFileName(this, "Immagine per Displacement", QString(),
+                                                       "Immagini (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.pgm)");
+        if (!f.isEmpty()) PropertyCommand("_Displacement File=\"" + f + "\"");
+      });
+      mods->addAction("Togli Displacement", this, [this] { PropertyCommand("_Displacement Off"); });
+      mods->addAction("EdgeSoftening", this, [this] { Submit("_EdgeSoftening"); });
+      mods->addAction("Togli EdgeSoftening", this, [this] { PropertyCommand("_EdgeSoftening Off"); });
+      mods->addAction("Shutlining", this, [this] { Submit("_Shutlining"); });
+      mods->addAction("Togli Shutlining", this, [this] { PropertyCommand("_Shutlining Off"); });
+      mods->addSeparator();
+      mods->addAction("Decalcomania...", this, [this] {
+        const QString f = QFileDialog::getOpenFileName(this, "Immagine della decalcomania", QString(),
+                                                       "Immagini (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)");
+        if (!f.isEmpty()) Submit("_Decal \"" + f + "\"");
+      });
+      mods->addAction("Togli decalcomanie", this, [this] { PropertyCommand("_Decal Off"); });
+    }
     render->addSeparator();
     const std::pair<const char*, const char*> rcmds[] = {
         {"Rendering (Render)", "_Render"}, {"Materiale degli oggetti...", "_SetMaterial"},
@@ -1486,6 +1507,21 @@ void MainWindow::Run(const std::string& script) {
   for (const QString& l : out.split('\n'))
     if (!l.trimmed().isEmpty() && !(r == Engine::Result::NeedsInput && l.contains("Errore:"))) Log(l);
   if (r != Engine::Result::NeedsInput) m_pending.clear();
+  {  // Trim ed Extend continuano a chiedere altre parti dopo ogni clic (Invio o Esc per finire)
+    std::istringstream in(script);
+    std::string first, last, tok;
+    in >> first;
+    while (in >> tok) last = tok;
+    const std::string cmd = NormalizeName(first);
+    if (r == Engine::Result::Done && (cmd == "trim" || cmd == "extend") && !last.empty() && !IsEnter(last) &&
+        !m_engine.Selection().empty()) {
+      AfterCommand();
+      m_out.str("");
+      m_engine.RunInteractive("_" + cmd, &m_pending);
+      AfterCommand();
+      return;
+    }
+  }
   // quote automatiche solo se il comando ha davvero creato qualcosa di nuovo
   if (r == Engine::Result::Done && !m_engine.LastCreated().empty() &&
       (createdBefore.empty() || ON_UuidCompare(createdBefore.front(), m_engine.LastCreated().front()) != 0))
@@ -1495,6 +1531,7 @@ void MainWindow::Run(const std::string& script) {
 
 void MainWindow::Cancel() {
   Viewport::Shared().dyn.fields.Clear();
+  if (m_pending.empty()) m_engine.analysisMarks.Clear();  // Esc toglie i grafici delle analisi
   if (!m_pending.empty()) Log("Comando annullato");
   m_pending.clear();
   AfterCommand();

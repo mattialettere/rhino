@@ -533,6 +533,21 @@ void Scene::Rebuild() {
       continue;
     }
     AddGeometry(g, d, sig, newCache, 0);
+    std::string modSig;
+    if (d.shaded && HasMeshModifiers(m_engine, id, &modSig)) {
+      // Displacement, EdgeSoftening, Shutlining: mesh modificata, ricalcolata se cambiano
+      // la geometria o i parametri
+      const std::string mk = "mod|" + sig + "|" + modSig;
+      auto it = m_meshCache.find(mk);
+      std::shared_ptr<ON_Mesh> mm;
+      if (it != m_meshCache.end()) mm = it->second;
+      else {
+        mm = std::make_shared<ON_Mesh>(*d.shaded);
+        ApplyMeshModifiers(m_engine, id, *mm);
+      }
+      newCache[mk] = mm;
+      d.shaded = mm;
+    }
     if (d.shaded) {
       ApplyTexture(*a, d);
       int mi = a->MaterialSource() == ON::material_from_object ? a->m_material_index : (layer ? layer->RenderMaterialIndex() : -1);
@@ -545,7 +560,25 @@ void Scene::Rebuild() {
       GripSet gs;
       if (GetGrips(g, gs, m_engine.editPointsOn.count(id) > 0)) { d.grips = std::move(gs.grips); d.cage = std::move(gs.cage); }
     }
+    // decalcomania: la parte coperta, appena sopra la superficie, con la sua immagine
+    std::shared_ptr<ON_Mesh> decal;
+    std::string decalFile;
+    if (d.shaded) {
+      auto dm = std::make_shared<ON_Mesh>();
+      if (DecalMesh(m_engine, id, *d.shaded, *dm, decalFile)) decal = dm;
+    }
+    const ON_BoundingBox objBox = d.bbox;
     m_objects.push_back(std::move(d));
+    if (decal) {
+      DisplayObject dd;
+      ON_CreateUuid(dd.id);
+      dd.locked = true;
+      dd.bbox = objBox;
+      dd.shaded = decal;
+      dd.texture = ResolveTextureFile(m_engine.Model(), decalFile, textureCacheDir);
+      dd.uv.assign(decal->m_T.Array(), decal->m_T.Array() + decal->m_T.Count());
+      m_objects.push_back(std::move(dd));
+    }
   }
   if (ON_UuidIsNil(fixedSpace ? space : m_engine.activeLayoutId)) AddWorksession(newCache);
   m_meshCache.swap(newCache);

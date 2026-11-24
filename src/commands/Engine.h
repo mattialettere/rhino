@@ -117,6 +117,16 @@ public:
   // Un alias scritto come primo elemento di una riga viene sostituito dalla sua macro.
   std::map<std::string, std::string> userAliases;   // chiave normalizzata
   std::function<void()> aliasesChanged;              // l'interfaccia li salva tra le sessioni
+  // Segni temporanei delle analisi (grafici di EdgeContinuity, punti colorati di
+  // PointDeviation): le viste li disegnano finche' un comando non modifica il modello.
+  struct AnalysisMarks {
+    std::vector<ON_Line> lines;
+    std::vector<ON_Color> lineColors;
+    std::vector<ON_3dPoint> points;
+    std::vector<ON_Color> pointColors;
+    bool Empty() const { return lines.empty() && points.empty(); }
+    void Clear() { lines.clear(); lineColors.clear(); points.clear(); pointColors.clear(); }
+  } analysisMarks;
   std::string ExpandUserAlias(const std::string& script) const;
   Document3dm& Document() { return m_doc; }
   void Register(CommandInfo info);
@@ -319,6 +329,17 @@ void RegisterAnalysisCommands(Engine& e);
 void RegisterModelingCommands(Engine& e);
 void RegisterWorksessionCommands(Engine& e);
 void RegisterMissingCommands(Engine& e);
+void RegisterMeshModifierCommands(Engine& e);
+#ifdef CAD_WITH_OCCT
+// SubD -> polisuperficie NURBS (CmdMissingOcct.cpp)
+ON_Brep* SubDToNurbsBrep(const ON_SubD& sd, double tol);
+#endif
+// Modificatori della mesh di rendering (Displacement, EdgeSoftening, Shutlining) e decalcomanie
+// (MeshModifiers.cpp). signature cambia quando cambiano i parametri.
+bool HasMeshModifiers(Engine& e, const ON_UUID& id, std::string* signature = nullptr);
+void ApplyMeshModifiers(Engine& e, const ON_UUID& id, ON_Mesh& m);
+// Parte della mesh coperta dalla decalcomania dell'oggetto, con le coordinate dell'immagine.
+bool DecalMesh(Engine& e, const ON_UUID& id, const ON_Mesh& src, ON_Mesh& out, std::string& file);
 void RegisterMissingOcctCommands(Engine& e);
 const std::vector<std::pair<const char*, const char*>>& ItalianCommandNames();
 void RegisterCommandOptions(Engine& e);

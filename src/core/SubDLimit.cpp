@@ -1,5 +1,6 @@
 #include "core/SubDLimit.h"
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <unordered_map>
 
@@ -156,6 +157,67 @@ std::vector<ON_3dPoint> LimitPoints(const Net& n) {
 }
 
 }  // namespace
+
+namespace {
+Net NetFromSubD(const ON_SubD& subd) {
+  Net n;
+  std::unordered_map<unsigned, int> vid;
+  ON_SubDVertexIterator vit(subd);
+  for (const ON_SubDVertex* v = vit.FirstVertex(); v; v = vit.NextVertex()) {
+    vid[v->m_id] = (int)n.P.size();
+    n.P.push_back(v->ControlNetPoint());
+    n.vtag.push_back(v->m_vertex_tag == ON_SubDVertexTag::Corner ? Corner : Smooth);
+  }
+  ON_SubDFaceIterator fit(subd);
+  for (const ON_SubDFace* f = fit.FirstFace(); f; f = fit.NextFace()) {
+    std::vector<int> face;
+    for (unsigned i = 0; i < f->EdgeCount(); i++)
+      if (const ON_SubDVertex* v = f->Vertex(i)) face.push_back(vid[v->m_id]);
+    if (face.size() >= 3) n.F.push_back(face);
+  }
+  int orig = 0;
+  ON_SubDEdgeIterator eit(subd);
+  for (const ON_SubDEdge* e = eit.FirstEdge(); e; e = eit.NextEdge(), orig++)
+    if (e->m_vertex[0] && e->m_vertex[1])
+      n.sharp[Key(vid[e->m_vertex[0]->m_id], vid[e->m_vertex[1]->m_id])] = {e->m_edge_tag == ON_SubDEdgeTag::Crease, orig};
+  return n;
+}
+}  // namespace
+
+std::vector<SubDPatchGrid> BuildSubDPatchGrids(const ON_SubD& subd, int extraLevels) {
+  std::vector<SubDPatchGrid> out;
+  Net n = NetFromSubD(subd);
+  if (n.F.empty()) return out;
+  n = Subdivide(n);  // tutti quad: ogni quad diventa una patch
+  // per ogni faccia: patch di origine e parametri (s,t) dei suoi 4 angoli nella patch
+  struct FP { int root; ON_2dPoint q[4]; };
+  std::vector<FP> fp;
+  for (int i = 0; i < (int)n.F.size(); i++) fp.push_back({i, {ON_2dPoint(0, 0), ON_2dPoint(1, 0), ON_2dPoint(1, 1), ON_2dPoint(0, 1)}});
+  for (int l = 0; l < extraLevels; l++) {
+    // stesso ordine dei figli di Subdivide: per faccia, per angolo i -> {angolo, lato i, centro, lato i-1}
+    std::vector<FP> next;
+    next.reserve(fp.size() * 4);
+    for (const FP& f : fp) {
+      const ON_2dPoint c = 0.25 * (f.q[0] + f.q[1] + f.q[2] + f.q[3]);
+      for (int i = 0; i < 4; i++)
+        next.push_back({f.root, {f.q[i], 0.5 * (f.q[i] + f.q[(i + 1) % 4]), c, 0.5 * (f.q[(i + 3) % 4] + f.q[i])}});
+    }
+    fp.swap(next);
+    n = Subdivide(n);
+  }
+  const std::vector<ON_3dPoint> L = LimitPoints(n);
+  const int N = 1 << extraLevels;
+  int roots = 0;
+  for (const FP& f : fp) roots = std::max(roots, f.root + 1);
+  out.resize(roots);
+  for (auto& g : out) { g.n = N; g.grid.assign(size_t(N + 1) * (N + 1), ON_3dPoint::UnsetPoint); }
+  for (size_t fi = 0; fi < fp.size() && fi < n.F.size(); fi++)
+    for (int c = 0; c < 4; c++) {
+      const int i = (int)std::lround(fp[fi].q[c].x * N), j = (int)std::lround(fp[fi].q[c].y * N);
+      out[fp[fi].root].grid[size_t(j) * (N + 1) + i] = L[n.F[fi][c]];
+    }
+  return out;
+}
 
 SubDLimitDisplay BuildSubDLimit(const ON_SubD& subd, int levels) {
   SubDLimitDisplay out;
