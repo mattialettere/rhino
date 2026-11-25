@@ -349,6 +349,7 @@ void Generator::RunParts(int port, const QString& request, int maxRepairs, bool 
   m_part = 0;
   m_done.clear();
   m_skipped.clear();
+  m_repairLog.clear();
   const std::string sys = ai::PlanSystemPrompt(request.toStdString(), exclude.toStdString());
   m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", QString::fromStdString(sys)}},
                           QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString(), exclude.toStdString()))}}};
@@ -376,7 +377,7 @@ void Generator::Send() {
   m_requests++;
   QNetworkRequest rq = Req(QString("http://127.0.0.1:%1/v1/chat/completions").arg(m_port));
   rq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-  rq.setTransferTimeout(10 * 60 * 1000);
+  rq.setTransferTimeout(m_timeoutMin * 60 * 1000);
   // nei nuovi tentativi un po' piu' di varieta', per non ripetere lo stesso errore
   QJsonObject body{{"messages", m_messages}, {"temperature", m_repairs == 0 ? 0.2 : 0.5}, {"max_tokens", 2048},
                    {"cache_prompt", true}, {"chat_template_kwargs", QJsonObject{{"enable_thinking", false}}}};
@@ -407,8 +408,12 @@ void Generator::Send() {
 void Generator::OnReply(const QString& content) {
   if (m_phase == Phase::Plan) {
     std::string err;
-    if (ai::ParsePlan(content.toStdString(), m_plan, &err) &&
-        (err = ai::CheckPlan(m_plan, m_request.toStdString(), m_exclude.toStdString())).empty()) {
+    const bool parsed = ai::ParsePlan(content.toStdString(), m_plan, &err);
+    if (parsed) err = ai::CheckPlan(m_plan, m_request.toStdString(), m_exclude.toStdString());
+    // piano valido; oppure leggibile ma con dei difetti dopo tutte le correzioni: si usa comunque
+    // (le parti sono verificate una per una), meglio che rinunciare al lavoro per parti
+    if (parsed && (err.empty() || m_repairs >= m_maxRepairs)) {
+      if (!err.empty()) m_repairLog << "piano usato con questo difetto: " + QString::fromStdString(err);
       m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
       QStringList names;
       for (const auto& p : m_plan.parts) names << QString::fromStdString(p.name);
@@ -425,6 +430,7 @@ void Generator::OnReply(const QString& content) {
       return;
     }
     m_repairs++;
+    m_repairLog << "piano: " + QString::fromStdString(err);
     m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
     m_messages.append(QJsonObject{{"role", "user"},
                                   {"content", QString::fromStdString("The plan is not valid: " + err +
@@ -454,6 +460,7 @@ void Generator::OnReply(const QString& content) {
       return;
     }
     m_repairs++;
+    m_repairLog << QString::fromStdString(m_plan.parts[m_part].name + ": " + ai::PartRepairRequest(m_plan, m_part, lines, v));
     m_messages.append(QJsonObject{{"role", "assistant"}, {"content", content}});
     m_messages.append(QJsonObject{{"role", "user"},
                                   {"content", QString::fromStdString(ai::PartRepairRequest(m_plan, m_part, lines, v))}});

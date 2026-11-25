@@ -2361,7 +2361,7 @@ int main(int argc, char** argv) {
       CHECK(ai::ParsePlan(std::string("```plan\n") + gtr->plan + "```", gp) && !gp.features.empty());
       // il piano della chitarra va bene per una chitarra, non per un violoncello
       CHECK(ai::CheckPlan(gp, "una chitarra").empty());
-      CHECK(ai::CheckPlan(gp, "un violoncello").find("copies the example \"una chitarra acustica\"") != std::string::npos);
+      CHECK(ai::CheckPlan(gp, "un violoncello").find("copies the boxes of the example \"una chitarra acustica\"") != std::string::npos);
       CHECK(ai::CheckPlan(gp, "un violoncello", "chitarra").empty());  // esempio tolto: non poteva copiarlo
       // parte sospesa nel vuoto
       ai::Plan fl;
@@ -2431,16 +2431,13 @@ int main(int argc, char** argv) {
       // troppo piccola per il suo box
       const auto tiny = ai::CheckPart(c.e, top, {"_Box 40,40,0 100,100 100 => Legs"}, plan, 1);
       CHECK(!tiny.ok && tiny.error.find("make the part fill its box") != std::string::npos);
-      // comandi copiati da un esempio di un altro oggetto
-      ai::Plan bp;
-      ai::ParsePlan("PART Wheels | ruote | -920,470,0 920,3830,660", bp);
-      const std::vector<std::string> copy = {"_PipeThrough 330 -920,800,330 -700,800,330 _Enter => Wheels",
-                                             "_PipeThrough 330 700,800,330 920,800,330 _Enter => Wheels",
-                                             "_PipeThrough 330 -920,3500,330 -700,3500,330 _Enter => Wheels",
-                                             "_PipeThrough 330 700,3500,330 920,3500,330 _Enter => Wheels"};
-      const auto cp = ai::CheckPart(c.e, {}, copy, bp, 0, "un camion dei pompieri");
-      CHECK(!cp.ok && cp.error.find("copied from the example \"un'automobile\"") != std::string::npos);
-      CHECK(ai::CheckPart(c.e, {}, copy, bp, 0, "un'automobile").ok);  // stesso oggetto: si puo' seguire l'esempio
+      // un box piatto nel piano (rotore con spessore 0) non rifiuta lo spessore vero
+      ai::Plan rp;
+      ai::ParsePlan("PART Rotor | rotore | -5000,-5000,3000 5000,5000,3000", rp);
+      CHECK(ai::CheckPart(c.e, {}, {"_Blades 0,0,3000 z 4 4900 300 60 => Rotor"}, rp, 0).ok);
+      // messaggi di Kurva3D spiegati al modello in inglese
+      CHECK(ai::ErrorHint("parallelepipedo degenere").find("differs in x AND in y") != std::string::npos);
+      CHECK(ai::ErrorHint("errore qualsiasi").empty());
     }
     CHECK(c.e.AllObjectIds(true).empty());
   }

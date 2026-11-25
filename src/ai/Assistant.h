@@ -116,6 +116,8 @@ struct Validation {
 // Esegue lo script su una copia del documento dell'engine (il documento vero non cambia).
 // after: chiamata con l'engine della copia se lo script e' valido (per misurare il risultato).
 Validation Validate(Engine& e, const std::vector<std::string>& lines, const std::function<void(Engine&)>& after = {});
+// Spiegazione in inglese dei messaggi d'errore piu' comuni di Kurva3D (vuota se non c'e').
+std::string ErrorHint(const std::string& error);
 // Messaggio per chiedere al modello di correggere lo script.
 std::string RepairRequest(const std::vector<std::string>& lines, const Validation& v);
 // Comandi che l'assistente non puo' usare (file, annulla, ecc.).
@@ -157,7 +159,7 @@ std::string CopiedExample(const std::vector<std::string>& lines, const std::stri
                           const std::string& exclude = {}, int* copied = nullptr);
 // Verifica la parte i: lo script delle parti precedenti (gia' valido) seguito da quello
 // della parte. In caso di errore v.line e' la riga dello script della parte.
-// Con request: rifiuta anche le parti copiate da un esempio di un altro oggetto.
+// request/exclude: riservati (le copie degli esempi si riconoscono nel piano, con CheckPlan).
 Validation CheckPart(Engine& e, const std::vector<std::string>& before, const std::vector<std::string>& part,
                      const Plan& plan, int i, const std::string& request = {}, const std::string& exclude = {});
 std::string PartRepairRequest(const Plan& plan, int i, const std::vector<std::string>& part, const Validation& v);

@@ -332,8 +332,8 @@ jobs:
         include:
           - model: qwen3-8b     # consigliato con 16 GB: tutte le richieste
             cases: "0,1,2,3,4,5,6,7,8,9"
-          - model: qwen3-14b    # 32 GB: le richieste senza esempio
-            cases: "1,2,4,6,8"
+          - model: qwen3-14b    # 32 GB: tre richieste senza esempio (senza GPU e' lento)
+            cases: "1,4,6"
           - model: qwen3-4b     # 8 GB
             cases: "1,4,6"
     steps:

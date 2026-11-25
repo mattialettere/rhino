@@ -325,14 +325,15 @@ std::string CheckPlan(const Plan& plan, const std::string& request, const std::s
       for (const auto& q : other.parts) {
         bool box = true;
         for (int k = 0; k < 6; k++) box = box && std::fabs(p.box[k] - q.box[k]) < 0.5;
-        if (box || Normalize(p.what) == Normalize(q.what)) { same.push_back(p.name); break; }
+        // stesse misure di un altro oggetto (le descrizioni simili vanno bene: un violoncello ha le parti di un violino)
+        if (box) { same.push_back(p.name); break; }
       }
     if (same.size() >= 2 && same.size() * 10 >= plan.parts.size() * 4) {
       std::string names;
       for (const auto& n : same) names += (names.empty() ? "" : ", ") + n;
-      return "this plan copies the example \"" + std::string(ex.request) + "\" (parts " + names + "), but \"" + request +
-             "\" is a different object. Write its own plan: the parts that make it recognisable, with their real shapes "
-             "and sizes";
+      return "this plan copies the boxes of the example \"" + std::string(ex.request) + "\" (parts " + names + "), but \"" +
+             request + "\" is a different object with its own sizes. Write the plan again with the real sizes of " +
+             "this object and the parts that make it recognisable";
     }
   }
   // ogni parte deve toccare (o quasi) almeno un'altra parte: niente pezzi sospesi nel vuoto
@@ -451,6 +452,8 @@ std::string PartRequest(const Plan& plan, int i, const std::string& request, con
 
 Validation CheckPart(Engine& e, const std::vector<std::string>& before, const std::vector<std::string>& part,
                      const Plan& plan, int i, const std::string& request, const std::string& exclude) {
+  (void)request;  // le copie si riconoscono gia' nel piano (CheckPlan): qui conta solo l'ingombro
+  (void)exclude;
   std::vector<std::string> all = before;
   all.insert(all.end(), part.begin(), part.end());
   ON_BoundingBox got;
@@ -473,19 +476,6 @@ Validation CheckPart(Engine& e, const std::vector<std::string>& before, const st
     v.line = v.line >= (int)before.size() ? v.line - (int)before.size() : -1;
     return v;
   }
-  if (!request.empty()) {
-    const std::string from = CopiedExample(part, request, exclude);
-    if (!from.empty()) {
-      std::string what = from;
-      for (const auto& ex : Examples())
-        if (from == ex.id) what = ex.request;
-      v.ok = false;
-      v.line = -1;
-      v.error = "these commands are copied from the example \"" + what + "\", which is another object: compute the " +
-                "coordinates and sizes of part " + plan.parts[i].name + " from its own box " + BoxText(plan.parts[i].box);
-      return v;
-    }
-  }
   if (!got.IsValid()) return v;  // niente col nome della parte (es. un taglio in un'altra parte): nessuna misura
   // ingombro: il centro deve cadere nel box del piano (con un margine) e le misure non devono esagerare
   const PlanPart& p = plan.parts[i];
@@ -495,7 +485,9 @@ Validation CheckPart(Engine& e, const std::vector<std::string>& before, const st
   // prima la posizione e le misure eccessive (su tutti gli assi), poi le parti troppo piccole
   for (int pass = 0; pass < 2; pass++)
     for (int k = 0; k < 3; k++) {
-      const double pc = 0.5 * (p.box[k] + p.box[k + 3]), ps = p.box[k + 3] - p.box[k];
+      const double pc = 0.5 * (p.box[k] + p.box[k + 3]);
+      // un box piatto nel piano (es. un rotore con spessore 0) non condanna lo spessore vero della parte
+      const double ps = pass == 0 ? std::max(p.box[k + 3] - p.box[k], 0.1 * maxPs) : p.box[k + 3] - p.box[k];
       const double gc = 0.5 * (got.m_min[k] + got.m_max[k]), gs = got.m_max[k] - got.m_min[k];
       const double tol = 0.08 * overall + 2.0;
       std::string why;
@@ -523,9 +515,10 @@ Validation CheckPart(Engine& e, const std::vector<std::string>& before, const st
 std::string PartRepairRequest(const Plan& plan, int i, const std::vector<std::string>& part, const Validation& v) {
   std::ostringstream o;
   if (v.line >= 0 && v.line < (int)part.size())
-    o << "Line " << (v.line + 1) << " of part " << plan.parts[i].name << " fails (" << part[v.line] << "): " << v.error;
+    o << "Line " << (v.line + 1) << " of part " << plan.parts[i].name << " fails (" << part[v.line] << "): " << v.error
+      << ErrorHint(v.error);
   else
-    o << v.error;
+    o << v.error << ErrorHint(v.error);
   o << ". Answer again with all the commands of part " << plan.parts[i].name << " in one ```kurva block.";
   return o.str();
 }
