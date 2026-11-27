@@ -335,7 +335,8 @@ void Generator::Run(int port, const QString& request, int maxRepairs, bool useGr
   Send();
 }
 
-void Generator::RunParts(int port, const QString& request, int maxRepairs, bool useGrammar, const QString& exclude) {
+void Generator::RunParts(int port, const QString& request, int maxRepairs, bool useGrammar, const QString& exclude,
+                         bool compact) {
   Cancel();
   m_port = port;
   m_repairs = 0;
@@ -345,19 +346,22 @@ void Generator::RunParts(int port, const QString& request, int maxRepairs, bool 
   m_phase = Phase::Plan;
   m_request = request;
   m_exclude = exclude;
+  m_compact = compact;
   m_plan = {};
   m_part = 0;
   m_done.clear();
   m_skipped.clear();
   m_repairLog.clear();
-  const std::string sys = ai::PlanSystemPrompt(request.toStdString(), exclude.toStdString());
+  const std::string sys =
+      compact ? ai::CompactPlanSystemPrompt() : ai::PlanSystemPrompt(request.toStdString(), exclude.toStdString());
   m_messages = QJsonArray{QJsonObject{{"role", "system"}, {"content", QString::fromStdString(sys)}},
-                          QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString(), exclude.toStdString()))}}};
+                          QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PlanRequest(request.toStdString(), exclude.toStdString(), compact))}}};
   Send();
 }
 
 void Generator::Start(int port, const QString& request, const ai::ModelInfo* model) {
-  if (model && model->finetuned) Run(port, request, 3, true, QString::fromStdString(ai::SystemPromptFor(model)));
+  if (model && model->finetuned && model->parts) RunParts(port, request, 2, true, {}, true);
+  else if (model && model->finetuned) Run(port, request, 3, true, QString::fromStdString(ai::SystemPromptFor(model)));
   else RunParts(port, request);
 }
 
@@ -485,7 +489,7 @@ void Generator::StartPart() {
   if (m_part >= (int)m_plan.parts.size()) { FinishParts(); return; }
   m_repairs = 0;
   m_partStart = m_messages.size();
-  m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PartRequest(m_plan, m_part, m_request.toStdString(), m_exclude.toStdString()))}});
+  m_messages.append(QJsonObject{{"role", "user"}, {"content", QString::fromStdString(ai::PartRequest(m_plan, m_part, m_compact ? std::string() : m_request.toStdString(), m_exclude.toStdString()))}});
   Send();
 }
 

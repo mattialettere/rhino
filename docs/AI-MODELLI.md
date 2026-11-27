@@ -130,6 +130,8 @@ Ora, con i modelli non addestrati (Qwen3, Qwen2.5-Coder), l'assistente lavora pe
 
 Il modello addestrato su Kurva3D (`finetuned`) continua a scrivere lo script in una volta con
 le istruzioni brevi (`tools/ai-train/system_prompt.txt` invariato): non conosce il formato a parti.
+Un modello addestrato sul formato a parti (`finetuned` e `parts` nel catalogo) lavora invece per
+parti con le istruzioni brevi del piano: vedi la sezione seguente.
 
 ### Prove
 
@@ -175,3 +177,33 @@ Cambiamenti:
 - **Modelli piu' grandi**: il banco gira in parallelo (job `ai-complessi`, uno per modello):
   Qwen3 8B su tutte le 10 richieste, Qwen3 14B (32 GB) sulle richieste senza esempio, Qwen3 4B
   su tre. Artifact `kurva3d-ai-complessi-<modello>`.
+
+## Addestramento sul formato a parti (27/11/2026)
+
+Le prove con i modelli di base (fino al 14B) mostrano che senza addestramento non sanno montare
+oggetti mai visti. Per questo c'e' un secondo addestramento, sul lavoro per parti:
+
+1. **Esempi** (`tools/ai-train/generate_parts_dataset.py`, solo Python standard). Circa 30 famiglie
+   parametriche (tavoli, sedie, sgabelli, librerie, lampade, tazze, bottiglie, teiere, violino,
+   viola, violoncello, contrabbasso, chitarre acustiche ed elettriche, pianoforte, bicicletta, moto,
+   auto, sportiva, SUV, furgone, camion, trattore, elicottero, aerei, drone, barca a vela,
+   ventilatore, pala eolica, razzo, casa, alberi, pupazzo di neve, carriola, robot, ombrellone).
+   Misure, proporzioni, numero di pezzi, colori e parole della richiesta cambiano a caso (seme
+   fisso). Ogni riga e' una conversazione completa per un oggetto: istruzioni brevi, richiesta,
+   piano, poi richiesta e comandi di ogni parte. L'ingombro di ogni parte nel piano e' calcolato
+   dalla geometria.
+2. **Istruzioni brevi del piano** (`ai::CompactPlanSystemPrompt()`, uguali a
+   `tools/ai-train/parts_system_prompt.txt`, controllato da un test; si rigenera con
+   `kurva3d-ai-test --write-parts-prompt tools/ai-train/parts_system_prompt.txt`). Niente esempi,
+   niente tecniche aggiunte alle richieste delle parti: il modello le ha imparate.
+3. **Verifica** (`kurva3d-ai-test --validate-parts-jsonl file.jsonl`): istruzioni e richieste
+   identiche a quelle dell'app, piano valido (`CheckPlan`: parti collegate tra loro), ogni riga
+   con la forma giusta e ogni parte eseguita e dentro il suo ingombro (`CheckPart`). In CI Windows
+   un oggetto ogni 4; il file si scarica dagli artifact (`kurva3d-train-jsonl`).
+4. **Addestramento**: notebook `kurva3d_train_colab.ipynb` con `MODO = "parti"` (predefinito), oppure
+   `train_lora.py --parts` (contesto 8192, una conversazione per passo, accumulo 16). 400 oggetti,
+   in media circa 3.300 token l'uno: su Colab T4 circa 1-1,5 ore.
+5. **Prova**: `kurva3d-ai-test --bench-complex --gguf modello.gguf --compact` (violino e gli altri
+   oggetti del banco complesso; quelli fuori dalle famiglie dicono se il modello generalizza). Nel catalogo il modello va
+   aggiunto con `finetuned = true` e `parts = true`.
+

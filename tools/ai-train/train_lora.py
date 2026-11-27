@@ -10,10 +10,19 @@ Strumenti: unsloth, PEFT, TRL, transformers (Apache 2.0), llama.cpp per il GGUF 
 
 Risultato: kurva3d-qwen3-4b/*.gguf (q4_k_m), da provare con
     kurva3d-ai-test --bench --gguf kurva3d-qwen3-4b/<file>.gguf --compact
+
+Lavoro per parti (oggetti complessi: piano + una parte per volta, una conversazione per oggetto):
+    python tools/ai-train/generate_parts_dataset.py --count 400 --out kurva3d-parts.jsonl
+    python tools/ai-train/train_lora.py --parts --data kurva3d-parts.jsonl --out kurva3d-qwen3-4b-parti
+    kurva3d-ai-test --bench-complex --gguf kurva3d-qwen3-4b-parti/<file>.gguf --compact
 """
 import argparse
 import json
+import os
 import random
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def main():
@@ -30,7 +39,12 @@ def main():
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--quant", default="q4_k_m")
     ap.add_argument("--eval-share", type=float, default=0.03)
+    # esempi a parti: conversazioni lunghe (istruzioni una volta, piano, poi tutte le parti)
+    ap.add_argument("--parts", action="store_true")
     a = ap.parse_args()
+    if a.parts and a.max_len == 4096:
+        a.max_len = 8192
+    batch, accum = (1, 16) if a.parts else (2, 8)
 
     from unsloth import FastLanguageModel  # importato prima di transformers, come chiede unsloth
     from datasets import Dataset
@@ -55,8 +69,8 @@ def main():
     evals = Dataset.from_list([{"text": text(r)} for r in rows[:n_eval]])
     trainer = SFTTrainer(
         model=model, tokenizer=tok, train_dataset=train, eval_dataset=evals,
-        args=SFTConfig(dataset_text_field="text", max_seq_length=a.max_len, per_device_train_batch_size=2,
-                       gradient_accumulation_steps=8, num_train_epochs=a.epochs, learning_rate=a.lr,
+        args=SFTConfig(dataset_text_field="text", max_seq_length=a.max_len, per_device_train_batch_size=batch,
+                       gradient_accumulation_steps=accum, num_train_epochs=a.epochs, learning_rate=a.lr,
                        lr_scheduler_type="cosine", warmup_steps=5, logging_steps=10, eval_strategy="epoch",
                        optim="adamw_8bit", seed=1, output_dir=a.out + "-run", report_to="none"))
     try:  # impara solo le risposte, non le istruzioni ripetute in ogni esempio
@@ -65,16 +79,24 @@ def main():
                                           response_part="<|im_start|>assistant\n")
     except Exception as e:  # versioni vecchie di unsloth
         print("train_on_responses_only non disponibile:", e)
+    if a.parts:  # una conversazione troppo lunga verrebbe tagliata a meta': meglio saperlo
+        lens = [len(tok(t)["input_ids"]) for t in train["text"]]
+        print("token per oggetto: max %d, media %d, oltre %d: %d" % (
+            max(lens), sum(lens) // len(lens), a.max_len, sum(1 for x in lens if x > a.max_len)))
     trainer.train()
     print(trainer.evaluate())
 
     # prova veloce prima dell'esportazione
     FastLanguageModel.for_inference(model)
     sys_msg = rows[0]["messages"][0]
-    for q in ["un tavolo con gamba centrale", "una mensola lunga 80 cm con due staffe sotto"]:
+    tests = ["un tavolo con gamba centrale", "una mensola lunga 80 cm con due staffe sotto"]
+    if a.parts:  # primo passo del lavoro per parti: il piano (stesso testo di ai::PlanRequest compatto)
+        from generate_parts_dataset import plan_request
+        tests = [plan_request(q) for q in ["un violino", "un monopattino elettrico", "una sedia a dondolo"]]
+    for q in tests:
         ids = tok.apply_chat_template([sys_msg, {"role": "user", "content": q}], add_generation_prompt=True,
                                       enable_thinking=False, return_tensors="pt").to(model.device)
-        out = model.generate(ids, max_new_tokens=400, do_sample=False)
+        out = model.generate(ids, max_new_tokens=600, do_sample=False)
         print("==", q, "\n" + tok.decode(out[0][ids.shape[1]:], skip_special_tokens=True))
 
     model.save_pretrained(a.out + "-lora")

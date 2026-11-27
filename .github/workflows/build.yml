@@ -21,6 +21,10 @@ on:
         description: "Link a un modello GGUF addestrato (es. Google Drive), oppure 'catalogo' per il modello addestrato di Kurva3D: banco dei 9 oggetti"
         type: string
         default: ""
+      gguf_parti:
+        description: "Il modello di gguf_url e' addestrato sul lavoro per parti: banco degli oggetti complessi invece dei 9 oggetti"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # per pubblicare la Release (file RELEASE)
@@ -185,11 +189,22 @@ jobs:
           & dist\kurva3d-ai-test.exe --validate-jsonl "$env:RUNNER_TEMP\kurva3d-train.jsonl" --every 5
           if ($LASTEXITCODE -ne 0) { throw "esempi di addestramento non validi" }
 
+      # Esempi del lavoro per parti (piano + una parte per volta): verificati come fa l'app
+      - name: Verifica degli esempi di addestramento AI a parti
+        shell: pwsh
+        timeout-minutes: 30
+        run: |
+          python tools/ai-train/generate_parts_dataset.py --count 400 --out "$env:RUNNER_TEMP\kurva3d-parts.jsonl"
+          & dist\kurva3d-ai-test.exe --validate-parts-jsonl "$env:RUNNER_TEMP\kurva3d-parts.jsonl" --every 4
+          if ($LASTEXITCODE -ne 0) { throw "esempi di addestramento a parti non validi" }
+
       - name: Esempi di addestramento (file)
         uses: actions/upload-artifact@v4
         with:
           name: kurva3d-train-jsonl
-          path: ${{ runner.temp }}\kurva3d-train.jsonl
+          path: |
+            ${{ runner.temp }}\kurva3d-train.jsonl
+            ${{ runner.temp }}\kurva3d-parts.jsonl
 
       # Confronto dei modelli (solo se il messaggio del commit contiene [ai-bench]): richieste
       # del banco di prova (tavolo con gamba centrale, sedia, lampada...), con e senza grammatica
@@ -250,6 +265,14 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "download del modello non riuscito" }
             Get-FileHash "$env:RUNNER_TEMP\kurva3d-finetuned.gguf" -Algorithm SHA256 | Format-List
             $model = @("--gguf", "$env:RUNNER_TEMP\kurva3d-finetuned.gguf", "--compact")
+          }
+          if ("${{ inputs.gguf_parti }}" -eq "true") {
+            # modello addestrato a parti: oggetti complessi (gli ultimi due sono fuori dagli esempi)
+            foreach ($k in 0..11) {
+              & dist\kurva3d-ai-test.exe --bench-complex --case $k @model
+              if ($LASTEXITCODE -ne 0) { Write-Output "RICHIESTA ${k}: il programma si e' fermato (codice $LASTEXITCODE)" }
+            }
+            exit 0
           }
           # un processo per richiesta: se uno si ferma, le altre continuano
           foreach ($k in 0..8) {

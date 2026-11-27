@@ -27,6 +27,7 @@ struct ModelInfo {
   bool finetuned = false;           // addestrato su Kurva3D: istruzioni brevi, senza esempi
   long long bytes = 0;              // link diretto: dimensione esatta del file (verifica)
   std::string sha256;               // link diretto: impronta del file (vuota: solo dimensione e formato)
+  bool parts = false;               // addestrato sul lavoro per parti (CompactPlanSystemPrompt)
 };
 // Il modello si scarica da un link diretto (non da Hugging Face)?
 inline bool IsDirectUrl(const ModelInfo& m) { return m.repo.rfind("https://", 0) == 0; }
@@ -145,7 +146,11 @@ std::string PlanGrammar();
 std::string PlanSystemPrompt(const std::string& request, const std::string& exclude = {});
 // Primo messaggio (richiesta + piani d'esempio + "scrivi il piano") e richiesta dei comandi
 // della parte i (con le tecniche delle parti simili degli esempi).
-std::string PlanRequest(const std::string& request, const std::string& exclude = {});
+// compact: senza piani d'esempio (modelli addestrati sul lavoro per parti).
+std::string PlanRequest(const std::string& request, const std::string& exclude = {}, bool compact = false);
+// Istruzioni brevi del lavoro per parti per i modelli addestrati (senza consigli ne' esempi:
+// uguali a tools/ai-train/parts_system_prompt.txt, usato per l'addestramento).
+std::string CompactPlanSystemPrompt();
 std::string PartRequest(const Plan& plan, int i, const std::string& request = {}, const std::string& exclude = {});
 // Controlli del piano oltre alla forma: non deve copiare il piano di un altro oggetto della
 // libreria e ogni parte deve toccarne un'altra. Vuoto se va bene, altrimenti il motivo (per il modello).
