@@ -10,6 +10,11 @@
 //   kurva3d-ai-test --bench --gguf kurva3d-qwen3-4b.gguf [--compact]
 // Verifica degli esempi di addestramento (tools/ai-train/generate_dataset.py):
 //   kurva3d-ai-test --validate-jsonl train.jsonl [--every 5]   (uno ogni 5 esempi)
+//   kurva3d-ai-test --validate-parts-jsonl parts.jsonl          (esempi a parti)
+//   kurva3d-ai-test --write-parts-prompt tools/ai-train/parts_system_prompt.txt
+// Verifica degli esempi del lavoro per parti (tools/ai-train/generate_parts_dataset.py): richieste
+// uguali a quelle di Kurva3D, piano valido, ogni parte eseguita e dentro il suo ingombro:
+//   kurva3d-ai-test --validate-parts-jsonl parts.jsonl [--every 5]
 // Esecuzione di uno script scritto nel linguaggio dell'assistente (senza modello):
 //   kurva3d-ai-test --run-script violino.kurva [-o violino.3dm]
 // Verifica degli esempi per parti (ogni parte nel suo ingombro) e salvataggio in una cartella:
@@ -79,6 +84,9 @@ const ComplexCase kComplex[] = {
     // oggetti senza un esempio nella libreria
     {"un drone quadricottero", "", 200, 1500, 5, "rotor|blade|propel|elic|pale; arm|bracc; body|corpo|frame|telai|hub"},
     {"un trattore agricolo", "", 2500, 6500, 5, "wheel|ruot; cabin|cab|abitac; engine|hood|motor|cofan|bonnet"},
+    // oggetti fuori dalle famiglie di generate_parts_dataset.py: il modello addestrato generalizza?
+    {"un monopattino elettrico", "", 800, 1400, 3, "wheel|ruot; deck|pedan|board|base|platform; handle|manubr|stem|steer|pole|piant"},
+    {"una sedia a dondolo", "", 600, 1300, 3, "rocker|dondol|runner|curv; seat|sedut; back|schien"},
 };
 struct Outcome {
   bool valid = false, plausible = false;
@@ -193,6 +201,60 @@ void Measure(const QStringList& script, const BenchCase& bc, Outcome& out) {
 
 // Verifica ogni esempio di addestramento: lo script dev'essere valido per Kurva3D e,
 // se l'esempio indica le misure attese, l'oggetto deve averle (tolleranza 1%).
+// Esempi del lavoro per parti: {"request": ..., "messages": [system, piano chiesto, piano, parte 1
+// chiesta, parte 1, ...]}. Le richieste devono essere identiche a quelle che manda Kurva3D.
+int ValidateParts(const QString& path, int every) {
+  QFile f(path);
+  if (!f.open(QIODevice::ReadOnly)) { std::printf("non trovo %s\n", path.toUtf8().constData()); return 2; }
+  const std::string sys = cad::ai::CompactPlanSystemPrompt();
+  int n = 0, bad = 0, lineNo = 0, parts = 0;
+  while (!f.atEnd()) {
+    const QByteArray line = f.readLine().trimmed();
+    if (line.isEmpty()) continue;
+    if (lineNo++ % every) continue;
+    n++;
+    const QJsonObject row = QJsonDocument::fromJson(line).object();
+    const std::string request = row["request"].toString().toStdString();
+    const QJsonArray msgs = row["messages"].toArray();
+    auto content = [&](int i) { return msgs[i].toObject()["content"].toString().toStdString(); };
+    std::string why;
+    cad::ai::Plan plan;
+    std::string err;
+    if (msgs.size() < 5 || (msgs.size() - 3) % 2) why = "numero di messaggi sbagliato";
+    else if (content(0) != sys) why = "istruzioni diverse da CompactPlanSystemPrompt()";
+    else if (content(1) != cad::ai::PlanRequest(request, {}, true)) why = "richiesta del piano diversa da PlanRequest";
+    else if (!cad::ai::ParsePlan(content(2), plan, &err)) why = "piano non valido: " + err;
+    else if (plan.features.empty()) why = "manca # Distinctive";
+    else if (!(err = cad::ai::CheckPlan(plan, request)).empty()) why = "piano rifiutato: " + err;
+    else if ((int)plan.parts.size() != (msgs.size() - 3) / 2) why = "parti del piano e risposte non corrispondono";
+    if (why.empty()) {
+      cad::Document3dm doc;
+      std::ostringstream log;
+      cad::Engine engine(doc, log);
+      std::vector<std::string> done;
+      for (int i = 0; i < (int)plan.parts.size() && why.empty(); i++) {
+        if (content(3 + 2 * i) != cad::ai::PartRequest(plan, i))
+          why = "richiesta della parte " + plan.parts[i].name + " diversa da PartRequest";
+        const auto part = cad::ai::ExtractScript(content(4 + 2 * i));
+        for (const auto& l : part)
+          if (why.empty() && l.rfind("#", 0) != 0 && !cad::ai::ArgumentsMatch(l)) why = "argomenti non validi: " + l;
+        if (!why.empty()) break;
+        const auto v = cad::ai::CheckPart(engine, done, part, plan, i);
+        if (!v.ok) why = "parte " + plan.parts[i].name + ": " + cad::ai::PartRepairRequest(plan, i, part, v);
+        done.insert(done.end(), part.begin(), part.end());
+        parts++;
+      }
+    }
+    if (!why.empty()) {
+      bad++;
+      if (bad <= 40) std::printf("ERRORE esempio %d \"%s\": %s\n", n, request.c_str(), why.c_str());
+    }
+    if (n % 25 == 0) { std::printf("  %d oggetti verificati (%d parti), %d con errori\n", n, parts, bad); std::fflush(stdout); }
+  }
+  std::printf("%d oggetti verificati (%d parti), %d con errori\n", n, parts, bad);
+  return bad ? 1 : 0;
+}
+
 int ValidateJsonl(const QString& path, int every) {
   QFile f(path);
   if (!f.open(QIODevice::ReadOnly)) { std::printf("non trovo %s\n", path.toUtf8().constData()); return 2; }
@@ -345,7 +407,7 @@ int main(int argc, char** argv) {
   QCoreApplication::setApplicationName("Kurva3D");
   QString modelId = "qwen3-0.6b", prompt = "un cubo di lato 20 mm con un foro cilindrico di raggio 5 al centro";
   QStringList models;
-  QString gguf, jsonl, runScript, outPath;
+  QString gguf, jsonl, partsJsonl, runScript, outPath;
   int every = 1;
   int onlyCase = -1;  // --case k: solo la richiesta k del banco (un processo per richiesta)
   bool bench = false, grammar = true, both = false, compact = false, examples = false, complex = false;
@@ -363,6 +425,7 @@ int main(int argc, char** argv) {
     else if (i + 1 < a.size() && a[i] == "--case") onlyCase = a[++i].toInt();
     else if (i + 1 < a.size() && a[i] == "--gguf") gguf = a[++i];
     else if (i + 1 < a.size() && a[i] == "--validate-jsonl") jsonl = a[++i];
+    else if (i + 1 < a.size() && a[i] == "--validate-parts-jsonl") partsJsonl = a[++i];
     else if (i + 1 < a.size() && a[i] == "--run-script") runScript = a[++i];
     else if (i + 1 < a.size() && a[i] == "--examples") { examples = true; outPath = a[++i]; }
     else if (i + 1 < a.size() && a[i] == "-o") outPath = a[++i];
@@ -370,6 +433,11 @@ int main(int argc, char** argv) {
     else if (i + 1 < a.size() && a[i] == "--model") modelId = a[++i];
     else if (i + 1 < a.size() && a[i] == "--models") models = a[++i].split(',', Qt::SkipEmptyParts);
     else if (i + 1 < a.size() && a[i] == "--prompt") prompt = a[++i];
+    else if (i + 1 < a.size() && a[i] == "--write-parts-prompt") {  // rigenera parts_system_prompt.txt
+      std::ofstream f(a[++i].toStdString(), std::ios::binary);
+      f << cad::ai::CompactPlanSystemPrompt();
+      return f ? 0 : 1;
+    }
   }
   if (examples) {
     cad::InitLibrary();
@@ -383,6 +451,7 @@ int main(int argc, char** argv) {
     cad::ShutdownLibrary();
     return r;
   }
+  if (!partsJsonl.isEmpty()) return ValidateParts(partsJsonl, every);
   if (!jsonl.isEmpty()) {
     cad::InitLibrary();
     const int r = ValidateJsonl(jsonl, every);
@@ -453,7 +522,7 @@ int main(int argc, char** argv) {
     if (complex) {
       gen.SetTimeoutMinutes(60);  // senza GPU i modelli grandi impiegano molti minuti per il piano
       gen.RunParts(extPort ? extPort : server.Port(), promptOf(j), 2, j.grammar,
-                   j.bench >= 0 ? QString::fromUtf8(kComplex[j.bench].exclude) : QString());
+                   j.bench >= 0 ? QString::fromUtf8(kComplex[j.bench].exclude) : QString(), compact);
       return;
     }
     gen.Run(server.Port(), j.bench >= 0 ? QString::fromUtf8(kBench[j.bench].prompt) : prompt, 3, j.grammar,

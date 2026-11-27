@@ -374,9 +374,25 @@ never copy their parts, coordinates or sizes.
   return o.str();
 }
 
-std::string PlanRequest(const std::string& request, const std::string& exclude) {
+std::string CompactPlanSystemPrompt() {
+  // regole e comandi senza i consigli finali (misure tipiche, tecniche): il modello addestrato li ha imparati
+  std::string ref = CommandReference(true);
+  const size_t cut = ref.find("- Never use commands for files");
+  if (cut != std::string::npos) ref.erase(cut);
+  return R"(You are the modelling assistant of Kurva3D, a NURBS CAD program similar to Rhino 8.
+The user describes an object (often in Italian). You build it in parts.
+First the plan: one ```plan block with "# " overall size and orientation (length along Y, Z up), "# Distinctive: "
+what makes the object recognisable, then one line per part: PART Name | what and which commands | x0,y0,z0 x1,y1,z1
+(minimum and maximum corner of the box the part fills, mm). Every part touches another part.
+Then, when asked for one part, one ```kurva block with only the commands of that part, inside its box, its final
+objects named => Name. Earlier parts exist with their names: use them with @Name.
+
+)" + ref;
+}
+
+std::string PlanRequest(const std::string& request, const std::string& exclude, bool compact) {
   std::ostringstream o;
-  for (const Example* e : SelectExamples(request, 2, exclude)) {
+  for (const Example* e : compact ? std::vector<const Example*>{} : SelectExamples(request, 2, exclude)) {
     if (SameObject(request, e->id))
       o << "Plan of the same kind of object (follow it, with the sizes the user asks for), for \"" << e->request << "\":\n";
     else

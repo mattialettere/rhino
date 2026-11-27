@@ -2215,6 +2215,14 @@ int main(int argc, char** argv) {
       if (!same) std::printf("  tools/ai-train/system_prompt.txt diverso da CompactSystemPrompt(): rigeneralo\n");
       CHECK(same);
     }
+    {  // istruzioni dell'addestramento a parti = istruzioni brevi del modo a parti
+      std::ifstream f(std::string(KURVA3D_SOURCE_DIR) + "/tools/ai-train/parts_system_prompt.txt", std::ios::binary);
+      std::stringstream ss;
+      ss << f.rdbuf();
+      const bool same = ss.str() == ai::CompactPlanSystemPrompt();
+      if (!same) std::printf("  tools/ai-train/parts_system_prompt.txt diverso da CompactPlanSystemPrompt(): rigeneralo\n");
+      CHECK(same);
+    }
 #endif
     // tabella dei comandi: ogni esempio funziona e rispetta la forma degli argomenti
     for (const auto& spec : ai::CommandSpecs()) {

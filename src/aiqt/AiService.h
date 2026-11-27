@@ -102,8 +102,9 @@ class Generator : public QObject {
   // Oggetti complessi: prima il piano in parti, poi i comandi di una parte alla volta, ognuna
   // verificata subito (anche nella posizione) e fatta correggere fino a maxRepairs volte.
   // Una parte che non riesce viene lasciata fuori (Skipped). exclude: esempio da non usare (prove).
+  // compact: modello addestrato sul lavoro per parti (istruzioni brevi, nessun esempio).
   void RunParts(int port, const QString& request, int maxRepairs = 2, bool useGrammar = true,
-                const QString& exclude = {});
+                const QString& exclude = {}, bool compact = false);
   // Scelta automatica: i modelli addestrati su Kurva3D scrivono lo script in una volta
   // (istruzioni brevi), gli altri lavorano per parti.
   void Start(int port, const QString& request, const ai::ModelInfo* model);
@@ -137,6 +138,7 @@ class Generator : public QObject {
   bool m_grammar = true;
   Phase m_phase = Phase::Single;
   QString m_request, m_exclude;
+  bool m_compact = false;
   ai::Plan m_plan;
   int m_part = 0;
   int m_partStart = 0;  // indice in m_messages della richiesta della parte corrente
